@@ -1,0 +1,18 @@
+{
+  "new": "CTRL+N",
+  "open": "CTRL+O",
+  "save": "CTRL+S",
+  "saveAs": "CTRL+SHIFT+S",
+  "exit": "ALT+F4",
+  "print": "CTRL+P",
+  "undo": "CTRL+Z",
+  "redo": "CTRL+Y",
+  "cut": "CTRL+X",
+  "copy": "CTRL+C",
+  "paste": "CTRL+V",
+  "selectAll": "CTRL+A",
+  "aboutQt": "F12",
+  "aboutPython": "",
+  "help": "F1",
+  "settings": "CTRL+ALT+S"
+}
