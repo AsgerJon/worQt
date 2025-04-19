@@ -1,5 +1,5 @@
-"""The 'worQt.widgets.core' module provides the core widgets for the
-'worQt' library. These widgets provide the core functionalities such as
+"""The 'worQt.widgets.layouts' module provides the layouts widgets for the
+'worQt' library. These widgets provide the layouts functionalities such as
 printing text, displaying images, reacting to user inputs and layout
 management. Single function button widgets are also provided here, but
 more complicated widgets such as sliders and widgets containing multiple
@@ -11,5 +11,4 @@ from __future__ import annotations
 from ._layout_index import LayoutIndex
 from ._layout_span import LayoutSpan
 from ._layout_rect import LayoutRect
-from ._base_widget import BaseWidget
 from ._w_layout import WLayout

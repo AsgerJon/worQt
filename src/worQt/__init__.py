@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from ._dir_paths import getSrc, getEtc, getIconPath, getResourcePath
 from ._shiboken import Shiboken
+from . import tools
 from . import waitaminute
+from . import widgets
+from . import layouts
 from . import resources
 from . import window
 from . import app

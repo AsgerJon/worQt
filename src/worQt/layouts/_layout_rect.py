@@ -10,7 +10,7 @@ from worktoy.text import typeMsg
 from worktoy.waitaminute import MissingVariable, ReadOnlyError
 
 from moreworktoy.waitaminute import WriteOnceError
-from worQt.widgets.core import LayoutIndex, LayoutSpan
+from . import LayoutIndex, LayoutSpan
 
 try:
   from typing import TYPE_CHECKING
@@ -49,6 +49,8 @@ class LayoutRect(BaseObject):
   topRight = Field()
   bottomRight = Field()
   bottomLeft = Field()
+  width = Field()
+  height = Field()
   span = Field()
 
   @left.GET
@@ -123,11 +125,13 @@ class LayoutRect(BaseObject):
       raise TypeError(typeMsg('__bottom_row__', value, int))
     self.__bottom_row__ = value
 
+  @width.GET
   @colSpan.GET
   def _getColSpan(self) -> int:
     """Get the column span."""
     return self.right - self.left + 1
 
+  @height.GET
   @rowSpan.GET
   def _getRowSpan(self) -> int:
     """Get the row span."""
@@ -188,15 +192,26 @@ class LayoutRect(BaseObject):
 
   def __next__(self) -> LayoutIndex:
     """Get the next item in the rectangle."""
-    try:
-      out: LayoutIndex = self.__iter_contents__.pop(0)
-      if isinstance(out, LayoutIndex):
-        return out
-    except IndexError:
-      raise StopIteration
-    finally:
-      if not self.__iter_contents__:
-        self.__iter_contents__ = None
+    if self.__iter_contents__:
+      return self.__iter_contents__.pop(0)
+    self.__iter_contents__ = None
+    raise StopIteration
+
+  def __len__(self, ) -> int:
+    """Get the length of the rectangle."""
+    return len(self.span)
+
+  def __abs__(self, ) -> int:
+    """Get the absolute value of the rectangle."""
+    return abs(self.span)
+
+  def __bool__(self, ) -> bool:
+    """The rectangle containing only 0, 0 is Falsy"""
+    if self.topLeft:
+      return True
+    if len(self) == 1:
+      return False
+    return True
 
   @overload(LayoutIndex)
   def __contains__(self, other: LayoutIndex) -> bool:
@@ -224,3 +239,156 @@ class LayoutRect(BaseObject):
     if other.left < self.left or other.right > self.right:
       return False
     return True
+
+  #  topLeft, bottomRight
+
+  @overload(THIS, THIS)  # bounding both rectangles
+  def __init__(self, r0: Self, r1: Self) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+      assert isinstance(r0.left, int)
+      assert isinstance(r1.left, int)
+      assert isinstance(r0.top, int)
+      assert isinstance(r1.top, int)
+      assert isinstance(r0.right, int)
+      assert isinstance(r1.right, int)
+      assert isinstance(r0.bottom, int)
+      assert isinstance(r1.bottom, int)
+
+    L = min(r0.left, r1.left)
+    T = min(r0.top, r1.top)
+    R = max(r0.right, r1.right)
+    B = max(r0.bottom, r1.bottom)
+
+    self.__init__(L, T, R, B)
+
+  @overload(THIS, LayoutIndex)  # bounding rectangle and index
+  def __init__(self, r0: Self, r1: LayoutIndex) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+      assert isinstance(r0.left, int)
+      assert isinstance(r1.col, int)
+      assert isinstance(r0.top, int)
+      assert isinstance(r1.row, int)
+      assert isinstance(r0.right, int)
+      assert isinstance(r0.bottom, int)
+
+    L = min(r0.left, r1.col)
+    T = min(r0.top, r1.row)
+    R = max(r0.right, r1.col)
+    B = max(r0.bottom, r1.row)
+    self.__init__(L, T, R, B)
+
+  @overload(THIS, int, int)
+  def __init__(self, r0: Self, R: int, B: int) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    index = LayoutIndex(R, B)
+    self.__init__(r0, index)
+
+  @overload(int, int, int, int)
+  def __init__(self, *args) -> None:
+    L, T, R, B = args
+    self.__left_col__ = L
+    self.__top_row__ = T
+    self.__right_col__ = R
+    self.__bottom_row__ = B
+
+  @overload(LayoutIndex, LayoutIndex)
+  def __init__(self, *args) -> None:
+    TL, BR = args
+    self.__left_col__ = TL.col
+    self.__top_row__ = TL.row
+    self.__right_col__ = BR.col
+    self.__bottom_row__ = BR.row
+
+  @overload(LayoutIndex, int, int)
+  def __init__(self, *args) -> None:
+    TL, R, B = args
+    self.__left_col__ = TL.col
+    self.__top_row__ = TL.row
+    self.__right_col__ = TL.col + R - 1
+    self.__bottom_row__ = TL.row + B - 1
+
+  @overload(int, int, LayoutIndex)
+  def __init__(self, *args) -> None:
+    L, T, BR = args
+    self.__left_col__ = L
+    self.__top_row__ = T
+    self.__right_col__ = BR.col
+    self.__bottom_row__ = BR.row
+
+  #  topLeft, Span
+
+  @overload(LayoutIndex, THIS)
+  def __init__(self, *args) -> None:
+    TL, SP = args
+    self.__left_col__ = TL.col
+    self.__top_row__ = TL.row
+    self.__right_col__ = TL.col + SP.colSpan - 1
+    self.__bottom_row__ = TL.row + SP.rowSpan - 1
+
+  @overload(int, int, THIS)
+  def __init__(self, *args) -> None:
+    L, T, SP = args
+    self.__left_col__ = L
+    self.__top_row__ = T
+    self.__right_col__ = L + SP.colSpan - 1
+    self.__bottom_row__ = T + SP.rowSpan - 1
+
+  @overload(LayoutIndex, LayoutSpan)
+  def __init__(self, *args) -> None:
+    TL, SP = args
+    self.__left_col__ = TL.col
+    self.__top_row__ = TL.row
+    self.__right_col__ = TL.col + SP.colSpan - 1
+    self.__bottom_row__ = TL.row + SP.rowSpan - 1
+
+  @overload(int, int, LayoutSpan)
+  def __init__(self, *args) -> None:
+    L, T, SP = args
+    self.__left_col__ = L
+    self.__top_row__ = T
+    self.__right_col__ = L + SP.colSpan - 1
+    self.__bottom_row__ = T + SP.rowSpan - 1
+
+  @overload(LayoutSpan)  # topLeft == LIndex(0, 0)
+  def __init__(self, span: LayoutSpan) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    self.__init__(0, 0, span.nCols - 1, span.nRows - 1)
+
+  #  topLeft, topLeft (spans == 1, 1)
+
+  @overload(int, int)
+  def __init__(self, *args) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    self.__init__(*args, *args)
+
+  @overload(LayoutIndex)
+  def __init__(self, index: LayoutIndex) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    self.__init__(index, index)
+
+  @overload(THIS)
+  def __init__(self, other: Self) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    self.__init__(other.left, other.top, other.right, other.bottom)
+
+  @overload()
+  def __init__(self, *args) -> None:
+    if TYPE_CHECKING:
+      assert callable(self.__init__)
+    self.__init__(0, 0, 0, 0)
+
+  @classmethod
+  def fromIndices(cls, *indices: LayoutIndex) -> Self:
+    """Create a LayoutRect from a list of indices."""
+    L = min([i.col for i in indices])
+    T = min([i.row for i in indices])
+    R = max([i.col for i in indices])
+    B = max([i.row for i in indices])
+    return cls(L, T, R, B)

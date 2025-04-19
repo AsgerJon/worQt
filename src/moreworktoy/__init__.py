@@ -5,3 +5,4 @@
 from __future__ import annotations
 
 from . import waitaminute
+from . import attr

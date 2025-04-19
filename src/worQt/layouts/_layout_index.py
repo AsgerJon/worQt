@@ -100,6 +100,10 @@ class LayoutIndex(BaseObject):
     self.__iter_contents__ = [self.row, self.col]
     return self
 
+  def __bool__(self) -> bool:
+    """Returns True if the index is not empty. """
+    return True if self.row or self.col else False
+
   def __next__(self) -> Any:
     """Returns the next item in the iterator. """
     try:

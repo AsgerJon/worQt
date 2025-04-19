@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QWidget
 from main_cls import Breh
 from worQt import getEtc, getIconPath
 from worQt.app import App
+from worQt.tools.geometry import Size
 from yolo import yolo, runTests
 
 sys.path.append('./src')
@@ -70,5 +71,16 @@ def tester04() -> int:
   return 0
 
 
+def tester05() -> int:
+  """Testing size fitting"""
+  big = Size(160, 100)
+  small = Size(120, 90)
+  fitted = small.fit(big)
+  print(small.fit(big), big)
+  print(big.fit(small), small)
+
+  return 0
+
+
 if __name__ == '__main__':
-  yolo(runTests, tester04)
+  yolo(runTests, tester00)
