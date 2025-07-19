@@ -3,22 +3,16 @@
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-try:
-  from typing import TYPE_CHECKING
-except ImportError:
-  try:
-    from typing_extensions import TYPE_CHECKING
-  except ImportError:
-    TYPE_CHECKING = False
-
-import shiboken6
+from PySide6.QtCore import Signal, QTimer
+from PySide6.QtWidgets import QApplication
 
 
-class Meta(type(shiboken6.Shiboken.Object)):
-  """Metaclass for PySide6"""
-  pass
+class App(QApplication):
+  """Subclass of QApplication"""
 
+  startUp = Signal()
 
-class Breh(metaclass=Meta):
-  """Breh class"""
-  pass
+  def exec(self) -> int:
+    """Override exec() to emit startUp signal"""
+    QTimer.singleShot(0, self.startUp.emit)
+    return super().exec()
