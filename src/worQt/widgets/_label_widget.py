@@ -1,43 +1,83 @@
 """
-LayoutWindow provides the widgets and layouts for the main window of the
-application. It subclasses 'BaseWindow' which provides the menus and bars,
-and expects to be subclassed by the main window.
+LabelWidget subclasses the 'BoxWidget' and implements printing of text.
 """
 #  AGPL-3.0 license
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QGridLayout, QWidget
-from worktoy.core.sentinels import THIS
-from worktoy.desc import AttriBox
+from PySide6.QtGui import QFont
+from worktoy.desc import Field
+from worktoy.utilities import maybe
+from worktoy.waitaminute import TypeException
 
-from . import BaseWindow
-from ..widgets import Layout
+from . import BoxWidget
+
+from typing import TYPE_CHECKING
+
+from ..core import Font
+
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Self
 
 
-class LayoutWindow(BaseWindow):
+class LabelWidget(BoxWidget):
   """
-  LayoutWindow provides the widgets and layouts for the main window of the
-  application. It subclasses 'BaseWindow' which provides the menus and bars,
-  and expects to be subclassed by the main window.
+  LabelWidget subclasses the 'BoxWidget' and implements printing of text.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+
+  #  Fallback Variables
+  __fallback_text__ = 'breh'
+
+  #  Private Variables
+  __private_text__ = None
+  __private_font__ = None
+
   #  Public Variables
-  baseLayout = AttriBox[Layout]()
-  baseWidget = AttriBox[QWidget](THIS)
+  text = Field()
+  font = Field()
+
+  #  Virtual Variables
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  @text.GET
+  def _getText(self) -> str:
+    return maybe(self.__private_text__, self.__fallback_text__)
+
+  def _createFont(self, ) -> None:
+    """Creator for the font."""
+    self.__private_font__ = Font()
+
+  @font.GET
+  def _getFont(self, **kwargs) -> Font:
+    """
+    Returns the font of the label.
+    If no font is set, it returns a default font.
+    """
+    if self.__private_font__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self._createFont()
+      return self._getFont(_recursion=True)
+    if isinstance(self.__private_font__, Font):
+      return self.__private_font__
+    raise TypeException('__private_font__', self.__private_font__, Font, )
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @text.SET
+  def _setText(self, value: str) -> None:
+    self.__private_text__ = str(value)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -55,32 +95,6 @@ class LayoutWindow(BaseWindow):
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def initUi(self, ) -> None:
-    """
-    Initialize the UI components of the LayoutWindow.
-    This method sets up the base widget and layout for the main window.
-    """
-    super().initUi()
-    self.baseWidget.setLayout(self.baseLayout)
-    self.setCentralWidget(self.baseWidget)
-    self.setMinimumSize(QSize(800, 600))
-
-  def initLogic(self) -> None:
-    """
-    Initialize the logic components of the LayoutWindow.
-    This method can be overridden by subclasses to add specific logic.
-    """
-    super().initLogic()
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def show(self) -> None:
-    """
-    Show the LayoutWindow.
-    This method initializes the UI and logic before displaying the window.
-    """
-    self.initUi()
-    self.initLogic()
-    super().show()

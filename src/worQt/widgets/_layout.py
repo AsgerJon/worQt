@@ -1,35 +1,28 @@
 """
-LayoutWindow provides the widgets and layouts for the main window of the
-application. It subclasses 'BaseWindow' which provides the menus and bars,
-and expects to be subclassed by the main window.
+Layout subclasses QLayout and provides a general grid based layout.
 """
 #  AGPL-3.0 license
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QGridLayout, QWidget
-from worktoy.core.sentinels import THIS
-from worktoy.desc import AttriBox
+from typing import TYPE_CHECKING
 
-from . import BaseWindow
-from ..widgets import Layout
+from PySide6.QtWidgets import QGridLayout
+
+if TYPE_CHECKING:  # pragma: no cover
+  pass
 
 
-class LayoutWindow(BaseWindow):
-  """
-  LayoutWindow provides the widgets and layouts for the main window of the
-  application. It subclasses 'BaseWindow' which provides the menus and bars,
-  and expects to be subclassed by the main window.
-  """
+class Layout(QGridLayout):
+  """Layout subclasses QLayout and provides a general grid based layout."""
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  baseLayout = AttriBox[Layout]()
-  baseWidget = AttriBox[QWidget](THIS)
+
+  #  Virtual Variables
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -51,36 +44,15 @@ class LayoutWindow(BaseWindow):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def __init__(self, *args, **kwargs) -> None:
+    QGridLayout.__init__(self, *args, **kwargs)
+    self.setContentsMargins(2, 2, 2, 2, )
+    self.setSpacing(2, )
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def initUi(self, ) -> None:
-    """
-    Initialize the UI components of the LayoutWindow.
-    This method sets up the base widget and layout for the main window.
-    """
-    super().initUi()
-    self.baseWidget.setLayout(self.baseLayout)
-    self.setCentralWidget(self.baseWidget)
-    self.setMinimumSize(QSize(800, 600))
-
-  def initLogic(self) -> None:
-    """
-    Initialize the logic components of the LayoutWindow.
-    This method can be overridden by subclasses to add specific logic.
-    """
-    super().initLogic()
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def show(self) -> None:
-    """
-    Show the LayoutWindow.
-    This method initializes the UI and logic before displaying the window.
-    """
-    self.initUi()
-    self.initLogic()
-    super().show()

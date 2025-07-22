@@ -7,15 +7,19 @@ when accessed (__get__(...) -> QKeySequence).
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from icecream import ic
 
 from PySide6.QtCore import QKeyCombination, Qt
 from PySide6.QtGui import QKeySequence
 from worktoy.desc import Field, LabelBox
 from worktoy.mcls import BaseObject
 
-from moreworktoy.dispatch import overload
+from worktoy.dispatch import overload
 from ..nums import KeyNum, KeyMod
+
+from typing import TYPE_CHECKING
+
+ic.configureOutput(includeContext=True, )
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
@@ -42,7 +46,10 @@ class Shortcut(BaseObject):
 
   @Q.GET
   def _getQ(self) -> QKeySequence:
-    return QKeySequence(self.key, self.mods)
+    modName = self.mods.name
+    keyName = self.key.name.split('_')[-1]
+    keyStr = '%s+%s' % (modName, keyName)
+    return QKeySequence.fromString(keyStr)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -58,7 +65,7 @@ class Shortcut(BaseObject):
     keySequence = QKeySequence.fromString(keyStr)
     keyCombination = QKeyCombination.fromCombined(keySequence[0], )
 
-  @overload.flex(KeyNum, KeyMod)
+  @overload(KeyNum, KeyMod)
   def __init__(self, *args) -> None:
     for arg in args:
       if isinstance(arg, KeyNum):

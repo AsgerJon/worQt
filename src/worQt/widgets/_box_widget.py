@@ -1,35 +1,46 @@
 """
-LayoutWindow provides the widgets and layouts for the main window of the
-application. It subclasses 'BaseWindow' which provides the menus and bars,
-and expects to be subclassed by the main window.
+BoxWidget provides a base widget implementing box-model painting.
 """
 #  AGPL-3.0 license
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QGridLayout, QWidget
-from worktoy.core.sentinels import THIS
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QPaintEvent, QPainter
 from worktoy.desc import AttriBox
 
-from . import BaseWindow
-from ..widgets import Layout
+from ..core import BoxModel, RGBA
+from . import BaseWidget
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Self, Any
 
 
-class LayoutWindow(BaseWindow):
+class BoxWidget(BaseWidget):
   """
-  LayoutWindow provides the widgets and layouts for the main window of the
-  application. It subclasses 'BaseWindow' which provides the menus and bars,
-  and expects to be subclassed by the main window.
+  BoxWidget provides a base widget implementing box-model painting.
+  It uses the BoxModel class to manage box model properties.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+
+  #  Fallback Variables
+
+  #  Private Variables
+
   #  Public Variables
-  baseLayout = AttriBox[Layout]()
-  baseWidget = AttriBox[QWidget](THIS)
+  box = AttriBox[BoxModel]()
+  marginColor = AttriBox[RGBA](0, 0, 0, 0, )
+  borderColor = AttriBox[RGBA](0, 0, 0, 255)
+  paddingColor = AttriBox[RGBA](0, 0, 0, 0, )
+
+  #  Virtual Variables
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -55,32 +66,16 @@ class LayoutWindow(BaseWindow):
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def initUi(self, ) -> None:
-    """
-    Initialize the UI components of the LayoutWindow.
-    This method sets up the base widget and layout for the main window.
-    """
-    super().initUi()
-    self.baseWidget.setLayout(self.baseLayout)
-    self.setCentralWidget(self.baseWidget)
-    self.setMinimumSize(QSize(800, 600))
-
-  def initLogic(self) -> None:
-    """
-    Initialize the logic components of the LayoutWindow.
-    This method can be overridden by subclasses to add specific logic.
-    """
-    super().initLogic()
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def show(self) -> None:
-    """
-    Show the LayoutWindow.
-    This method initializes the UI and logic before displaying the window.
-    """
-    self.initUi()
-    self.initLogic()
-    super().show()
+  def paintEvent(self, event: QPaintEvent) -> QRect:
+    painter = QPainter()
+    painter.begin(self)
+    marginRect = painter.viewport()  # Rectangle containing margin
+    borderRect = marginRect - self.box.margins.Q
+    paddingRect = borderRect - self.box.borders.Q
+    contentRect = paddingRect - self.box.paddings.Q
+    painter.end()
+    return contentRect

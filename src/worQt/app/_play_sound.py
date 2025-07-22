@@ -10,7 +10,7 @@ from PySide6.QtMultimedia import QSoundEffect
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 
-from worQt.app.desQt import Etc
+from worQt.desQt import Etc
 
 if TYPE_CHECKING:  # pragma: no cover
   pass

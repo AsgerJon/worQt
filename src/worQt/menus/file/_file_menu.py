@@ -5,13 +5,13 @@ FileMenu subclasses AbstractMenu providing the common 'File' menu.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from worktoy.core.sentinels import THIS
-from worktoy.desc import LabelBox
-
-from .. import AbstractMenu
-from . import NewAction, OpenAction, SaveAction, ExitAction
-
 from typing import TYPE_CHECKING
+
+from PySide6.QtCore import Signal
+from worktoy.core.sentinels import THIS
+
+from .. import AbstractMenu, ActionBox
+from . import NewAction, OpenAction, SaveAction, ExitAction
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
@@ -26,10 +26,16 @@ class FileMenu(AbstractMenu):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  new = LabelBox[NewAction](THIS)
-  open = LabelBox[OpenAction](THIS)
-  save = LabelBox[SaveAction](THIS)
-  exit = LabelBox[ExitAction](THIS)
+  newAction = ActionBox[NewAction](THIS)
+  openAction = ActionBox[OpenAction](THIS)
+  saveAction = ActionBox[SaveAction](THIS)
+  exitAction = ActionBox[ExitAction](THIS)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  exit = Signal()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -48,11 +54,11 @@ class FileMenu(AbstractMenu):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def initUi(self, ) -> None:
-    self.addAction(self.new, )
-    self.addAction(self.open, )
-    self.addAction(self.save, )
+    self.addAction(self.newAction, )
+    self.addAction(self.openAction, )
+    self.addAction(self.saveAction, )
     self.addSeparator()
-    self.addAction(self.exit, )
+    self.addAction(self.exitAction, )
 
   def initLogic(self) -> None:
-    self.exit.triggered.connect(self.app.close, )
+    self.exitAction.triggered.connect(self.exit.emit)

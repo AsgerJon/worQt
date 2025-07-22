@@ -70,6 +70,7 @@ in the brackets.
 from __future__ import annotations
 
 from . import core
+from . import desQt
 from . import nums
 from . import app
 from . import menus

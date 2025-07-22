@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Signal
 from worktoy.core.sentinels import THIS
 
 from . import AbstractMenuBar, MenuBox, FileMenu, EditMenu, HelpMenu
@@ -33,6 +34,12 @@ class MainMenuBar(AbstractMenuBar):
   help = MenuBox[HelpMenu](THIS)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  exit = Signal()
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -43,8 +50,11 @@ class MainMenuBar(AbstractMenuBar):
     each menu using `self.addMenu(self.menuName)`. This method runs before
     the 'initLogic' method defined below.
     """
+    self.file.initUi()
     self.addMenu(self.file, )
+    self.edit.initUi()
     self.addMenu(self.edit, )
+    self.help.initUi()
     self.addMenu(self.help, )
 
   def initLogic(self) -> None:
@@ -53,3 +63,7 @@ class MainMenuBar(AbstractMenuBar):
     to a specific logic. By default, menus are already added by the
     'initUi' defined above making them available externally.
     """
+    self.file.initLogic()
+    self.file.exit.connect(self.exit.emit)
+    self.edit.initLogic()
+    self.help.initLogic()

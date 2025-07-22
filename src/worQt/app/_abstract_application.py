@@ -30,7 +30,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 
-from worQt.app.desQt import Etc, Resources, Sounds
+from worQt.desQt import Etc, Resources, Sounds
 
 try:
   from typing import TYPE_CHECKING
@@ -88,6 +88,24 @@ class AbstractApplication(QApplication):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def pleaseExit(self, ) -> None:
+    """
+    Subclasses may implement this method to implement how the application
+    respond to an exit request. This method is permissive and the
+    application is free to not exit.
+    """
+    self.quit()
+
+  def exitNow(self, ) -> None:
+    """
+    Subclasses may implement this method to implement how the application
+    respond to an exit order. This method requires the application to exit
+    even if the application is not ready to exit. The application should
+    exit even if it has unsaved data or other issues that would normally
+    prevent the application from exiting.
+    """
+    self.quit()
 
   def onStartUp(self, ) -> None:
     """

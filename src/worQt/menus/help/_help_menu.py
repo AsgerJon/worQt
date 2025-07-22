@@ -8,10 +8,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from worktoy.core.sentinels import THIS
-from worktoy.desc import LabelBox
 
 from . import AboutAction, AboutQtAction, DebugAction
-from .. import AbstractMenu
+from .. import AbstractMenu, ActionBox
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
@@ -27,9 +26,9 @@ class HelpMenu(AbstractMenu):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  about = LabelBox[AboutAction](THIS)
-  aboutQt = LabelBox[AboutQtAction](THIS)
-  debug = LabelBox[DebugAction](THIS)
+  about = ActionBox[AboutAction](THIS)
+  aboutQt = ActionBox[AboutQtAction](THIS)
+  debug = ActionBox[DebugAction](THIS)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QMainWindow
 
-from ..app.desQt import App
+from ..desQt import App
 from ..core import Parent
 
 if TYPE_CHECKING:  # pragma: no cover

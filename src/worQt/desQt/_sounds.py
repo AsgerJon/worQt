@@ -6,15 +6,14 @@ Sounds provides a descriptor pointing to the 'sounds' directory.
 from __future__ import annotations
 
 import os
-
-from . import Resources
+from typing import TYPE_CHECKING
 
 from worktoy.core import Object
 
-from typing import TYPE_CHECKING
+from . import Resources
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
+  pass
 
 
 class Sounds(Object):

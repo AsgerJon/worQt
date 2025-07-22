@@ -6,7 +6,7 @@ commonly found in 'File' menus of applications.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from . import AbstractAction
+from .. import AbstractAction
 
 from typing import TYPE_CHECKING
 

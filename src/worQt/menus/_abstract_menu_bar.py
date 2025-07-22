@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QMenuBar, QWidget
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException
 
-from ..app.desQt import App
+from ..desQt import App
 from ..core import Parent
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -79,10 +79,10 @@ class AbstractMenuBar(QMenuBar):
   def __init__(self, *args, **kwargs) -> None:
     for arg in args:
       if isinstance(arg, QWidget):
-        QWidget.__init__(self, arg, )
+        QMenuBar.__init__(self, arg, )
         break
     else:
-      QWidget.__init__(self, )
+      QMenuBar.__init__(self, )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

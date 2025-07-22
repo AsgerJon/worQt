@@ -8,11 +8,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMenu
+from PySide6.QtWidgets import QMenu, QWidget
 from worktoy.utilities import maybe, textFmt
 from worktoy.waitaminute import TypeException
 
-from ..app.desQt import App
+from ..desQt import App
+
+from icecream import ic
+
+ic.configureOutput(includeContext=True)
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any, Iterator, TypeAlias, Union
@@ -115,13 +119,13 @@ class AbstractMenu(QMenu):
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def addAction(self, *args, **kwargs) -> Action:
+  def addAction(self, action: Any) -> Action:
     """
     Adds an action to the menu. This method is overridden to ensure that
     actions are added to the __owned_actions__ list for proper management.
     """
     existing = maybe(self.__owned_actions__, [])
-    action = QMenu.addAction(self, *args, **kwargs)
+    action = QMenu.addAction(self, action)
     self.__owned_actions__ = [*existing, action]
     return action
 
@@ -134,7 +138,7 @@ class AbstractMenu(QMenu):
     if len(args) == 1 and isinstance(args[0], (list, tuple)):
       return self.addActions(*args[0], **kwargs)
     for action in args:
-      self.addAction(action, **kwargs)
+      self.addAction(action, )
 
   def show(self, ) -> None:
     """
@@ -172,3 +176,15 @@ class AbstractMenu(QMenu):
       indices = range(*identifier.indices(len(self)))
       return (*[self.resolveIndex(i) for i in indices],)
     raise TypeException('identifier', identifier, str, int)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def __init__(self, *args, **kwargs) -> None:
+    for arg in args:
+      if isinstance(arg, QWidget):
+        QMenu.__init__(self, arg, **kwargs)
+        break
+    else:
+      QMenu.__init__(self, **kwargs)

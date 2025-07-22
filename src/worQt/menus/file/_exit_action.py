@@ -28,3 +28,4 @@ class ExitAction(AbstractAction):
     self.setIcon('application-exit')
     self.setShortcut(KeyNum.KEY_F4, KeyMod.ALT)
     self.setMenuRole(QAction.MenuRole.QuitRole)
+    self.setObjectName('exitAction')

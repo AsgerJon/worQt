@@ -5,16 +5,18 @@ EditMenu provides the Edit menu for the main window.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from worktoy.core.sentinels import THIS
-from worktoy.desc import LabelBox
-
-from . import SelectAllAction, CopyAction, PasteAction, CutAction
-from .. import AbstractMenu
-
 from typing import TYPE_CHECKING
 
+from icecream import ic
+from worktoy.core.sentinels import THIS
+
+from . import SelectAllAction, CopyAction, PasteAction, CutAction
+from .. import AbstractMenu, ActionBox
+
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self
+  pass
+
+ic.configureOutput(includeContext=True)
 
 
 class EditMenu(AbstractMenu):
@@ -28,10 +30,10 @@ class EditMenu(AbstractMenu):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  selectAll = LabelBox[SelectAllAction](THIS)
-  cut = LabelBox[CutAction](THIS)
-  copy = LabelBox[CopyAction](THIS)
-  paste = LabelBox[PasteAction](THIS)
+  selectAll = ActionBox[SelectAllAction](THIS)
+  cut = ActionBox[CutAction](THIS)
+  copy = ActionBox[CopyAction](THIS)
+  paste = ActionBox[PasteAction](THIS)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

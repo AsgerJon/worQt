@@ -9,6 +9,7 @@ import sys
 from PySide6.QtWidgets import QMainWindow
 
 from worQt.app import Main
+from worQt.windows import MainWindow
 from yolo import yolo, runTests
 
 
@@ -22,12 +23,23 @@ def tester00() -> int:
 
 def tester01() -> int:
   """App test"""
-  with Main[QMainWindow](*sys.argv) as main:
+  with Main[MainWindow](*sys.argv) as main:
     print('_' * 77)
     print("""Entered main context. """)
     main.windowInstance.show()
     print("""Opened main window.""")
     print('¨' * 77)
+  return 0
+
+
+def tester02() -> int:
+  """MainWindow test"""
+  for item in dir(os):
+    print(item)
+    break
+  for item in dir(os):
+    if 'exec' in item:
+      print(help(getattr(os, item)))
   return 0
 
 

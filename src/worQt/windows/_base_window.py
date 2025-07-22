@@ -37,7 +37,9 @@ class BaseWindow(AbstractWindow):
     Initialize the user interface of the window.
     This method sets up the main menu bar and status bar for the window.
     """
+    self.menus.initUi()
     self.setMenuBar(self.menus)
+    self.status.initUi()
     self.setStatusBar(self.status)
 
   def initLogic(self) -> None:
@@ -46,6 +48,9 @@ class BaseWindow(AbstractWindow):
     This method is called after the user interface is set up.
     It can be used to connect signals and slots or perform other logic.
     """
+    self.menus.initLogic()
+    self.menus.exit.connect(self.close)
+    self.status.initLogic()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -53,10 +58,8 @@ class BaseWindow(AbstractWindow):
 
   def show(self) -> None:
     """
-    Show the window.
     This method is overridden to ensure that the window is displayed
-    correctly
-    with the main menu bar and status bar.
+    correctly with the main menu bar and status bar.
     """
     self.initUi()
     self.initLogic()

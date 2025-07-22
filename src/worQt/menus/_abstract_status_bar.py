@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QStatusBar
 
-from worQt.app.desQt import App
+from worQt.desQt import App
 from worQt.core import Parent
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -32,5 +32,15 @@ class AbstractStatusBar(QStatusBar):
   #  Public Variables
   app = App()
   parent = Parent()
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def initUi(self) -> None:
+    """Initialize the user interface for the status bar."""
+
+  def initLogic(self) -> None:
+    """Initialize the logic for the status bar."""
 
   #  TODO: Implement some stuff lol

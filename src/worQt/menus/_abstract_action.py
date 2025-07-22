@@ -5,19 +5,20 @@ AbstractAction provides a base class for actions in the worQt framework.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-import typing
-
 from PySide6.QtCore import QKeyCombination, Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMenu
+from icecream import ic
 
-from moreworktoy.dispatch import Dispatcher
+from worktoy.dispatch import Dispatcher
 
-from ..app.desQt import App
+from ..desQt import App
 from ..core import Parent, Shortcut
 from ..nums import KeyNum, KeyMod
 
 from typing import TYPE_CHECKING
+
+ic.configureOutput(includeContext=True, )
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional, Union, Any, TypeAlias, Type, Callable
@@ -62,7 +63,7 @@ class AbstractAction(QAction):
   def setShortcut(self, shortcut: str) -> None:
     """Sets the shortcut for the action using a string representation of
     the shortcut."""
-    QAction.setShortcut(self, Shortcut(shortcut).Q)
+    QAction.setShortcut(self, QKeySequence.fromString(shortcut))
 
   @setShortcut.overload(QKeyCombination)
   def setShortcut(self, shortcut: QKeyCombination) -> None:
@@ -124,5 +125,20 @@ class AbstractAction(QAction):
     Initializes the AbstractAction with the given arguments and keyword
     arguments. It sets the parent and initializes the QAction.
     """
-    QAction.setShortcutVisibleInContextMenu(self, True)
     QAction.__init__(self, *args, **kwargs)
+    QAction.setShortcutVisibleInContextMenu(self, True)
+    self.setStatusTip(self.text())
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def setText(self, actionText: str) -> None:
+    """
+    Sets the text for the action. This method is overridden to ensure that
+    the text is set correctly and to update the status tip.
+    """
+    QAction.setText(self, actionText)
+    QAction.setToolTip(self, actionText)
+    QAction.setStatusTip(self, actionText)
+    QAction.setWhatsThis(self, actionText)
