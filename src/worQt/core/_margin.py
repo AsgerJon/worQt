@@ -9,6 +9,11 @@ from PySide6.QtCore import QMargins, QMarginsF
 from worktoy.desc import Field
 from worktoy.ezdata import EZData
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Self, Any
+
 
 class Margin(EZData):
   """Margin provides a dataclass for margins."""
@@ -49,18 +54,21 @@ class Margin(EZData):
   def fromQMargins(cls, margins: QMargins) -> Margin:
     """Create a Margin from QMargins."""
     return cls(
-        margins.left(),
-        margins.top(),
-        margins.right(),
-        margins.bottom()
+      margins.left(),
+      margins.top(),
+      margins.right(),
+      margins.bottom()
     )
 
   @classmethod
   def fromQMarginsF(cls, margins: QMarginsF) -> Margin:
     """Create a Margin from QMarginsF."""
     return cls(
-        margins.left(),
-        margins.top(),
-        margins.right(),
-        margins.bottom()
+      margins.left(),
+      margins.top(),
+      margins.right(),
+      margins.bottom()
     )
+
+  def __get__(self, instance: Any, owner: type) -> Self:
+    return self

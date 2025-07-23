@@ -9,9 +9,11 @@ from __future__ import annotations
 from ._base_widget import BaseWidget
 from ._layout import Layout
 from ._box_widget import BoxWidget
+from ._label_widget import LabelWidget
 
 __all__ = [
-    'BaseWidget',
-    'Layout',
-    'BoxWidget',
+  'BaseWidget',
+  'Layout',
+  'BoxWidget',
+  'LabelWidget',
 ]

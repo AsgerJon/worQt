@@ -5,16 +5,21 @@ LabelWidget subclasses the 'BoxWidget' and implements printing of text.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtGui import QFont
-from worktoy.desc import Field
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QFont, QPaintEvent, QPainter, QColor
+from PySide6.QtWidgets import QWidget, QWidget
+from worktoy.core.sentinels import THIS
+from worktoy.desc import Field, AttriBox
+from worktoy.dispatch import Dispatcher
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException
+from ..core import Font, RGBA
 
 from . import BoxWidget
+from ..nums import HorizontalAlignum as H
+from ..nums import VerticalAlignum as V
 
 from typing import TYPE_CHECKING
-
-from ..core import Font
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Self
@@ -41,8 +46,20 @@ class LabelWidget(BoxWidget):
   #  Public Variables
   text = Field()
   font = Field()
+  textColor = AttriBox[RGBA](0, 0, 0, 255)
+  textMarginColor = AttriBox[RGBA](0, 0, 0, 0)
+  textBorderColor = AttriBox[RGBA](0, 0, 0, 255)
+  textPaddingColor = AttriBox[RGBA](191, 191, 191, 255)
 
   #  Virtual Variables
+  #  Growing from content rect by adding padding, border, and margin.
+  contentRect = Field()  # The bounding rectangle of the text content.
+  paddingRect = Field()  # Padding added to contentRect.
+  borderRect = Field()  # Border added to paddingRect.
+  marginRect = Field()  # Margin added to borderRect.
+
+  #  Overloaded Functions
+  __init__ = Dispatcher()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -71,6 +88,22 @@ class LabelWidget(BoxWidget):
       return self.__private_font__
     raise TypeException('__private_font__', self.__private_font__, Font, )
 
+  @contentRect.GET
+  def _getContentRect(self) -> QRect:
+    return self.font.boundRect(self.availableContentRect, self.text)
+
+  @paddingRect.GET
+  def _getPaddingRect(self) -> QRect:
+    return self.contentRect + self.box.paddings
+
+  @borderRect.GET
+  def _getBorderRect(self) -> QRect:
+    return self.paddingRect + self.box.borders
+
+  @marginRect.GET
+  def _getMarginRect(self) -> QRect:
+    return self.borderRect + self.box.margins
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -91,6 +124,53 @@ class LabelWidget(BoxWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  @__init__.overload(QWidget, str)
+  def __init__(self, widget: QWidget, text: str) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+
+  @__init__.overload(QWidget, str, RGBA, RGBA, RGBA)
+  def __init__(self, widget: QWidget, text: str, *colors: RGBA) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.textColor, self.paddingColor, self.borderColor = colors
+
+  @__init__.overload(QWidget, str, RGBA, RGBA)
+  def __init__(self, widget: QWidget, text: str, *colors: RGBA) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.textColor, self.paddingColor = colors
+
+  @__init__.overload(QWidget, str, RGBA)
+  def __init__(self, widget: QWidget, text: str, color: RGBA) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.textColor = color
+
+  @__init__.overload(QWidget, str, RGBA, RGBA, RGBA, Font)
+  def __init__(self, widget: QWidget, text: str, *args) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.textColor, self.paddingColor, self.borderColor, *_ = args
+    self.__private_font__ = args[-1]
+
+  @__init__.overload(QWidget, str, RGBA, RGBA, Font)
+  def __init__(self, widget: QWidget, text: str, *args) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.textColor, self.paddingColor, self.__private_font__ = args
+
+  @__init__.overload(QWidget, str, RGBA, Font)
+  def __init__(self, widget: QWidget, *args) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__, self.textColor, self.__private_font__ = args
+
+  @__init__.overload(QWidget, str, Font)
+  def __init__(self, widget: QWidget, text: str, font: Font) -> None:
+    BoxWidget.__init__(self, widget)
+    self.__private_text__ = str(text)
+    self.__private_font__ = font
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -98,3 +178,22 @@ class LabelWidget(BoxWidget):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def paintEvent(self, event: QPaintEvent) -> None:
+    BoxWidget.paintEvent(self, event)
+    painter = QPainter()
+    painter.begin(self)
+    painter.setPen(self.emptyPen)
+    painter.setBrush(self.textMarginColor.brush)
+    rx, ry = self.box.marginsCorners
+    painter.drawRoundedRect(self.marginRect, rx, ry)
+    painter.setBrush(self.textBorderColor.brush)
+    rx, ry = self.box.marginsCorners
+    painter.drawRoundedRect(self.borderRect, rx, ry)
+    painter.setBrush(self.textPaddingColor.brush)
+    rx, ry = self.box.paddingsCorners
+    painter.drawRoundedRect(self.paddingRect, rx, ry)
+    painter.setFont(self.font.Q)
+    painter.setPen(self.textColor.pen)
+    painter.setBrush(self.emptyBrush)
+    painter.drawText(self.contentRect, self.text)

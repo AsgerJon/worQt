@@ -23,3 +23,22 @@ class MainWindow(LayoutWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def initLogic(self) -> None:
+    self.welcome.startedHolding.connect(self.debug01)
+    self.welcome.cursorEnter.connect(self.debug02)
+    self.welcome.cursorLeave.connect(self.debug03)
+    self.welcome.stoppedHolding.connect(self.debug02)
+
+  def debug01(self, *args: Any) -> None:
+    self.status.showMessage('Holding!', )
+
+  def debug02(self, ) -> None:
+    self.status.showMessage('Moving!')
+
+  def debug03(self, *args: Any) -> None:
+    self.status.showMessage('Exiting!')

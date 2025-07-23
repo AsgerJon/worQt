@@ -13,6 +13,7 @@ from ._font_family_num import FontFamilyNum
 from ._horizontal_alignum import HorizontalAlignum
 from ._vertical_alignum import VerticalAlignum
 from ._alignum import Alignum
+from ._mouse_button_num import MouseButtonNum
 
 __all__ = [
   'KeyNum',
@@ -22,4 +23,5 @@ __all__ = [
   'HorizontalAlignum',
   'VerticalAlignum',
   'Alignum',
+  'MouseButtonNum',
 ]

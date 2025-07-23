@@ -13,7 +13,8 @@ from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
 from . import BaseWindow
-from ..widgets import Layout
+from ..core import Font
+from ..widgets import Layout, LabelWidget
 
 
 class LayoutWindow(BaseWindow):
@@ -30,6 +31,7 @@ class LayoutWindow(BaseWindow):
   #  Public Variables
   baseLayout = AttriBox[Layout]()
   baseWidget = AttriBox[QWidget](THIS)
+  welcome = AttriBox[LabelWidget](THIS, 'Trololololo!', Font(24))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -62,6 +64,7 @@ class LayoutWindow(BaseWindow):
     """
     super().initUi()
     self.baseWidget.setLayout(self.baseLayout)
+    self.baseLayout.addWidget(self.welcome, 0, 0, 1, 1)
     self.setCentralWidget(self.baseWidget)
     self.setMinimumSize(QSize(800, 600))
 
