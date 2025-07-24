@@ -32,6 +32,10 @@ class LayoutWindow(BaseWindow):
   baseLayout = AttriBox[Layout]()
   baseWidget = AttriBox[QWidget](THIS)
   welcome = AttriBox[LabelWidget](THIS, 'Trololololo!', Font(24))
+  topLeft = AttriBox[LabelWidget](THIS, 'Top Left', Font(16))
+  topRight = AttriBox[LabelWidget](THIS, 'Top Right', Font(16))
+  bottomRight = AttriBox[LabelWidget](THIS, 'Bottom Right', Font(16))
+  bottomLeft = AttriBox[LabelWidget](THIS, 'Bottom Left', Font(16))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -64,7 +68,11 @@ class LayoutWindow(BaseWindow):
     """
     super().initUi()
     self.baseWidget.setLayout(self.baseLayout)
-    self.baseLayout.addWidget(self.welcome, 0, 0, 1, 1)
+    self.baseLayout.addWidget(self.topLeft, 0, 0, 1, 1)
+    self.baseLayout.addWidget(self.welcome, 1, 1, 1, 1)
+    self.baseLayout.addWidget(self.topRight, 0, 2, 1, 1)
+    self.baseLayout.addWidget(self.bottomRight, 2, 2, 1, 1)
+    self.baseLayout.addWidget(self.bottomLeft, 2, 0, 1, 1)
     self.setCentralWidget(self.baseWidget)
     self.setMinimumSize(QSize(800, 600))
 

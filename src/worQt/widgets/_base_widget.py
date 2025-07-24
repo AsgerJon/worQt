@@ -6,36 +6,26 @@ framework.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, Signal, QEvent, QTimer
-from PySide6.QtGui import QPaintEvent, \
-  QPen, \
+from PySide6.QtGui import QPen, \
   QColor, \
   QBrush, \
   QEnterEvent, \
-  QMouseEvent
+  QMouseEvent, \
+  QPointerEvent, QEventPoint, QPaintEvent, QPainter
 from PySide6.QtWidgets import QWidget
-from worktoy.core.sentinels import THIS
 from worktoy.desc import Field
-from worktoy.dispatch import Dispatcher
+from worktoy.utilities import maybe
 
-from ..nums import MouseButtonNum as Mouse
-
-from typing import TYPE_CHECKING
+from ..geometry import Point2D
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self
+  pass
 
 
-class _QWidget(QWidget):
-  def __init__(self, parent: QWidget = None) -> None:
-    if parent is None:
-      QWidget.__init__(self, )
-    else:
-      QWidget.__init__(self, parent)
-    self.setMouseTracking(True)
-
-
-class BaseWidget(_QWidget):
+class BaseWidget(QWidget):
   """BaseWidget subclass QWidget and provides the basic widget functionality
   for the worQt framework."""
 
@@ -51,6 +41,11 @@ class BaseWidget(_QWidget):
   __under_cursor__ = None
   __cursor_moving__ = None
   __was_moving__ = None  # Timer to track if the cursor was moving
+  __holding_point__ = None  #
+  __mouse_px__ = None  # The x-coordinate of the mouse cursor
+  __mouse_py__ = None  # The y-coordinate of the mouse cursor
+  __mouse_vx__ = None
+  __mouse_vy__ = None
 
   #  Public Variables
 
@@ -62,13 +57,18 @@ class BaseWidget(_QWidget):
   moving = Field()  # True when under moving cursor
   holding = Field()  # True when under resting cursor
   mouseButton = Field()  # The pressed button or 'NULL' if unpressed.
+  mouseX = Field()  # The x-coordinate of the mouse cursor.
+  mouseY = Field()  # The y-coordinate of the mouse cursor.
+  mousePos = Field()  # The position of the mouse cursor as a 'Point'.
+  mouseVel = Field()
 
   #  Overloaded Functions
-  
+
   #  Timers
   wasMoving = Field()  # Unsets moving on timeout
 
   #  Signals
+  moved = Signal()
   cursorEnter = Signal()
   cursorLeave = Signal()
   startedHolding = Signal()
@@ -123,6 +123,25 @@ class BaseWidget(_QWidget):
       return self.__was_moving__
     raise TypeError('__was_moving__', self.__was_moving__, QTimer, )
 
+  @mouseX.GET
+  def _getMouseX(self) -> float:
+    return maybe(self.__mouse_px__, -1.0)
+
+  @mouseY.GET
+  def _getMouseY(self) -> float:
+    return maybe(self.__mouse_py__, -1.0)
+
+  @mousePos.GET
+  def _getMousePos(self) -> Point2D:
+    return Point2D(self.mouseX, self.mouseY)
+
+  @mouseVel.GET
+  def _getMouseVel(self) -> float:
+    """Returns the magnitude of the mouse velocity."""
+    if self.__mouse_vx__ is None or self.__mouse_vy__ is None:
+      return 0.0
+    return (self.__mouse_vx__ ** 2 + self.__mouse_vy__ ** 2) ** 0.5
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -140,13 +159,40 @@ class BaseWidget(_QWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def __init__(self, *args, **kwargs) -> None:
+    for arg in args:
+      if isinstance(arg, QWidget):
+        QWidget.__init__(self, arg)
+        break
+    else:
+      QWidget.__init__(self)
+    self.setMouseTracking(True)
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def _updatePoint(self, eventPoint: QEventPoint) -> None:
+    """Updates from a QEventPoint."""
+    p = eventPoint.position()
+    self.__mouse_px__, self.__mouse_py__ = p.x(), p.y()
+    v = eventPoint.velocity()
+    self.__mouse_vx__, self.__mouse_vy__ = v.x(), v.y()
+    eventState = eventPoint.state()
+    if eventState is QEventPoint.State.Updated:
+      self.moved.emit()
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def event(self, event_: QEvent) -> bool:
+    """Override the event method to handle custom events."""
+    if isinstance(event_, QPointerEvent):
+      eventPoints = event_.points()
+      if eventPoints:
+        self._updatePoint(eventPoints[0])
+    return QWidget.event(self, event_)
 
   def enterEvent(self, event: QEnterEvent) -> None:
     QWidget.enterEvent(self, event)
@@ -169,3 +215,12 @@ class BaseWidget(_QWidget):
     if not self.__cursor_moving__:
       self.__cursor_moving__ = True
       self.stoppedHolding.emit()
+
+  def paintEvent(self, event: QPaintEvent) -> None:
+    """Override the paint event to handle custom painting."""
+    QWidget.paintEvent(self, event)
+    painter = QPainter()
+    painter.begin(self)
+    g = self.geometry()
+    v = painter.viewport()
+    print(g, ' | ', v)

@@ -46,9 +46,9 @@ class Layout(QGridLayout):
 
   def __init__(self, *args, **kwargs) -> None:
     QGridLayout.__init__(self, *args, **kwargs)
-    self.setContentsMargins(2, 2, 2, 2, )
+    self.setContentsMargins(0, 0, 0, 0, )
     self.setSpacing(2, )
-
+ 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -124,52 +124,52 @@ class LabelWidget(BoxWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @__init__.overload(QWidget, str)
-  def __init__(self, widget: QWidget, text: str) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str)
+  def __init__(self, text: str) -> None:
     self.__private_text__ = str(text)
 
-  @__init__.overload(QWidget, str, RGBA, RGBA, RGBA)
-  def __init__(self, widget: QWidget, text: str, *colors: RGBA) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA, RGBA, RGBA)
+  def __init__(self, text: str, *colors: RGBA) -> None:
     self.__private_text__ = str(text)
     self.textColor, self.paddingColor, self.borderColor = colors
 
-  @__init__.overload(QWidget, str, RGBA, RGBA)
-  def __init__(self, widget: QWidget, text: str, *colors: RGBA) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA, RGBA)
+  def __init__(self, text: str, *colors: RGBA) -> None:
     self.__private_text__ = str(text)
     self.textColor, self.paddingColor = colors
 
-  @__init__.overload(QWidget, str, RGBA)
-  def __init__(self, widget: QWidget, text: str, color: RGBA) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA)
+  def __init__(self, text: str, color: RGBA) -> None:
     self.__private_text__ = str(text)
     self.textColor = color
 
-  @__init__.overload(QWidget, str, RGBA, RGBA, RGBA, Font)
-  def __init__(self, widget: QWidget, text: str, *args) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA, RGBA, RGBA, Font)
+  def __init__(self, text: str, *args) -> None:
     self.__private_text__ = str(text)
     self.textColor, self.paddingColor, self.borderColor, *_ = args
     self.__private_font__ = args[-1]
 
-  @__init__.overload(QWidget, str, RGBA, RGBA, Font)
-  def __init__(self, widget: QWidget, text: str, *args) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA, RGBA, Font)
+  def __init__(self, text: str, *args) -> None:
     self.__private_text__ = str(text)
     self.textColor, self.paddingColor, self.__private_font__ = args
 
-  @__init__.overload(QWidget, str, RGBA, Font)
-  def __init__(self, widget: QWidget, *args) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, RGBA, Font)
+  def __init__(self, *args) -> None:
     self.__private_text__, self.textColor, self.__private_font__ = args
 
-  @__init__.overload(QWidget, str, Font)
-  def __init__(self, widget: QWidget, text: str, font: Font) -> None:
-    BoxWidget.__init__(self, widget)
+  @__init__.overload(str, Font)
+  def __init__(self, text: str, font: Font) -> None:
     self.__private_text__ = str(text)
     self.__private_font__ = font
+
+  @__init__.fallback
+  def __init__(self, parent: QWidget, *args, **kwargs) -> None:
+    if isinstance(parent, QWidget):
+      BoxWidget.__init__(self, parent)
+    else:
+      BoxWidget.__init__(self, )
+    self.__init__(*args, **kwargs)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

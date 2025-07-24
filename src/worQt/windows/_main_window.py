@@ -29,10 +29,7 @@ class MainWindow(LayoutWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def initLogic(self) -> None:
-    self.welcome.startedHolding.connect(self.debug01)
-    self.welcome.cursorEnter.connect(self.debug02)
-    self.welcome.cursorLeave.connect(self.debug03)
-    self.welcome.stoppedHolding.connect(self.debug02)
+    self.welcome.moved.connect(self.debug05)
 
   def debug01(self, *args: Any) -> None:
     self.status.showMessage('Holding!', )
@@ -42,3 +39,9 @@ class MainWindow(LayoutWindow):
 
   def debug03(self, *args: Any) -> None:
     self.status.showMessage('Exiting!')
+
+  def debug04(self, *args: Any) -> None:
+    self.status.showMessage('%f' % self.welcome.mouseVel)
+
+  def debug05(self, *args: Any) -> None:
+    self.status.showMessage(str(self.welcome.mousePos))

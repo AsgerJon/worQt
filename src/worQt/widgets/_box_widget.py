@@ -77,6 +77,7 @@ class BoxWidget(BaseWidget):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def paintEvent(self, event: QPaintEvent) -> None:
+    BaseWidget.paintEvent(self, event)
     painter = QPainter()
     painter.begin(self)
     marginRect = painter.viewport()
