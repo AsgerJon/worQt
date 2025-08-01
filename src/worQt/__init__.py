@@ -74,4 +74,5 @@ from . import desQt
 from . import nums
 from . import app
 from . import menus
+from . import widgets
 from . import windows

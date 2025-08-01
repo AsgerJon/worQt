@@ -6,14 +6,16 @@ the 'worQt' library.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._app import App
 from ._etc import Etc
+from ._settings import Settings
 from ._resources import Resources
 from ._sounds import Sounds
-from ._app import App
 
 ___all__ = [
+    'App',
     'Etc',
+    'Settings',
     'Resources',
     'Sounds',
-    'App',
 ]

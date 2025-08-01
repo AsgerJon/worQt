@@ -6,6 +6,8 @@ used across the worQt library.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._resolve_qt_num import resolveQtNum
+from ._mouse_button_state_num import MouseButtonStateNum
 from ._key_num import KeyNum
 from ._modifier import KeyMod
 from ._font_families import FontFamilies
@@ -16,12 +18,14 @@ from ._alignum import Alignum
 from ._mouse_button_num import MouseButtonNum
 
 __all__ = [
-  'KeyNum',
-  'KeyMod',
-  'FontFamilies',
-  'FontFamilyNum',
-  'HorizontalAlignum',
-  'VerticalAlignum',
-  'Alignum',
-  'MouseButtonNum',
+    'resolveQtNum',
+    'KeyNum',
+    'KeyMod',
+    'FontFamilies',
+    'FontFamilyNum',
+    'HorizontalAlignum',
+    'VerticalAlignum',
+    'Alignum',
+    'MouseButtonNum',
+    'MouseButtonStateNum',
 ]

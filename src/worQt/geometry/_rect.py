@@ -196,21 +196,23 @@ class Rect(BaseObject):
       raise TypeException('value', value, int, float, )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  def __bool__(self, ) -> bool:
+    """Check if the rectangle is valid."""
+    return True if self.width ** 2 * self.height ** 2 > 1e-12 else False
 
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  def __contains__(self, item: Any, **kwargs) -> bool:
+    """Check if a point is inside the rectangle."""
+    if isinstance(item, Point2D):
+      if self.left < item.x < self.right:
+        if self.top < item.y < self.bottom:
+          return True
+      return False
+    if kwargs.get('_recursion', False):
+      raise RecursionError
+    other = Point2D.__add__(Point2D(0, 0), item, )
+    if other is NotImplemented:
+      return NotImplemented
+    return self.__contains__(other, _recursion=True)

@@ -1,2 +1,3 @@
 pyside6>=6.9.0
-worktoy>=0.99.103
+worktoy>=0.99.106
+icecream>=2.1.5

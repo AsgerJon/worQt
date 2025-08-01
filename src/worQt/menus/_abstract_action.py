@@ -8,8 +8,6 @@ from __future__ import annotations
 from PySide6.QtCore import QKeyCombination, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMenu
-from icecream import ic
-
 from worktoy.dispatch import Dispatcher
 
 from ..desQt import App
@@ -18,15 +16,23 @@ from ..nums import KeyNum, KeyMod
 
 from typing import TYPE_CHECKING
 
-ic.configureOutput(includeContext=True, )
-
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Optional, Union, Any, TypeAlias, Type, Callable
+  from typing import Optional, Union, TypeAlias, Type
+  from icecream import ic
 
   from ..menus import AbstractMenu
 
   MenuObject: TypeAlias = Optional[QMenu]
   MenuClass: TypeAlias = Union[Type[QMenu], Type[AbstractMenu]]
+else:
+  try:
+    from icecream import ic
+  except ImportError:
+    def ic(*args, **kwargs) -> None:
+      """A no-op fallback replacement for 'icecream.ic'. """
+      pass  # pragma: no cover
+  else:
+    ic.configureOutput(includeContext=True, )
 
 
 class AbstractAction(QAction):

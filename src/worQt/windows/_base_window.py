@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
-from worQt.menus import MainMenuBar, MainStatusBar
-from worQt.windows import AbstractWindow
+from ..menus import MainMenuBar, MainStatusBar
+from . import AbstractWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   pass

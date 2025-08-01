@@ -5,15 +5,17 @@ breh
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from typing import overload
-
+from worktoy.dispatch import Dispatcher, overload
 from PySide6.QtCore import Qt
 
 KeyboardModifier = Qt.KeyboardModifier
 Key = Qt.Key
 from PySide6.QtGui import QAction
 
-from moreworktoy.dispatch import Dispatcher
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Optional
 
 
 class AbstractAction(QAction):

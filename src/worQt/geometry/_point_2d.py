@@ -258,6 +258,16 @@ class Point2D(BaseObject):
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def dist(self, other: Any) -> float:
+    """Calculate the distance to another Point or a tuple/list of
+    coordinates."""
+    other = self._resolveOther(other)
+    if other is NotImplemented:
+      return NotImplemented
+    dx = self.x - other.x
+    dy = self.y - other.y
+    return (dx ** 2 + dy ** 2) ** 0.5
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

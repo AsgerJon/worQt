@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QGridLayout, QWidget
+
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
