@@ -11,14 +11,15 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPen, QBrush
 from worktoy.desc import Field
 from worktoy.dispatch import overload
-from worktoy.ezdata import EZData
+from worktoy.mcls import BaseObject
 from worktoy.utilities import maybe
+from worktoy.waitaminute import TypeException
 
 if TYPE_CHECKING:
-  pass
+  from typing import Self
 
 
-class RGBA(EZData):
+class RGBA(BaseObject):
   """
   RGBA provides a color representation in the RGBA color space.
   """
@@ -186,3 +187,51 @@ class RGBA(EZData):
     self.__private_green__ = color.green()
     self.__private_blue__ = color.blue()
     self.__private_alpha__ = color.alpha()
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def lighter(self, factor: float = None) -> Self:
+    """
+    Returns a lighter version of the color.
+    :param factor: A unit ranged float specifying how much nearer to 255
+    to bring each component. If 0, leaves the color unchanged. If 1
+    returns white. Defaults to 0.1.
+    :return: A new RGBA instance with the lightened color.
+    """
+    f = float(maybe(factor, 0.1))
+    if not isinstance(f, float):
+      raise TypeException('factor', f, float)
+    if (1 - f) * f < 0:
+      infoSpec = """%s.lighter expected unit ranged factor, but received 
+      '%f'!"""
+      info = infoSpec % (type(self).__name__, f)
+    _r, _g, _b = 255 - self.red, 255 - self.green, 255 - self.blue
+    r = int(self.red + _r * f)
+    g = int(self.green + _g * f)
+    b = int(self.blue + _b * f)
+    cls = type(self)
+    return cls(r, g, b, self.alpha)
+
+  def darker(self, factor: float = None) -> Self:
+    """
+    Returns a darker version of the color.
+    :param factor: A unit ranged float specifying how much nearer to 0
+    to bring each component. If 0, leaves the color unchanged. If 1,
+    returns black. Defaults to 0.1.
+    :return: A new RGBA instance with the darkened color.
+    """
+    f = float(maybe(factor, 0.1))
+    if not isinstance(f, float):
+      raise TypeException('factor', f, float)
+    if (1 - f) * f < 0:
+      infoSpec = """%s.lighter expected unit ranged factor, but received 
+      '%f'!"""
+      info = infoSpec % (type(self).__name__, f)
+    f = maybe(factor, 0.1)
+    r = int(self.red * (1 - f))
+    g = int(self.green * (1 - f))
+    b = int(self.blue * (1 - f))
+    cls = type(self)
+    return cls(r, g, b, self.alpha)

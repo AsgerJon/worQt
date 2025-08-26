@@ -16,6 +16,7 @@ from ._horizontal_alignum import HorizontalAlignum
 from ._vertical_alignum import VerticalAlignum
 from ._alignum import Alignum
 from ._mouse_button_num import MouseButtonNum
+from ._mouse_input_num import MouseInputNum
 
 __all__ = [
     'resolveQtNum',
@@ -28,4 +29,5 @@ __all__ = [
     'Alignum',
     'MouseButtonNum',
     'MouseButtonStateNum',
+    'MouseInputNum',
 ]

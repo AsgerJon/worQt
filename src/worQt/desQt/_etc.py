@@ -26,10 +26,10 @@ def _etcPath() -> str:
   return os.path.normpath(etc)
 
 
-class Etc(Object):
+class Etc:
   """
   Etc provides a descriptor to be owned by the running application providing
-  an absolute path to the etc directory of the application.
+  an absolute path to the 'etc' directory of the application.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -40,17 +40,8 @@ class Etc(Object):
   __etc_path__ = _etcPath()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _getEtcPath(self) -> str:
-    """Getter-function for the path to the 'etc.' directory."""
+  def __get__(self, instance: Any, owner: type) -> Any:
     return validateExistingDirectory(self.__etc_path__, )
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def __instance_get__(self, *args, **kwargs) -> Any:
-    """Returns the absolute path to the 'etc.' directory."""
-    return self._getEtcPath()

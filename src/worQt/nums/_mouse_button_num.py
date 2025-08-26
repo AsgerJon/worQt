@@ -30,3 +30,6 @@ class MouseButtonNum(KeeNum):
   MIDDLE = Kee[Qt.MouseButton](Qt.MouseButton.MiddleButton)
   BACK = Kee[Qt.MouseButton](Qt.MouseButton.BackButton)
   FORWARD = Kee[Qt.MouseButton](Qt.MouseButton.ForwardButton)
+
+  def __bool__(self, ) -> bool:
+    return False if self is type(self).NULL else True

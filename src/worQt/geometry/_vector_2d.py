@@ -3,6 +3,7 @@
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from PySide6.QtGui import QVector2D, QEventPoint
 from worktoy.core.sentinels import THIS
 from worktoy.desc import Field
 from worktoy.dispatch import overload
@@ -13,7 +14,9 @@ from . import Point2D
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self, Any, Iterator
+  from typing import Self, Any, Iterator, TypeAlias, Type
+
+  _NotImplementedType: TypeAlias = Type[type(NotImplemented)]
 
 
 class Vector2D(Point2D):
@@ -68,6 +71,15 @@ class Vector2D(Point2D):
     self.__private_x__ = P1.x - P0.x
     self.__private_y__ = P1.y - P0.y
 
+  @overload(QVector2D)
+  def __init__(self, vector: QVector2D) -> None:
+    self.__private_x__ = vector.x()
+    self.__private_y__ = vector.y()
+
+  @overload(QEventPoint)
+  def __init__(self, eventPoint: QEventPoint) -> None:
+    self.__init__(QEventPoint.velocity(eventPoint), )
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -91,7 +103,7 @@ class Vector2D(Point2D):
     return self.x * other.x + self.y * other.y
 
   @overload.fallback
-  def __mul__(self, other: Any) -> NotImplemented:
+  def __mul__(self, other: Any) -> _NotImplementedType:
     """Fallback for unsupported multiplication."""
     return NotImplemented
 
@@ -106,7 +118,7 @@ class Vector2D(Point2D):
     return self.x * other.y - self.y * other.x
 
   @overload.fallback
-  def __matmul__(self, other: Any) -> NotImplemented:
+  def __matmul__(self, other: Any) -> _NotImplementedType:
     """Fallback for unsupported matrix multiplication."""
     return NotImplemented
 

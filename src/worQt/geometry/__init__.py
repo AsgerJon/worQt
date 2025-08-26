@@ -5,6 +5,8 @@ The 'worQt.geometry' module provides functionality for Euclidean geometry.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._margins import Margins
+from ._box_model import BoxModel
 from ._point_2d import Point2D
 from ._vector_2d import Vector2D
 from ._line_2d import Line2D
@@ -12,6 +14,8 @@ from ._size import Size
 from ._rect import Rect
 
 __all__ = [
+    'Margins',
+    'BoxModel',
     'Point2D',
     'Vector2D',
     'Line2D',

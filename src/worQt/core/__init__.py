@@ -8,16 +8,12 @@ from __future__ import annotations
 
 from ._parent import Parent
 from ._shortcut import Shortcut
-from ._margin import Margin
-from ._box_model import BoxModel
 from ._rgba import RGBA
 from ._font import Font
 
 __all__ = [
     'Parent',
     'Shortcut',
-    'Margin',
-    'BoxModel',
     'RGBA',
     'Font',
 ]

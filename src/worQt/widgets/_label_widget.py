@@ -5,24 +5,21 @@ LabelWidget subclasses the 'BoxWidget' and implements printing of text.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QRect
-from PySide6.QtGui import QFont, QPaintEvent, QPainter, QColor
-from PySide6.QtWidgets import QWidget, QWidget
-from worktoy.core.sentinels import THIS
-from worktoy.desc import Field, AttriBox
-from worktoy.dispatch import Dispatcher
-from worktoy.utilities import maybe
-from worktoy.waitaminute import TypeException
-from ..core import Font, RGBA
-
-from . import BoxWidget
-from ..nums import HorizontalAlignum as H
-from ..nums import VerticalAlignum as V
-
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter, QPen, QBrush, QFontMetrics
+from worktoy.desc import Field, AttriBox
+from worktoy.utilities import maybe
+from worktoy.waitaminute import TypeException
+
+from ..core import Font, RGBA
+from . import BoxWidget
+from ..geometry import Size, Rect, Margins
+from ..nums import Alignum
+
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self
+  pass
 
 
 class LabelWidget(BoxWidget):
@@ -37,33 +34,89 @@ class LabelWidget(BoxWidget):
   #  Class Variables
 
   #  Fallback Variables
-  __fallback_text__ = 'breh'
+  __fallback_text__ = 'Label'
+  __fallback_alignment__ = Alignum.CENTER
+  __fallback_color__ = RGBA(0, 0, 0, 255)
+  __fallback_shadow__ = RGBA(225, 225, 225, 255)
 
   #  Private Variables
   __private_text__ = None
   __private_font__ = None
+  __alignment_flag__ = None
+  __text_color__ = None
+  __shadow_color__ = None
 
   #  Public Variables
+  opacity = AttriBox[float](1.0, )
   text = Field()
   font = Field()
-  textColor = AttriBox[RGBA](0, 0, 0, 255)
-  textMarginColor = AttriBox[RGBA](0, 0, 0, 0)
-  textBorderColor = AttriBox[RGBA](0, 0, 0, 255)
-  textPaddingColor = AttriBox[RGBA](191, 191, 191, 255)
+  alignmentFlag = Field()
+  textColor = Field()
+  shadowColor = Field()
 
   #  Virtual Variables
-  #  Growing from content rect by adding padding, border, and margin.
-  contentRect = Field()  # The bounding rectangle of the text content.
-  paddingRect = Field()  # Padding added to contentRect.
-  borderRect = Field()  # Border added to paddingRect.
-  marginRect = Field()  # Margin added to borderRect.
-
-  #  Overloaded Functions
-  __init__ = Dispatcher()
+  textPen = Field()
+  shadowBrush = Field()
+  textRect = Field()
+  shadowRect = Field()
+  boundingSize = Field()
+  boundingRect = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @textColor.GET
+  def _getTextColor(self) -> RGBA:
+    return maybe(self.__text_color__, self.__fallback_color__)
+
+  @shadowColor.GET
+  def _getShadowColor(self) -> RGBA:
+    return maybe(self.__shadow_color__, self.__fallback_shadow__)
+
+  @textPen.GET
+  def _getTextPen(self) -> QPen:
+    pen = QPen()
+    color = self.textColor.Q
+    color.setAlphaF(self.opacity)
+    pen.setColor(color)
+    pen.setWidth(1)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    pen.setStyle(Qt.PenStyle.SolidLine)
+    return pen
+
+  @shadowBrush.GET
+  def _getShadowBrush(self) -> QBrush:
+    brush = QBrush()
+    color = self.shadowColor.Q
+    brush.setColor(color)
+    brush.setStyle(Qt.BrushStyle.SolidPattern)
+    return brush
+
+  @boundingSize.GET
+  def _getBoundingSize(self) -> Size:
+    fontMetrics = QFontMetrics(self.font.Q)
+    rect = fontMetrics.boundingRect(self.text)
+    return Size(rect.width(), rect.height())
+
+  @boundingRect.GET
+  def _getBoundingRect(self) -> Rect:
+    return Rect(self.boundingSize, )
+
+  @textRect.GET
+  def _getTextRect(self) -> Rect:
+    """
+    Returns the rectangle where the text will be drawn.
+    It is aligned to the contentRect with the alignmentFlag.
+    """
+    rect = self.boundingRect
+    return rect.align(self.contentRect, self.alignmentFlag)
+
+  @shadowRect.GET
+  def _getShadowRect(self) -> Rect:
+    rect = self.boundingRect + Margins(2, 0, 2, 0)
+    return rect.align(self.contentRect, self.alignmentFlag)
 
   @text.GET
   def _getText(self) -> str:
@@ -88,21 +141,9 @@ class LabelWidget(BoxWidget):
       return self.__private_font__
     raise TypeException('__private_font__', self.__private_font__, Font, )
 
-  @contentRect.GET
-  def _getContentRect(self) -> QRect:
-    return self.font.boundRect(self.availableContentRect, self.text)
-
-  @paddingRect.GET
-  def _getPaddingRect(self) -> QRect:
-    return self.contentRect + self.box.paddings
-
-  @borderRect.GET
-  def _getBorderRect(self) -> QRect:
-    return self.paddingRect + self.box.borders
-
-  @marginRect.GET
-  def _getMarginRect(self) -> QRect:
-    return self.borderRect + self.box.margins
+  @alignmentFlag.GET
+  def _getAlignmentFlag(self) -> Alignum:
+    return maybe(self.__alignment_flag__, self.__fallback_alignment__)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -110,7 +151,23 @@ class LabelWidget(BoxWidget):
 
   @text.SET
   def _setText(self, value: str) -> None:
-    self.__private_text__ = str(value)
+    if self.__private_text__ != value:
+      self.__private_text__ = str(value)
+      self.update()
+
+  @font.SET
+  def _setFont(self, value: Font) -> None:
+    if not isinstance(value, Font):
+      raise TypeException('__private_font__', value, Font)
+    self.__private_font__ = value
+    self.update()
+
+  @alignmentFlag.SET
+  def _setAlignmentFlag(self, value: Alignum) -> None:
+    if not isinstance(value, Alignum):
+      raise TypeException('__alignment_flag__', value, Alignum)
+    self.__alignment_flag__ = value
+    self.update()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -124,76 +181,28 @@ class LabelWidget(BoxWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @__init__.overload(str)
-  def __init__(self, text: str) -> None:
-    self.__private_text__ = str(text)
-
-  @__init__.overload(str, RGBA, RGBA, RGBA)
-  def __init__(self, text: str, *colors: RGBA) -> None:
-    self.__private_text__ = str(text)
-    self.textColor, self.paddingColor, self.borderColor = colors
-
-  @__init__.overload(str, RGBA, RGBA)
-  def __init__(self, text: str, *colors: RGBA) -> None:
-    self.__private_text__ = str(text)
-    self.textColor, self.paddingColor = colors
-
-  @__init__.overload(str, RGBA)
-  def __init__(self, text: str, color: RGBA) -> None:
-    self.__private_text__ = str(text)
-    self.textColor = color
-
-  @__init__.overload(str, RGBA, RGBA, RGBA, Font)
-  def __init__(self, text: str, *args) -> None:
-    self.__private_text__ = str(text)
-    self.textColor, self.paddingColor, self.borderColor, *_ = args
-    self.__private_font__ = args[-1]
-
-  @__init__.overload(str, RGBA, RGBA, Font)
-  def __init__(self, text: str, *args) -> None:
-    self.__private_text__ = str(text)
-    self.textColor, self.paddingColor, self.__private_font__ = args
-
-  @__init__.overload(str, RGBA, Font)
-  def __init__(self, *args) -> None:
-    self.__private_text__, self.textColor, self.__private_font__ = args
-
-  @__init__.overload(str, Font)
-  def __init__(self, text: str, font: Font) -> None:
-    self.__private_text__ = str(text)
-    self.__private_font__ = font
-
-  @__init__.fallback
-  def __init__(self, parent: QWidget, *args, **kwargs) -> None:
-    if isinstance(parent, QWidget):
-      BoxWidget.__init__(self, parent)
-    else:
-      BoxWidget.__init__(self, )
-    self.__init__(*args, **kwargs)
+  def __init__(self, *args, **kwargs) -> None:
+    BoxWidget.__init__(self, *args, **kwargs)
+    self.setMouseTracking(True)
+    textArg = [arg for arg in args if isinstance(arg, str)] or [None, ]
+    fontArg = [arg for arg in args if isinstance(arg, Font)] or [None, ]
+    if textArg[0] is not None:
+      self.text = textArg[0]
+    if fontArg[0] is not None:
+      self.font = fontArg[0]
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def paintMeLike(self, painter: QPainter, **kwargs, ) -> None:
+    painter.setFont(self.font.Q)
+    painter.setPen(self.textPen)
+    painter.setBrush(self.shadowBrush)
+    flags = Qt.AlignmentFlag.AlignCenter
+    painter.drawRoundedRect(self.shadowRect.Q, 2, 2)
+    painter.drawText(self.textRect.Q, flags, self.text)
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def paintEvent(self, event: QPaintEvent) -> None:
-    BoxWidget.paintEvent(self, event)
-    painter = QPainter()
-    painter.begin(self)
-    painter.setPen(self.emptyPen)
-    painter.setBrush(self.textMarginColor.brush)
-    rx, ry = self.box.marginsCorners
-    painter.drawRoundedRect(self.marginRect, rx, ry)
-    painter.setBrush(self.textBorderColor.brush)
-    rx, ry = self.box.marginsCorners
-    painter.drawRoundedRect(self.borderRect, rx, ry)
-    painter.setBrush(self.textPaddingColor.brush)
-    rx, ry = self.box.paddingsCorners
-    painter.drawRoundedRect(self.paddingRect, rx, ry)
-    painter.setFont(self.font.Q)
-    painter.setPen(self.textColor.pen)
-    painter.setBrush(self.emptyBrush)
-    painter.drawText(self.contentRect, self.text)

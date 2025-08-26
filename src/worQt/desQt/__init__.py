@@ -6,16 +6,18 @@ the 'worQt' library.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from . import pens
 from ._app import App
 from ._etc import Etc
-from ._settings import Settings
 from ._resources import Resources
 from ._sounds import Sounds
+from ._state_flag import StateFlag
 
 ___all__ = [
+    'pens',
     'App',
     'Etc',
-    'Settings',
     'Resources',
     'Sounds',
+    'StateFlag',
 ]

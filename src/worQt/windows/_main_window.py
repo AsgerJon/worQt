@@ -6,14 +6,16 @@ business logic of the application.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import Slot, QEvent
+from PySide6.QtCore import Slot
 
+from worQt.geometry import Rect
+from worQt.nums import Alignum
 from worQt.windows import LayoutWindow
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
+  pass
 
 
 class MainWindow(LayoutWindow):
@@ -33,34 +35,34 @@ class MainWindow(LayoutWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def initLogic(self) -> None:
-    self.menus.help.debug.triggered.connect(self.debug01)
-    self.menus.file.exitAction.triggered.connect(self.close)
-    self.welcome.eventType.connect(self.debug06)
+    LayoutWindow.initLogic(self)
+    self.menus.help.debugLeft.triggered.connect(self.debugLeftFunc)
+    self.menus.help.debugRight.triggered.connect(self.debugRightFunc)
+    self.menus.help.debug.triggered.connect(self.debugFunc)
 
-  def debug01(self, *args: Any) -> None:
-    for i, (key, value) in enumerate(self.welcome.settings.items()):
-      if self.__debug_counter__ == i:
-        infoSpec = """%s: %s"""
-        info = infoSpec % (key, value)
-        self.status.showMessage(info)
-        self.__debug_counter__ += 1
-        break
+  def initUi(self) -> None:
+    """
+    Initialize the user interface of the main window.
+    This method sets up the main menu bar and status bar for the window.
+    """
+    LayoutWindow.initUi(self)
+
+  def debugLeftFunc(self) -> None:
+    self.welcome.alignmentFlag = Alignum.CENTER_LEFT
+    self.status.showMessage('debug left', 5000)
+
+  def debugRightFunc(self) -> None:
+    self.welcome.alignmentFlag = Alignum.CENTER_RIGHT
+    self.status.showMessage('debug right', 5000)
+
+  def debugFunc(self) -> None:
+
+    try:
+      _ = Rect('sixty-nine', 'four-twenty', '1337', '80085')
+    except Exception as exception:
+      infoSpec = """Caught %s: %s"""
+      excType = type(exception).__name__
+      info = infoSpec % (excType, str(exception))
+      self.status.showMessage(info)
     else:
-      self.__debug_counter__ = 0
-      self.status.showMessage('No more debug messages!')
-
-  def debug02(self, ) -> None:
-    self.status.showMessage('Moving!')
-
-  def debug03(self, *args: Any) -> None:
-    self.status.showMessage('Exiting!')
-
-  def debug04(self, *args: Any) -> None:
-    self.status.showMessage('%f' % self.welcome.mouseVel)
-
-  def debug05(self, *args: Any) -> None:
-    self.status.showMessage(str(self.welcome.mousePos))
-
-  @Slot(str)
-  def debug06(self, item: str) -> None:
-    self.status.showMessage(item)
+      self.status.showMessage("""Expected an exception lmao""")

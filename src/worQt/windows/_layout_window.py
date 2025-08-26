@@ -13,9 +13,10 @@ from PySide6.QtWidgets import QGridLayout, QWidget
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
+from moreworktoy.desc import BetterBox
 from . import BaseWindow
 from ..core import Font
-from ..widgets import Layout, LabelWidget
+from ..widgets import Layout, LabelWidget, DebugWidget, AbstractButton
 
 
 class LayoutWindow(BaseWindow):
@@ -33,6 +34,8 @@ class LayoutWindow(BaseWindow):
   baseLayout = AttriBox[Layout]()
   baseWidget = AttriBox[QWidget](THIS)
   welcome = AttriBox[LabelWidget](THIS, 'Trololololo!', Font(24))
+  debug = AttriBox[DebugWidget](THIS, Font(12), )
+  button = BetterBox[AbstractButton](THIS, 'Click Me!', )
   topLeft = AttriBox[LabelWidget](THIS, 'Top Left', Font(16))
   topRight = AttriBox[LabelWidget](THIS, 'Top Right', Font(16))
   bottomRight = AttriBox[LabelWidget](THIS, 'Bottom Right', Font(16))
@@ -74,6 +77,7 @@ class LayoutWindow(BaseWindow):
     self.baseLayout.addWidget(self.topRight, 0, 2, 1, 1)
     self.baseLayout.addWidget(self.bottomRight, 2, 2, 1, 1)
     self.baseLayout.addWidget(self.bottomLeft, 2, 0, 1, 1)
+    self.baseLayout.addWidget(self.button, 1, 0, 1, 1)
     self.setCentralWidget(self.baseWidget)
     self.setMinimumSize(QSize(800, 600))
 
@@ -87,12 +91,3 @@ class LayoutWindow(BaseWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def show(self) -> None:
-    """
-    Show the LayoutWindow.
-    This method initializes the UI and logic before displaying the window.
-    """
-    self.initUi()
-    self.initLogic()
-    super().show()

@@ -3,20 +3,24 @@
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QRectF
+from PySide6.QtCore import QRect, QRectF, QPoint, QPointF, QSize, QSizeF
 from worktoy.core.sentinels import THIS
-from worktoy.desc import AttriBox, Field
+from worktoy.desc import Field
 from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
-from worktoy.utilities import maybe
+from worktoy.waitaminute import VariableNotNone, TypeException
+from worktoy.waitaminute.dispatch import DispatchException
+
+from . import Size, Point2D, Margins
+
 from typing import TYPE_CHECKING
 
-from worktoy.waitaminute import VariableNotNone, TypeException
-
-from worQt.geometry import Size, Point2D
+from ..nums import Alignum
+from ..nums import HorizontalAlignum as H
+from ..nums import VerticalAlignum as V
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self, Any, Iterator
+  from typing import Any, Union, Self
 
 
 class Rect(BaseObject):
@@ -31,8 +35,8 @@ class Rect(BaseObject):
   #  Fallback Variables
   __fallback_left__ = 0.0
   __fallback_top__ = 0.0
-  __fallback_right__ = 1.0
-  __fallback_bottom__ = 1.0
+  __fallback_right__ = 0.0
+  __fallback_bottom__ = 0.0
 
   #  Private Variables
   __left_edge__ = None
@@ -49,6 +53,7 @@ class Rect(BaseObject):
   #  Virtual Variables
   width = Field()  # Width of the rectangle (right - left)
   height = Field()  # Height of the rectangle (bottom - top)
+  diagonal = Field()  # Diagonal length of the rectangle
   size = Field()  # Size of the rectangle (width, height)
   topLeft = Field()  # Top-left corner point of the rectangle
   topRight = Field()  # Top-right corner point of the rectangle
@@ -110,6 +115,11 @@ class Rect(BaseObject):
   def _getHeight(self, **kwargs) -> float:
     return self.bottom - self.top
 
+  @diagonal.GET
+  def _getDiagonal(self, **kwargs) -> float:
+    """Get the diagonal length of the rectangle."""
+    return (self.width ** 2 + self.height ** 2) ** 0.5
+
   @size.GET
   def _getSize(self, **kwargs) -> Size:
     """Get the size of the rectangle as a tuple (width, height)."""
@@ -149,7 +159,7 @@ class Rect(BaseObject):
 
   @Q.GET
   def _getQ(self, **kwargs) -> QRect:
-    return QRectF.toRect(self.QF, )
+    return QRect(self.left, self.top, self.width, self.height)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -203,16 +213,175 @@ class Rect(BaseObject):
     """Check if the rectangle is valid."""
     return True if self.width ** 2 * self.height ** 2 > 1e-12 else False
 
-  def __contains__(self, item: Any, **kwargs) -> bool:
+  def __contains__(self, other: Any, **kwargs) -> bool:
     """Check if a point is inside the rectangle."""
-    if isinstance(item, Point2D):
-      if self.left < item.x < self.right:
-        if self.top < item.y < self.bottom:
-          return True
-      return False
+    cls = type(self)
+    if isinstance(other, cls):
+      if self.left > other.left:
+        return False
+      if self.top > other.top:
+        return False
+      if self.right < other.right:
+        return False
+      if self.bottom < other.bottom:
+        return False
+      return True
     if kwargs.get('_recursion', False):
       raise RecursionError
-    other = Point2D.__add__(Point2D(0, 0), item, )
-    if other is NotImplemented:
+    try:
+      other = cls(other, )
+    except DispatchException:
       return NotImplemented
-    return self.__contains__(other, _recursion=True)
+    else:
+      return self.__contains__(other, _recursion=True)
+
+  def __add__(self, other: Margins) -> Self:
+    if isinstance(other, Margins):
+      return Rect(
+          self.left - other.left,
+          self.top - other.top,
+          self.right + other.right,
+          self.bottom + other.bottom
+      )
+    try:
+      other = Margins(other, )
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return self + other
+
+  def __sub__(self, other: Margins) -> Self:
+    """Subtract margins from the rectangle."""
+    if isinstance(other, Margins):
+      return Rect(
+          self.left + other.left,
+          self.top + other.top,
+          self.right - other.right,
+          self.bottom - other.bottom
+      )
+    try:
+      other = Margins(other, )
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return self - other
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @overload(THIS, Alignum)
+  def align(self, other: Self, alignum: Alignum) -> Self:
+    """
+    Moves this rectangle to align with 'other' rectangle as specified
+    by the alignment specified by the 'alignum' parameter.
+    """
+    cls = type(self)
+    if alignum.horizontal is H.LEFT:
+      left = other.left
+    elif alignum.horizontal is H.CENTER:
+      if TYPE_CHECKING:
+        assert isinstance(other.left, float)
+      left = other.left + (other.width - self.width) / 2
+    elif alignum.horizontal is H.RIGHT:
+      left = other.right - self.width
+    else:
+      name, value = 'alignum', alignum.horizontal
+      raise TypeException(name, value, Alignum)
+    if alignum.vertical is V.TOP:
+      top = other.top
+    elif alignum.vertical is V.CENTER:
+      if TYPE_CHECKING:
+        assert isinstance(other.top, float)
+      top = other.top + (other.height - self.height) / 2
+    elif alignum.vertical is V.BOTTOM:
+      top = other.bottom - self.height
+    else:
+      name, value = 'alignum', alignum.vertical
+      raise TypeException(name, value, Alignum)
+    return cls(left, top, left + self.width, top + self.height)
+
+  @overload(Alignum, THIS)
+  def align(self, alignum: Alignum, other: Self) -> Self:
+    return self.align(other, alignum)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @overload(float, float, float, float)
+  @overload(int, int, int, int)
+  def __init__(self, *args) -> None:
+    """Initialize the rectangle with left, top, right, bottom edges."""
+    left, top, right, bottom = args
+    self.__left_edge__ = float(min(left, right))
+    self.__top_edge__ = float(min(top, bottom))
+    self.__right_edge__ = float(max(left, right))
+    self.__bottom_edge__ = float(max(top, bottom))
+
+  @overload(Point2D, Point2D)
+  def __init__(self, p: Point2D, q: Point2D) -> None:
+    self.__init__(p.x, p.y, q.x, q.y)
+
+  @overload(Point2D, Size)
+  def __init__(self, p: Point2D, size: Size) -> None:
+    left = int(p.x)
+    top = int(p.y)
+    right = int(left + size.width)
+    bottom = int(top + size.height)
+    self.__init__(left, top, right, bottom)
+
+  @overload(Size, Point2D)
+  def __init__(self, size: Size, p: Point2D) -> None:
+    """Initialize the rectangle with a size and a point."""
+    self.__init__(p, size)
+
+  @overload(Size)
+  def __init__(self, size: Size) -> None:
+    """Initialize the rectangle with a size."""
+    self.__init__(0, 0, size.width, size.height)
+
+  @overload(QSize)
+  @overload(QSizeF)
+  def __init__(self, size: Union[QSize, QSizeF]) -> None:
+    self.__init__(0, 0, int(size.width()), int(size.height()))
+
+  @overload(QPointF, QPointF)
+  @overload(QPoint, QPoint)
+  def __init__(self, p: QPoint, q: QPoint) -> None:
+    self.__init__(Point2D(p), Point2D(q), )
+
+  @overload(QPoint, QSize)
+  @overload(QPointF, QSize)
+  @overload(QPoint, QSizeF)
+  @overload(QPointF, QSizeF)
+  def __init__(self, p: QPoint, size: QSize) -> None:
+    self.__init__(Point2D(p), Size(size))
+
+  @overload(QSize, QPoint)
+  @overload(QSize, QPointF)
+  @overload(QSizeF, QPoint)
+  @overload(QSizeF, QPointF)
+  def __init__(self, size: QSize, p: QPoint) -> None:
+    """Initialize the rectangle with a size and a point."""
+    self.__init__(p, size)
+
+  @overload(QRect, )
+  @overload(QRectF, )
+  def __init__(self, rect: Union[QRect, QRectF]) -> None:
+    """Initialize the rectangle from a QRect or QRectF."""
+    self.__init__(rect.left(), rect.top(), rect.right(), rect.bottom())
+
+  @overload(Point2D)
+  def __init__(self, point: Point2D) -> None:
+    """Creates a rectangle with no width or height at the given point. """
+    self.__init__(point.x, point.y, point.x, point.y)
+
+  @overload(QPoint)
+  @overload(QPointF)
+  def __init__(self, point: Union[QPoint, QPointF]) -> None:
+    self.__init__(Point2D(point))
+
+  @overload()
+  def __init__(self, ) -> None:
+    pass  # Using fallback values

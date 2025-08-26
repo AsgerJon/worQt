@@ -25,20 +25,16 @@ steps listed above.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, Signal, QObject, QEvent
 from PySide6.QtWidgets import QApplication, QMainWindow
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 
 from worQt.desQt import Etc, Resources, Sounds
 
-try:
-  from typing import TYPE_CHECKING
-except ImportError:
-  try:
-    from typing_extensions import TYPE_CHECKING
-  except ImportError:
-    TYPE_CHECKING = False
+from typing import TYPE_CHECKING
+
+from worQt.waitaminute import AbstractException
 
 if TYPE_CHECKING:
   from typing import Self, Any, Type, TypeAlias
@@ -125,13 +121,11 @@ class AbstractApplication(QApplication):
     This method is not generally required.
     """
 
-  def exec(self) -> Any:  # int, but 'finally' confuses pycharm lmao
-    """Executes the application. """
-    try:
-      QTimer.singleShot(0, self.onStartUp, )
-      return super().exec()
-    finally:
-      pass
+  def panic(self, exception: Exception) -> None:
+    """
+    Subclasses must implement this abstract method to specify how it
+    should handle custom exceptions from the 'worQt.waitaminute' module.
+    """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -161,3 +155,25 @@ class AbstractApplication(QApplication):
 
   def __init__(self, *args, **kwargs) -> None:
     super().__init__([*args, ])
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def exec(self) -> Any:  # int, but 'finally' confuses pycharm lmao
+    """Executes the application. """
+    try:
+      QTimer.singleShot(0, self.onStartUp, )
+      return super().exec()
+    finally:
+      self.onExit()
+
+  def notify(self, receiver: QObject, event: QEvent) -> bool:
+    """Notify the receiver of the event. """
+    try:
+      out = QApplication.notify(self, receiver, event)
+    except AbstractException as exception:
+      self.panic(exception)
+      raise exception
+    else:
+      return out

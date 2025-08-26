@@ -3,15 +3,14 @@
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QPoint, QPointF
-from worktoy.desc import AttriBox, Field
+from PySide6.QtGui import QPointerEvent, QEventPoint, QMouseEvent
+from worktoy.desc import Field
 from worktoy.mcls import BaseObject
 from worktoy.dispatch import overload
 from worktoy.core.sentinels import THIS
-
-from typing import TYPE_CHECKING, Iterator
-
-from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException, VariableNotNone
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -139,11 +138,29 @@ class Point2D(BaseObject):
     self.x = z.real
     self.y = z.imag
 
+  @overload(QMouseEvent)
+  @overload(QPointerEvent)
+  def __init__(self, pointerEvent: QPointerEvent) -> None:
+    """
+    Extracts the first 'QEventPoint' from a 'QPointerEvent'. If no points
+    are available, it falls back to the empty overload, otherwise calls
+    the 'QEventPoint' overload.
+    """
+    eventPoints = QPointerEvent.points(pointerEvent)
+    if not eventPoints:
+      self.__init__()  # Falls back to default initialization
+    else:
+      self.__init__(eventPoints[0], )  # Invokes the QEventPoint overload
+
+  @overload(QEventPoint)
+  def __init__(self, eventPoint: QEventPoint) -> None:
+    """Invokes the 'QPointF' overload from the QEventPoint."""
+    self.__init__(QEventPoint.position(eventPoint), )
+
   @overload(QPoint)
   def __init__(self, point: QPoint) -> None:
-    """Initialize a Point from a QPoint."""
-    self.x = point.x()
-    self.y = point.y()
+    """Invokes the 'QPointF' overload from the QPoint."""
+    self.__init__(QPoint.toPointF(point, ))
 
   @overload(QPointF)
   def __init__(self, point: QPointF) -> None:

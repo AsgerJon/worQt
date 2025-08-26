@@ -3,15 +3,17 @@
 #  Copyright (c) 2023-2025 Asger Jon Vistisen
 from __future__ import annotations
 
-import configparser
-import enum
 import os
 import sys
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import Qt
+from worktoy.desc import AttriBox
+from worktoy.dispatch import overload
+from worktoy.mcls import BaseObject
 
 from worQt.app import Main
-from worQt.desQt import Settings
+from worQt.geometry import Rect
+from worQt.nums import MouseButtonNum
 from worQt.windows import MainWindow
 from yolo import yolo, runTests
 
@@ -36,38 +38,72 @@ def tester01() -> int:
 
 
 def tester02() -> int:
-  """Testing enum.IntEnum"""
+  """Testing MouseButtonNum"""
+  for item in MouseButtonNum:
+    print(item, 'truthy: %s' % 'True' if item else 'False')
+  print("""MouseButtonNum(Qt.MouseButton.LeftButton)""", end=' ')
+  print(MouseButtonNum(Qt.MouseButton.LeftButton))
 
-  for key, value in enum.IntEnum.__dict__.items():
-    print(key, type(value))
-  for key, value in enum.Enum.__dict__.items():
-    print(key, type(value))
+  infoSpec = """Qt.MouseButton.NoButton truthy: %s"""
+  flag = 'True' if Qt.MouseButton.NoButton else 'False'
+  info = infoSpec % flag
+  print(info)
+
   return 0
 
 
 def tester03() -> int:
-  """Testing configparser"""
+  """Testing error message when __slots__ class tries to set dynamically"""
 
   class Foo:
-    bar = Settings('example')
+    __slots__ = ('bar',)
 
-  for item in Foo().bar:
-    print(item)
-  infoSpec = """%40s : %37s"""
-  keyHeader = str.rjust('Key', 40)
-  valueHeader = str.ljust('Value', 37)
-  info = infoSpec % (keyHeader, valueHeader)
-  print('-' * len(info))
-  print(info)
-  for key, value in Foo().bar.items():
-    keyStr = str.rjust('%s <%s>' % (key, type(value).__name__), 40)
-    valueStr = str(value)
-    if len(valueStr) > 37:
-      valueStr = '%s...' % valueStr[:34]
-    valueStr = str.ljust(valueStr, 37)
-    info = infoSpec % (keyStr, valueStr)
+  foo = Foo()
+
+  try:
+    setattr(foo, 'breh', 69)
+  except Exception as exception:
+    infoSpec = """Caught %s: %s"""
+    excType = type(exception).__name__
+    info = infoSpec % (excType, str(exception))
     print(info)
-  print('-' * len(info))
+    return 0
+  else:
+    print("""Expected an exception lmao""")
+    return 1
+
+
+def tester04() -> int:
+  """Testing error when calling overloaded method with arguments of
+  unsupported type signature. """
+
+  class Foo(BaseObject):
+    """Class with overloaded method."""
+
+    x = AttriBox[int]()
+    y = AttriBox[int]()
+
+    @overload(int, int)
+    def __init__(self, x: int, y: int) -> None:
+      """Constructor with two integers."""
+      self.x = x
+      self.y = y
+
+    @overload(str, str)
+    def __init__(self, x: str, y: str) -> None:
+      self.__init__(int(x), int(y))
+
+  try:
+    foo = Foo()
+  except Exception as exception:
+    infoSpec = """Caught %s: %s"""
+    excType = type(exception).__name__
+    info = infoSpec % (excType, str(exception))
+    print(info)
+    return 0
+  else:
+    print("""Expected an exception lmao""")
+    return 1
 
   return 0
 

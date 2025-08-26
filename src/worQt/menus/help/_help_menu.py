@@ -29,6 +29,8 @@ class HelpMenu(AbstractMenu):
   about = ActionBox[AboutAction](THIS)
   aboutQt = ActionBox[AboutQtAction](THIS)
   debug = ActionBox[DebugAction](THIS)
+  debugLeft = ActionBox[DebugAction](THIS)
+  debugRight = ActionBox[DebugAction](THIS)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -51,6 +53,8 @@ class HelpMenu(AbstractMenu):
     self.addAction(self.aboutQt, )
     self.addSeparator()
     self.addAction(self.debug, )
+    self.addAction(self.debugLeft, )
+    self.addAction(self.debugRight, )
 
   def initLogic(self) -> None:
     pass

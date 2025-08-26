@@ -72,6 +72,7 @@ from __future__ import annotations
 from . import core
 from . import desQt
 from . import nums
+from . import events
 from . import app
 from . import menus
 from . import widgets
