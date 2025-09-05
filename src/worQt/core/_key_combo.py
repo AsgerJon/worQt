@@ -1,36 +1,29 @@
 """
-Wraps action descriptors in the descriptor protocol.
+KeyCombo encapsulates a combination of a single keyboard key and any
+combination of modifier keys.
 """
 #  AGPL-3.0 license
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QWidget
-from icecream import ic
-from worktoy.desc import AttriBox, Field
+from PySide6.QtCore import QKeyCombination
+from PySide6.QtGui import QKeySequence
+from worktoy.desc import Field
 from worktoy.mcls import BaseObject
-from worktoy.utilities import maybe
-from worktoy.waitaminute import MissingVariable, SubclassException, \
-  TypeException
+from worktoy.waitaminute import MissingVariable, TypeException
+
+from worQt.nums import KeyMod, KeyNum
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self, Type, TypeAlias, Any, Optional
-
-  from . import AbstractMenu
-
-  MenuType: TypeAlias = Type[AbstractMenu]
-  MenuClass: TypeAlias = Optional[QWidget]
-
-ic.configureOutput(includeContext=True, )
+  from typing import Self, Any, Type, TypeAlias
 
 
-class ActionBox:
+class KeyCombo(BaseObject):
   """
-  Wraps action descriptors in the descriptor protocol.
+  KeyCombo encapsulates a combination of a single keyboard key and any
+  combination of modifier keys.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -40,69 +33,52 @@ class ActionBox:
   #  Class Variables
 
   #  Fallback Variables
+  __fallback_modifier__ = KeyMod.NULL
 
   #  Private Variables
-  __action_class__ = None
-  __pos_args__ = None
-  __key_args__ = None
-  __field_owner__ = None
-  __field_name__ = None
+  __primary_key__ = None
+  __modifier_mask__ = None
 
   #  Public Variables
-  actionClass = Field()
-  posArgs = Field()
-  keyArgs = Field()
-  fieldName = Field()
-  fieldOwner = Field()
+  primaryKey = Field()
+  modifiers = Field()
 
   #  Virtual Variables
-  pvtName = Field()
+  QC = Field()  # QKeyCombination
+  QS = Field()  # QKeySequence
+  Q = Field()  # Returns the QKeySequence object
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @actionClass.GET
-  def _getActionClass(self) -> Type[QAction]:
-    if self.__action_class__ is None:
-      raise MissingVariable(self, '__action_class__', type)
-    if issubclass(self.__action_class__, QAction):
-      return self.__action_class__
-    name, value = '__action_class__', self.__action_class__
-    raise SubclassException(value, QAction)
+  @primaryKey.GET
+  def _getPrimaryKey(self) -> KeyNum:
+    if self.__primary_key__ is None:
+      raise MissingVariable(self, '__primary_key__', KeyNum)
+    if isinstance(self.__primary_key__, KeyNum):
+      return self.__primary_key__
+    raise TypeException('__primary_key__', self.__primary_key__, KeyNum)
 
-  @posArgs.GET
-  def _getPosArgs(self) -> tuple[Any, ...]:
-    return maybe(self.__pos_args__, ())
+  @modifiers.GET
+  def _getModifiers(self, **kwargs) -> KeyMod:
+    if self.__modifier_mask__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.__modifier_mask__ = self.__fallback_modifier__
+      return self._getModifiers(_recursion=True, )
+    if isinstance(self.__modifier_mask__, KeyMod):
+      return self.__modifier_mask__
+    raise TypeException('__modifier_mask__', self.__modifier_mask__, KeyMod)
 
-  @keyArgs.GET
-  def _getKeyArgs(self) -> dict[str, Any]:
-    return maybe(self.__key_args__, dict())
+  @QC.GET
+  def _getQC(self, ) -> QKeyCombination:
+    raise NotImplementedError
 
-  @fieldName.GET
-  def _getFieldName(self) -> str:
-    if self.__field_name__ is None:
-      raise MissingVariable(self, '__field_name__', str)
-    if isinstance(self.__field_name__, str):
-      return self.__field_name__
-    raise TypeException('__field_name__', self.__field_name__, str)
-
-  @fieldOwner.GET
-  def _getFieldOwner(self) -> MenuType:
-    if self.__field_owner__ is None:
-      raise MissingVariable(self, '__field_owner__', type)
-    if isinstance(self.__field_owner__, type):
-      if TYPE_CHECKING:  # pragma: no cover
-        from . import AbstractMenu
-        assert issubclass(self.__field_owner__, AbstractMenu)
-      return self.__field_owner__
-    name, value = '__field_owner__', self.__field_owner__
-    raise TypeException(name, value, type)
-
-  @pvtName.GET
-  def _getPrivateName(self) -> str:
-    pattern = re.compile(r'(?<!^)(?=[A-Z])')
-    return '__%s__' % pattern.sub('_', self.__field_name__).lower()
+  @Q.GET
+  @QS.GET
+  def _getQS(self, ) -> QKeySequence:
+    raise NotImplementedError
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -115,10 +91,6 @@ class ActionBox:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def __get__(self, menu: MenuClass, owner: MenuType) -> Any:
-    if menu is None:
-      return self
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

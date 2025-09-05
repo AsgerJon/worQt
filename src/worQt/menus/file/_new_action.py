@@ -19,8 +19,5 @@ class NewAction(AbstractAction):
   NewAction provides the 'New' action commonly found in 'File' menu.
   """
 
-  def __init__(self, *args, **kwargs) -> None:
-    super().__init__(*args, **kwargs)
-    self.setText('New')
-    self.setIcon('document-new')
-    self.setShortcut(KeyNum.KEY_N, KeyMod.CTRL)
+  def __init__(self, ) -> None:
+    self.__init__('New', 'document-new')

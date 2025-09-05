@@ -6,10 +6,10 @@ and enumerates various keyboard modifiers.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from worktoy.keenum import Kee, KeeFlags
-
 from typing import TYPE_CHECKING
+
+from PySide6.QtCore import Qt
+from worktoy.keenum import KeeFlags, KeeFlag
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Self
@@ -25,20 +25,34 @@ class KeyMod(KeeFlags):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Flags
-  ALT = Kee[Qt.KeyboardModifier](Qt.KeyboardModifier.AltModifier)
-  CTRL = Kee[Qt.KeyboardModifier](Qt.KeyboardModifier.ControlModifier)
-  META = Kee[Qt.KeyboardModifier](Qt.KeyboardModifier.MetaModifier)
-  SHIFT = Kee[Qt.KeyboardModifier](Qt.KeyboardModifier.ShiftModifier)
+  ALT = KeeFlag(Qt.KeyboardModifier.AltModifier)
+  CTRL = KeeFlag(Qt.KeyboardModifier.ControlModifier)
+  META = KeeFlag(Qt.KeyboardModifier.MetaModifier)
+  SHIFT = KeeFlag(Qt.KeyboardModifier.ShiftModifier)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @classmethod
   def fromQ(cls, mod: Qt.KeyboardModifier) -> Self:
-    val = 0
+    index = 0
     if mod & Qt.KeyboardModifier.AltModifier:
-      val |= cls.ALT
+      index += 2 ** cls.ALT.index
     if mod & Qt.KeyboardModifier.ControlModifier:
-      val |= cls.CTRL
+      index += 2 ** cls.CTRL.index
     if mod & Qt.KeyboardModifier.MetaModifier:
-      val |= cls.META
+      index += 2 ** cls.META.index
     if mod & Qt.KeyboardModifier.ShiftModifier:
-      val |= cls.SHIFT
-    return val
+      index += 2 ** cls.SHIFT.index
+    return cls(index)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _getValue(self, ) -> Qt.KeyboardModifier:
+    out = Qt.KeyboardModifier.NoModifier
+    for high in self.highs:
+      out |= high.args[0]
+    return out

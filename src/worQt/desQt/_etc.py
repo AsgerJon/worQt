@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from worktoy.core import Object
 from worktoy.work_io import validateExistingDirectory
 
 if TYPE_CHECKING:  # pragma: no cover

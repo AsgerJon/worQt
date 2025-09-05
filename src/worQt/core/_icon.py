@@ -1,36 +1,26 @@
 """
-Wraps action descriptors in the descriptor protocol.
+Icon encapsulates icons as descriptors in the worQt framework.
 """
 #  AGPL-3.0 license
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QWidget
-from icecream import ic
-from worktoy.desc import AttriBox, Field
+from PySide6.QtGui import QIcon
+from worktoy.core.sentinels import THIS
+from worktoy.desc import Field
+from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
-from worktoy.utilities import maybe
-from worktoy.waitaminute import MissingVariable, SubclassException, \
-  TypeException
+from worktoy.waitaminute import MissingVariable, TypeException
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self, Type, TypeAlias, Any, Optional
-
-  from . import AbstractMenu
-
-  MenuType: TypeAlias = Type[AbstractMenu]
-  MenuClass: TypeAlias = Optional[QWidget]
-
-ic.configureOutput(includeContext=True, )
+  from typing import Any, Type, TypeAlias, Self
 
 
-class ActionBox:
+class Icon(BaseObject):
   """
-  Wraps action descriptors in the descriptor protocol.
+  Icon encapsulates icons as descriptors in the worQt framework.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -42,67 +32,42 @@ class ActionBox:
   #  Fallback Variables
 
   #  Private Variables
-  __action_class__ = None
-  __pos_args__ = None
-  __key_args__ = None
-  __field_owner__ = None
-  __field_name__ = None
+  __q_icon__ = None
+  __icon_name__ = None
 
   #  Public Variables
-  actionClass = Field()
-  posArgs = Field()
-  keyArgs = Field()
-  fieldName = Field()
-  fieldOwner = Field()
+  Q = Field()
 
   #  Virtual Variables
-  pvtName = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @actionClass.GET
-  def _getActionClass(self) -> Type[QAction]:
-    if self.__action_class__ is None:
-      raise MissingVariable(self, '__action_class__', type)
-    if issubclass(self.__action_class__, QAction):
-      return self.__action_class__
-    name, value = '__action_class__', self.__action_class__
-    raise SubclassException(value, QAction)
+  def _createQIcon(self, ) -> None:
+    """
+    Creator-function for the QIcon object.
+    """
+    if self.__icon_name__ is None:
+      raise MissingVariable(self, '__icon_name__', str)
+    if isinstance(self.__icon_name__, str):
+      self.__q_icon__ = QIcon.fromTheme(self.__icon_name__)
+    else:
+      raise TypeException('__icon_name__', self.__icon_name__, str)
 
-  @posArgs.GET
-  def _getPosArgs(self) -> tuple[Any, ...]:
-    return maybe(self.__pos_args__, ())
-
-  @keyArgs.GET
-  def _getKeyArgs(self) -> dict[str, Any]:
-    return maybe(self.__key_args__, dict())
-
-  @fieldName.GET
-  def _getFieldName(self) -> str:
-    if self.__field_name__ is None:
-      raise MissingVariable(self, '__field_name__', str)
-    if isinstance(self.__field_name__, str):
-      return self.__field_name__
-    raise TypeException('__field_name__', self.__field_name__, str)
-
-  @fieldOwner.GET
-  def _getFieldOwner(self) -> MenuType:
-    if self.__field_owner__ is None:
-      raise MissingVariable(self, '__field_owner__', type)
-    if isinstance(self.__field_owner__, type):
-      if TYPE_CHECKING:  # pragma: no cover
-        from . import AbstractMenu
-        assert issubclass(self.__field_owner__, AbstractMenu)
-      return self.__field_owner__
-    name, value = '__field_owner__', self.__field_owner__
-    raise TypeException(name, value, type)
-
-  @pvtName.GET
-  def _getPrivateName(self) -> str:
-    pattern = re.compile(r'(?<!^)(?=[A-Z])')
-    return '__%s__' % pattern.sub('_', self.__field_name__).lower()
+  @Q.GET
+  def _getQIcon(self, **kwargs) -> QIcon:
+    """
+    Getter-function for the QIcon object.
+    """
+    if self.__q_icon__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self._createQIcon()
+      return self._getQIcon(_recursion=True, )
+    if isinstance(self.__q_icon__, QIcon):
+      return self.__q_icon__
+    raise TypeException('__q_icon__', self.__q_icon__, QIcon)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -116,13 +81,22 @@ class ActionBox:
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __get__(self, menu: MenuClass, owner: MenuType) -> Any:
-    if menu is None:
-      return self
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @overload(str)
+  def __init__(self, iconName: str) -> None:
+    self.__icon_name__ = iconName
+
+  @overload(QIcon)
+  def __init__(self, qIcon: QIcon) -> None:
+    self.__q_icon__ = qIcon
+
+  @overload(THIS)
+  def __init__(self, icon: Self) -> None:
+    self.__icon_name__ = icon.__icon_name__
+    self.__q_icon__ = icon.__q_icon__
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

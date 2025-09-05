@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QWidget
-from icecream import ic
 from worktoy.desc import Field
 from worktoy.waitaminute import MissingVariable, TypeException
 from worktoy.waitaminute import VariableNotNone
@@ -18,8 +17,6 @@ if TYPE_CHECKING:  # pragma: no cover
   from typing import Any, Type, TypeAlias, Callable
 
   Widget: TypeAlias = Type[QWidget]
-
-ic.configureOutput(includeContext=True, )
 
 
 class StateFlag:

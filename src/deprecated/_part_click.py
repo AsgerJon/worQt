@@ -12,8 +12,8 @@ from PySide6.QtGui import QMouseEvent
 from worktoy.desc import Field
 from worktoy.mcls import BaseObject
 
-from worQt.geometry import Point2D
-from worQt.nums import MouseButtonNum, KeyMod
+from ..geometry import Point2D
+from . import MouseButtonNum, KeyMod
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any, Optional, Union
