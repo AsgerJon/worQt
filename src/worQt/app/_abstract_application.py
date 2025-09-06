@@ -30,11 +30,9 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 
-from worQt.desQt import Etc, Resources, Sounds
+from worQt.desQt import Etc
 
 from typing import TYPE_CHECKING
-
-from worQt.waitaminute import AbstractException
 
 if TYPE_CHECKING:
   from typing import Self, Any, Type, TypeAlias
@@ -61,8 +59,6 @@ class AbstractApplication(QApplication):
 
   #  Public Variables
   etc = Etc()
-  resources = Resources()
-  sounds = Sounds()
   returnCode = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -121,12 +117,6 @@ class AbstractApplication(QApplication):
     This method is not generally required.
     """
 
-  def panic(self, exception: Exception) -> None:
-    """
-    Subclasses must implement this abstract method to specify how it
-    should handle custom exceptions from the 'worQt.waitaminute' module.
-    """
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -167,13 +157,3 @@ class AbstractApplication(QApplication):
       return super().exec()
     finally:
       self.onExit()
-
-  def notify(self, receiver: QObject, event: QEvent) -> bool:
-    """Notify the receiver of the event. """
-    try:
-      out = QApplication.notify(self, receiver, event)
-    except AbstractException as exception:
-      self.panic(exception)
-      raise exception
-    else:
-      return out

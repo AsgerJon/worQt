@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QMainWindow
 
 from ..desQt import App
-from ..core import Parent
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
@@ -30,4 +29,3 @@ class AbstractWindow(QMainWindow):
 
   #  Public Variables
   app = App()
-  parent = Parent()

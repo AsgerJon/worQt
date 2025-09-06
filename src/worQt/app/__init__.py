@@ -4,12 +4,10 @@ QApplication. """
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._play_sound import PlaySound
 from ._abstract_application import AbstractApplication
 from ._main import Main
 
 __all__ = [
-    'PlaySound',
     'AbstractApplication',
     'Main'
 ]

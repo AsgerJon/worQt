@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
-from ..menus import MainMenuBar, MainStatusBar
 from . import AbstractWindow
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -25,8 +24,6 @@ class BaseWindow(AbstractWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  menus = AttriBox[MainMenuBar](THIS)
-  status = AttriBox[MainStatusBar](THIS)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -37,10 +34,6 @@ class BaseWindow(AbstractWindow):
     Initialize the user interface of the window.
     This method sets up the main menu bar and status bar for the window.
     """
-    self.menus.initUi()
-    self.setMenuBar(self.menus)
-    self.status.initUi()
-    self.setStatusBar(self.status)
 
   def initLogic(self) -> None:
     """
@@ -48,9 +41,6 @@ class BaseWindow(AbstractWindow):
     This method is called after the user interface is set up.
     It can be used to connect signals and slots or perform other logic.
     """
-    self.menus.initLogic()
-    self.menus.exit.connect(self.close)
-    self.status.initLogic()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

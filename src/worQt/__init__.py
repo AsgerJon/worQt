@@ -81,7 +81,6 @@ from . import desQt
 from ._abstract_base import AbstractBase
 from . import nums
 from . import core
-from . import events
 from . import app
 from . import menus
 from . import widgets
@@ -94,7 +93,6 @@ __all__ = [
     'core',
     'desQt',
     'nums',
-    'events',
     'app',
     'menus',
     'widgets',

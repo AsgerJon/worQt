@@ -3,15 +3,14 @@
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtGui import QKeySequence
+from typing import TYPE_CHECKING
+
 from PySide6.QtWidgets import QMainWindow
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException
 
 from . import AbstractApplication
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Self, Type, TypeAlias, Any

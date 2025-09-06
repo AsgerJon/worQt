@@ -7,16 +7,15 @@ and expects to be subclassed by the main window.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QGridLayout, QWidget
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import QGridLayout, QWidget, QLabel
 
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
-from moreworktoy.desc import BetterBox
 from . import BaseWindow
 from ..core import Font
-from ..widgets import Layout, LabelWidget, DebugWidget, AbstractButton
+from ..widgets import VSpacer, HSpacer, TensorWidget
 
 
 class LayoutWindow(BaseWindow):
@@ -31,15 +30,14 @@ class LayoutWindow(BaseWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
-  baseLayout = AttriBox[Layout]()
   baseWidget = AttriBox[QWidget](THIS)
-  welcome = AttriBox[LabelWidget](THIS, 'Trololololo!', Font(24))
-  debug = AttriBox[DebugWidget](THIS, Font(12), )
-  button = BetterBox[AbstractButton](THIS, 'Click Me!', )
-  topLeft = AttriBox[LabelWidget](THIS, 'Top Left', Font(16))
-  topRight = AttriBox[LabelWidget](THIS, 'Top Right', Font(16))
-  bottomRight = AttriBox[LabelWidget](THIS, 'Bottom Right', Font(16))
-  bottomLeft = AttriBox[LabelWidget](THIS, 'Bottom Left', Font(16))
+  baseLayout = AttriBox[QGridLayout]()
+  welcomeLabel = AttriBox[QLabel]('Welcome to worQt!', THIS)
+  image = AttriBox[TensorWidget](THIS, 320, 240)
+  topSpacer = AttriBox[VSpacer](THIS, 32)
+  bottomSpacer = AttriBox[VSpacer](THIS, 32)
+  leftSpacer = AttriBox[HSpacer](THIS, 32)
+  rightSpacer = AttriBox[HSpacer](THIS, 32)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -72,12 +70,15 @@ class LayoutWindow(BaseWindow):
     """
     super().initUi()
     self.baseWidget.setLayout(self.baseLayout)
-    self.baseLayout.addWidget(self.topLeft, 0, 0, 1, 1)
-    self.baseLayout.addWidget(self.welcome, 1, 1, 1, 1)
-    self.baseLayout.addWidget(self.topRight, 0, 2, 1, 1)
-    self.baseLayout.addWidget(self.bottomRight, 2, 2, 1, 1)
-    self.baseLayout.addWidget(self.bottomLeft, 2, 0, 1, 1)
-    self.baseLayout.addWidget(self.button, 1, 0, 1, 1)
+    self.baseLayout.addWidget(self.topSpacer, 0, 1)
+    self.baseLayout.addWidget(self.bottomSpacer, 3, 1)
+    self.baseLayout.addWidget(self.leftSpacer, 1, 0, 2, 1)
+    self.baseLayout.addWidget(self.rightSpacer, 1, 2, 2, 1)
+    self.baseLayout.addWidget(self.welcomeLabel, 1, 1)
+    self.baseLayout.addWidget(self.image, 2, 1)
+    self.welcomeLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    self.welcomeLabel.setFrameShape(QLabel.Shape.Panel)
+    self.welcomeLabel.setFrameShadow(QLabel.Shadow.Raised)
     self.setCentralWidget(self.baseWidget)
     self.setMinimumSize(QSize(800, 600))
 
