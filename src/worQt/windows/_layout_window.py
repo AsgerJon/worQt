@@ -7,15 +7,18 @@ and expects to be subclassed by the main window.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QGridLayout, QWidget, QLabel
+from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QSize
+from PySide6.QtWidgets import QGridLayout, QWidget
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
 from . import BaseWindow
-from ..core import Font
-from ..widgets import VSpacer, HSpacer, TensorWidget
+from ..widgets import VSpacer, HSpacer, LabelWidget
+
+if TYPE_CHECKING:  # pragma: no cover
+  pass
 
 
 class LayoutWindow(BaseWindow):
@@ -32,8 +35,7 @@ class LayoutWindow(BaseWindow):
   #  Public Variables
   baseWidget = AttriBox[QWidget](THIS)
   baseLayout = AttriBox[QGridLayout]()
-  welcomeLabel = AttriBox[QLabel]('Welcome to worQt!', THIS)
-  image = AttriBox[TensorWidget](THIS, 320, 240)
+  welcomeLabel = AttriBox[LabelWidget]('Welcome to worQt!', THIS)
   topSpacer = AttriBox[VSpacer](THIS, 32)
   bottomSpacer = AttriBox[VSpacer](THIS, 32)
   leftSpacer = AttriBox[HSpacer](THIS, 32)
@@ -75,12 +77,8 @@ class LayoutWindow(BaseWindow):
     self.baseLayout.addWidget(self.leftSpacer, 1, 0, 2, 1)
     self.baseLayout.addWidget(self.rightSpacer, 1, 2, 2, 1)
     self.baseLayout.addWidget(self.welcomeLabel, 1, 1)
-    self.baseLayout.addWidget(self.image, 2, 1)
-    self.welcomeLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    self.welcomeLabel.setFrameShape(QLabel.Shape.Panel)
-    self.welcomeLabel.setFrameShadow(QLabel.Shadow.Raised)
     self.setCentralWidget(self.baseWidget)
-    self.setMinimumSize(QSize(800, 600))
+    self.setMinimumSize(QSize(1080, 720 + 64))
 
   def initLogic(self) -> None:
     """
@@ -88,7 +86,3 @@ class LayoutWindow(BaseWindow):
     This method can be overridden by subclasses to add specific logic.
     """
     super().initLogic()
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

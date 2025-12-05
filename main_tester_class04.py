@@ -5,23 +5,32 @@ Testing __init__ in multiple inheritance scenario.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
+from worktoy.utilities import textFmt
 
-class A:
-  def __init__(self, *args, **kwargs) -> None:
-    print('A before super')
-    super().__init__(*args, **kwargs)
-    print('A.__init__ called')
+base = type('Base', (object,), dict())
 
+left = type('Left', (base,), dict())
+right = type('Right', (base,), dict())
 
-class B:
-  def __init__(self, *args, **kwargs) -> None:
-    print('B before super')
-    # super().__init__(*args, **kwargs)
-    print('B.__init__ called')
+leftRight = type('LeftRight', (left, right), dict())
+rightLeft = type('RightLeft', (right, left), dict())
 
+Sus = type('_place_holder__', (object,), dict())
 
-class C(A, B):
-  def __init__(self, *args, **kwargs) -> None:
-    print('C before super')
-    super().__init__(*args, **kwargs)
-    print('C.__init__ called')
+try:
+
+  class Sus(leftRight, rightLeft):
+    pass
+except Exception as exception:
+  infoSpec = """Caught '%s'!: '%s'"""
+  excType = type(exception).__name__
+  excMsg = str(exception)
+  info = textFmt(infoSpec % (excType, excMsg))
+  print(info)
+else:
+  infoSpec = """Successfully created class: '%s'!"""
+  className = Sus.__name__
+  info = textFmt(infoSpec % className)
+  print(info)
+finally:
+  print("""lol""")

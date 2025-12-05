@@ -76,6 +76,7 @@ except ImportError:  # pragma: no cover
 else:
   ic.configureOutput(includeContext=True)
 
+from ._free_desktop_icons import freedesktopIcons
 from ._qt_box import QtBox
 from . import desQt
 from ._abstract_base import AbstractBase

@@ -12,6 +12,8 @@ from ._font_family_num import FontFamilyNum
 from ._horizontal_alignum import HorizontalAlignum
 from ._vertical_alignum import VerticalAlignum
 from ._alignum import Alignum
+from ._size_num import SizeNum
+from ._size_policy import SizePolicy
 
 __all__ = [
     'resolveQtNum',
@@ -20,4 +22,6 @@ __all__ = [
     'HorizontalAlignum',
     'VerticalAlignum',
     'Alignum',
+    'SizeNum',
+    'SizePolicy',
 ]

@@ -7,10 +7,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QCoreApplication
+from PySide6.QtGui import QIcon, QKeySequence
+from PySide6.QtWidgets import QApplication
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
 from . import AbstractWindow
+from ..menus import MainMenuBar
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
@@ -24,6 +28,18 @@ class BaseWindow(AbstractWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Public Variables
+  mainMenuBar = AttriBox[MainMenuBar](THIS)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def __init__(self, *args, **kwargs) -> None:
+    AbstractWindow.__init__(self, *args, **kwargs)
+    self.setMenuBar(self.mainMenuBar)
+    self.mainMenuBar.help.aboutQtAction.triggered.connect(
+        QApplication.aboutQt
+    )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -52,5 +68,5 @@ class BaseWindow(AbstractWindow):
     correctly with the main menu bar and status bar.
     """
     self.initUi()
-    self.initLogic()
     AbstractWindow.show(self)
+    self.initLogic()

@@ -6,12 +6,9 @@ business logic of the application.
 #  Copyright (c) 2025 Asger Jon Vistisen
 from __future__ import annotations
 
-from PySide6.QtCore import Slot
-
-from worQt.nums import Alignum
-from worQt.windows import LayoutWindow
-
 from typing import TYPE_CHECKING
+
+from . import LayoutWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   pass

@@ -24,6 +24,7 @@ class Alignum(KeeNum):
   #  Public Variables
   horizontal = Field()
   vertical = Field()
+  Q = Field()
 
   #  Enumerations
 
@@ -60,3 +61,8 @@ class Alignum(KeeNum):
     if 'BOTTOM' in self.name:
       return V.BOTTOM
     return V.CENTER
+
+  @Q.GET
+  def _getQ(self) -> Q:
+    """Get the Qt.AlignmentFlag value."""
+    return self.value

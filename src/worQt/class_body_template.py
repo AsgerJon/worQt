@@ -96,4 +96,4 @@ ClassBodyTemplate = """
     Implement a namespace hooks that recognizes when a decorator is
     getting called and then to allow the hook to handle the control flow
     of applying the decorator!
-"""
+  """
