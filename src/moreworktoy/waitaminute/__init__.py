@@ -1,7 +1,13 @@
-"""The 'moreworktoy.waitaminute' module provides custom exceptions that
-are yet to be added to the 'worktoy' library."""
+"""
+The 'moreworktoy.waitaminute' module provides ad hoc developed extensions
+to the 'worktoy' package.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._write_once_error import WriteOnceError
+from ._missing_implementation import MissingImplementation
+
+__all__ = (
+  'MissingImplementation',
+  )

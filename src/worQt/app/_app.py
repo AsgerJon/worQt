@@ -1,177 +1,166 @@
-"""App class provides the base application class. """
+"""
+App provides a basic application inheriting from AbstractApplication.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from warnings import warn
+import os
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QThread, QCoreApplication
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QWidget, QMainWindow
-from worktoy.attr import Field
-from worktoy.parse import maybe
-from worktoy.text import typeMsg
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtWidgets import QMainWindow
+from worktoy.desc import Field
+from worktoy.dispatch import overload
+from worktoy.waitaminute import SubclassException, TypeException
+from worktoy.waitaminute.dispatch import DispatchException
 
-try:
-  from typing import TYPE_CHECKING
-except ImportError:
-  try:
-    from typing import TYPE_CHECKING
-  except ImportError:
-    TYPE_CHECKING = False
+from . import AbstractApplication
 
-if TYPE_CHECKING:
-  from .. import Shiboken
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Type
 
 
-class _Deps:
-  """Private class listing objects for import. """
-  __imported_objects__ = [
-      QObject,
-      QCoreApplication,
-      QApplication,
-      QAction,
-      QWidget,
-      QMainWindow,
-      QThread,
-      maybe,
-      typeMsg,
-      Field,
-  ]
-
-
-class App(QApplication):
-  """The 'App' class is a subclass of QApplication that provides
-  additional functionality for creating and managing a Qt application.
+class App(AbstractApplication):
+  """
+  App provides a basic application inheriting from AbstractApplication.
   """
 
-  __main_fallback__ = QMainWindow
-  __main_cls__ = None
-  __main_window__ = None
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  __shutdown_level__ = None
-  __registered_threads__ = None
+  #  Class Variables
 
-  hasRegisteredThreads = Field()
-  hasRunningThreads = Field()
+  #  Fallback Variables
+  __fallback_window__ = QMainWindow
+  __fallback_name__ = '| worQt Application |'
+  __fallback_icon__ = 'breh.png'
 
-  @classmethod
-  def _getMainWindowClass(cls, **kwargs) -> Shiboken:
-    """Returns the main window class for the application."""
-    return maybe(cls.__main_cls__, cls.__main_fallback__)
+  #  Private Variables
+  __window_icon__ = None
+  __window_class__ = None
+  __window_instance__ = None
+  __app_name__ = None
 
-  def _createMainWindow(self, ) -> None:
-    """Creator function for the main window instance. """
-    if self.__main_window__ is not None:
-      e = """Main window instance already created!"""
-      raise RuntimeError(e)
-    cls = self._getMainWindowClass()
-    self.__main_window__ = cls()
+  #  Public Variables
+  windowClass = Field()
+  window = Field()
+  appIcon = Field()
+  appName = Field()
 
-  def _getMainWindow(self, **kwargs) -> QMainWindow:
-    """Returns the main window instance for the application."""
-    if self.__main_window__ is None:
+  #  Virtual Variables
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @windowClass.GET
+  def _getWindowClass(self, **kwargs) -> Type[QMainWindow]:
+    if self.__window_class__ is None:
       if kwargs.get('_recursion', False):
         raise RecursionError
-      self._createMainWindow()
-      return self._getMainWindow(_recursion=True)
-    if isinstance(self.__main_window__, QMainWindow):
-      return self.__main_window__
-    name, expType = '__main_window__', QMainWindow
-    raise TypeError(typeMsg(name, self.__main_window__, expType))
+      self.__window_class__ = self.__fallback_window__
+      return self._getWindowClass(_recursion=True)
+    return self.__window_class__
 
-  def _getShutdownLevel(self, ) -> int:
-    """Returns the shutdown level for the application."""
-    return maybe(self.__shutdown_level__, 0)
+  def _createWindow(self, ) -> None:
+    self.__window_instance__ = self.windowClass()
 
-  def _incrementShutdownLevel(self, ) -> None:
-    """Increments the shutdown level for the application."""
-    self.__shutdown_level__ = self._getShutdownLevel() + 1
+  @window.GET
+  def _getWindowInstance(self, **kwargs) -> QMainWindow:
+    if self.__window_instance__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self._createWindow()
+      return self._getWindowInstance(_recursion=True)
+    if isinstance(self.__window_instance__, self.windowClass):
+      return self.__window_instance__
+    raise TypeException('window', self.__window_instance__, self.windowClass)
 
-  @hasRegisteredThreads.GET
-  def hasRegisteredThreads(self, ) -> bool:
-    """Returns True if there are registered threads."""
-    return True if self._getRegisteredThreads() else False
+  @appIcon.GET
+  def _getAppIcon(self, **kwargs) -> QIcon:
+    if self.__window_icon__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      iconDir = os.path.join(self.etc, 'resources', 'icons')
+      iconFid = os.path.join(iconDir, self.__fallback_icon__)
+      pix = QPixmap(iconFid)
+      self.__window_icon__ = QIcon(pix)
+      return self._getAppIcon(_recursion=True)
+    if isinstance(self.__window_icon__, QIcon):
+      if QIcon.isNull(self.__window_icon__):
+        raise RuntimeError("The application icon is null!")
+      return self.__window_icon__
+    raise TypeException('appIcon', self.__window_icon__, QIcon)
 
-  @hasRunningThreads.GET
-  def hasRunningThreads(self, ) -> bool:
-    """Returns True if there are running threads."""
-    return True if self._getRunningThreads() else False
+  @appName.GET
+  def _getAppName(self, **kwargs) -> str:
+    if self.__app_name__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.__app_name__ = self.__fallback_name__
+      return self._getAppName(_recursion=True)
+    if isinstance(self.__app_name__, str):
+      return self.__app_name__
+    raise TypeException('appName', self.__app_name__, str)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @overload(str)
+  @appIcon.SET
+  def _setAppIcon(self, iconFid: str, ) -> None:
+    if os.path.isabs(iconFid):
+      if os.path.exists(iconFid):
+        if os.path.isfile(iconFid):
+          pix = QPixmap(iconFid)
+          self.__window_icon__ = QIcon(pix)
+          return self.setWindowIcon(self.appIcon)
+    dispatcher = getattr(type(self), '_setAppIcon')
+    args = ()
+    raise DispatchException(dispatcher, args)
+
+  @overload(QIcon)
+  @appIcon.SET
+  def _setAppIcon(self, icon: QIcon, ) -> None:
+    self.__window_icon__ = icon
+    self.setWindowIcon(self.appIcon)
+
+  @overload(QPixmap)
+  @appIcon.SET
+  def _setAppIcon(self, pixmap: QPixmap, ) -> None:
+    icon = QIcon(pixmap)
+    self.__window_icon__ = icon
+    self.setWindowIcon(self.appIcon)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, *args, **kwargs) -> None:
-    """Constructor for the App class."""
-    posArgs = []
-    allArgs = [*args, ]
-    while allArgs:
-      arg = allArgs.pop(0)
-      if isinstance(arg, type):
-        self.__main_cls__ = arg
-        posArgs = [*posArgs, *allArgs]
-        break
-      posArgs.append(arg)
-    else:
-      w = """No main window class provided, falling back at QMainWindow!"""
-      warn(w)
-    QApplication.__init__(self, *posArgs, **kwargs)
+    AbstractApplication.__init__(self, )
+    for arg in args:
+      if isinstance(arg, type) and self.__window_class__ is None:
+        if issubclass(arg, QMainWindow):
+          self.__window_class__ = arg
+          continue
+        raise SubclassException(arg, QMainWindow)
+      if isinstance(arg, str) and self.__app_name__ is None:
+        self.__app_name__ = arg
+    self.setApplicationName(self.__app_name__)
+    self.setWindowIcon(self.appIcon)
 
-  def _getRegisteredThreads(self, ) -> list[QThread]:
-    """Returns the list of registered threads."""
-    return maybe(self.__registered_threads__, [])
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _getRunningThreads(self, ) -> list[QThread]:
-    """Returns the list of running threads."""
-    out = []
-    for thread in self._getRegisteredThreads():
-      if thread.isRunning():
-        out.append(thread)
-    return out
-
-  def _registerThread(self, thread: QThread) -> None:
-    """Adds a thread to the list of running threads."""
-    existing = self._getRegisteredThreads()
-    self.__registered_threads__ = [*existing, thread, ]
-
-  def _requestStopThreads(self, ) -> None:
-    """This method requests all threads to stop. When this method is
-    called, threads are allowed to be running, but should stop upon
-    receiving notification. """
-    raise NotImplementedError
-
-  def _stopRunningThreads(self, ) -> None:
-    """Stops all running threads. Any thread running at this point will
-    result in a RuntimeError. """
-    raise NotImplementedError
-
-  def _killRunningThreads(self, ) -> None:
-    """Kills all running threads. All threads running at this point will
-    receive SIGKILL. If this method is called it indicates that a thread
-    is failing to respond to both normal and to stop requests. """
-    raise NotImplementedError
-
-  def quit(self, ) -> None:
-    """Overrides the quit method to stop all running threads."""
-    e = None
-    if self.hasRunningThreads:
-      level = self._getShutdownLevel()
-      try:
-        if not level:
-          self._requestStopThreads()
-        elif level == 1:
-          self._stopRunningThreads()
-        elif level == 2:
-          self._killRunningThreads()
-      except NotImplementedError as notImplementedError:
-        e = notImplementedError
-        return QCoreApplication.quit()
-      else:
-        self._incrementShutdownLevel()
-      finally:
-        if e is None:
-          self.quit()
-    else:
-      return QCoreApplication.quit()
-
-  def exec_(self, ) -> int:
-    """Overrides the exec_ method to start the application."""
-    self._getMainWindow().show()
-    return int(QCoreApplication.exec_(self))
+  def enterHook(self, *args, **kwargs) -> None:
+    """Updates the window icon. """
+    self.setWindowIcon(self.appIcon, )
+    self.setApplicationName(self.appName, )

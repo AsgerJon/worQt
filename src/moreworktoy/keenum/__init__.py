@@ -1,7 +1,13 @@
-"""The 'moreworktoy.keenum' module provides content for future inclusion
-in 'worktoy'."""
+"""
+The 'moreworktoy.keenum' package provides provisional expansions of
+'worktoy.keenum' encountered during the development of 'worQt'.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._auto import auto, NUM
+from ._kee import Kee
+
+__all__ = (
+  'Kee',
+  )

@@ -1,8 +1,19 @@
-"""The 'moreworktoy' module provides general tools not yet added to the
-'worktoy' library. """
+"""
+The 'moreworktoy' package provides general tools and utilities developed
+ad hoc in support of the 'worQt' framework, but which belongs in
+'worktoy'. Contents of this package may eventually be implemented in
+'worktoy' proper.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from . import waitaminute
-from . import attr
+from . import utilities
+from . import desc
+from . import keenum
+
+__all__ = [
+  'utilities',
+  'desc',
+  'keenum',
+  ]

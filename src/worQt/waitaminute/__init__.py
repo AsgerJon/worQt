@@ -1,7 +1,13 @@
-"""The 'worQt.waitaminute' module provides the custom exceptions for the
-'worQt' library. """
+"""
+The 'worQt.waitaminute' package provides custom exceptions used in the
+worQt framework.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._missing_resource import MissingResource
+from . import events
+
+__all__ = [
+  'events',
+]

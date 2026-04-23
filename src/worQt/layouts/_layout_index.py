@@ -1,152 +1,302 @@
-"""LayoutIndex provides a hashable index for a position in the layout. """
+"""
+LayoutIndex provides a dataclass for indexing positions in a layout
+manager. It has attributes 'row' and 'column' specifying the position of
+the top-left corner and 'rowSpan' and 'colSpan' specifying the span of the
+cell block.
+"""
 #  AGPL-3.0 license
-#  Copyright (c) 2025 Asger Jon Vistisen
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from worktoy.attr import Field
+from typing import TYPE_CHECKING
+
+from worktoy.desc import Field
+from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
-from worktoy.static import overload, THIS
-from worktoy.text import typeMsg
-from worktoy.waitaminute import MissingVariable
+from worktoy.utilities import textFmt
+from worktoy.waitaminute import TypeException
+from worktoy.waitaminute.desc import WriteOnceError
 
-from moreworktoy.waitaminute import WriteOnceError
+from . import LayoutCell
 
-try:
-  from typing import TYPE_CHECKING
-except ImportError:
-  try:
-    from typing_extensions import TYPE_CHECKING
-  except ImportError:
-    TYPE_CHECKING = False
+if TYPE_CHECKING:  # pragma: no cover
+  from typing import Any, Iterator, Union, Optional, TypeAlias, Self, Type
 
-if TYPE_CHECKING:
-  from typing import Any, Self
+  Spans: TypeAlias = tuple[int, int]
+  SpansField: TypeAlias = Union[Field, Spans]
+  CellIter: TypeAlias = Iterator[LayoutCell]
+  CellIterField: TypeAlias = Union[Field, Iterator[LayoutCell]]
+  MaybeInt: TypeAlias = Optional[int]
+  IntField: TypeAlias = Union[Field, int]
+  CellField: TypeAlias = Union[Field, LayoutCell]
+  NotImplementedType: TypeAlias = Type[NotImplemented]
+  MaybeSelf: TypeAlias = Union[Self, NotImplementedType]
+  IntIter: TypeAlias = Iterator[int]
 
 
-class LayoutIndex(BaseObject):
-  """This data class provides a hashable index for a position in the
-  widget. It has fields:
-  - col: int -> Column index indicating the number of columns to the left
-  - row: int -> Row index indicating the number of rows above"""
+class LayoutIndex(BaseObject, ):
+  """
+  LayoutIndex provides a dataclass for indexing positions in a layout
+  manager. It has attributes 'row' and 'column' specifying the position of
+  the top-left corner and 'rowSpan' and 'colSpan' specifying the span of the
+  cell block.
+  """
 
-  __iter_contents__ = None
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  __n_cols__ = None
-  __n_rows__ = None
+  #  Fallback Variables
+  __fallback_row__: int = 0
+  __fallback_col__: int = 0
+  __fallback_rowSpan__: int = 1
+  __fallback_colSpan__: int = 1
 
-  col = Field()  # Column index indicating the number of columns to the left
-  row = Field()  # Row index indicating the number of rows above
+  #  Private Variables
+  __row_value__: MaybeInt = None
+  __col_value__: MaybeInt = None
+  __rowSpan_value__: MaybeInt = None
+  __colSpan_value__: MaybeInt = None
 
-  @col.GET
-  def _getCol(self) -> int:
-    """Returns the column index. """
-    if self.__n_cols__ is None:
-      raise MissingVariable('__n_cols__', int)
-    if isinstance(self.__n_cols__, int):
-      return self.__n_cols__
-    raise TypeError(typeMsg('__n_cols__', self.__n_cols__, int))
+  #  Public Variables
+  row: IntField = Field()
+  col: IntField = Field()
+  rowSpan: IntField = Field()
+  colSpan: IntField = Field()
+
+  #  Virtual Variables
+  cells: CellIterField = Field()
+  top: IntField = Field()
+  left: IntField = Field()
+  bottom: IntField = Field()
+  right: IntField = Field()
+  spans: SpansField = Field()
+  topLeft: CellField = Field()
+  topRight: CellField = Field()
+  bottomRight: CellField = Field()
+  bottomLeft: CellField = Field()
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @row.GET
-  def _getRow(self) -> int:
-    """Returns the row index. """
-    if self.__n_rows__ is None:
-      raise MissingVariable('__n_rows__', int)
-    if isinstance(self.__n_rows__, int):
-      return self.__n_rows__
-    raise TypeError(typeMsg('__n_rows__', self.__n_rows__, int))
+  def _getRow(self, **kwargs) -> int:
+    if self.__row_value__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.row = self.__fallback_row__
+      return self._getRow(_recursion=True)
+    if isinstance(self.__row_value__, int):
+      return self.__row_value__
+    raise TypeException('row', self.__row_value__, int)
 
-  @col.SET
-  def _setCol(self, value: int) -> None:
-    """Sets the column index. """
-    if self.__n_cols__ is not None:
-      raise WriteOnceError('__n_cols__', self.__n_cols__, value)
-    if not isinstance(value, int):
-      raise TypeError(typeMsg('__n_cols__', value, int))
-    self.__n_cols__ = value
+  @col.GET
+  def _getCol(self, **kwargs) -> int:
+    if self.__col_value__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.col = self.__fallback_col__
+      return self._getCol(_recursion=True)
+    if isinstance(self.__col_value__, int):
+      return self.__col_value__
+    raise TypeException('col', self.__col_value__, int)
+
+  @rowSpan.GET
+  def _getRowSpan(self, **kwargs) -> int:
+    if self.__rowSpan_value__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.rowSpan = self.__fallback_rowSpan__
+      return self._getRowSpan(_recursion=True)
+    if isinstance(self.__rowSpan_value__, int):
+      return self.__rowSpan_value__
+    raise TypeException('rowSpan', self.__rowSpan_value__, int)
+
+  @colSpan.GET
+  def _getColSpan(self, **kwargs) -> int:
+    if self.__colSpan_value__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self.colSpan = self.__fallback_colSpan__
+      return self._getColSpan(_recursion=True)
+    if isinstance(self.__colSpan_value__, int):
+      return self.__colSpan_value__
+    raise TypeException('colSpan', self.__colSpan_value__, int)
+
+  @cells.GET
+  def _getCells(self, ) -> CellIter:
+    for r in range(self.rowSpan):
+      for c in range(self.colSpan):
+        yield LayoutCell(self.row + r, self.col + c, )
+
+  @top.GET
+  def _getTop(self, ) -> int:
+    return self.row
+
+  @left.GET
+  def _getLeft(self, ) -> int:
+    return self.col
+
+  @bottom.GET
+  def _getBottom(self, ) -> int:
+    return self.row + self.rowSpan - 1
+
+  @right.GET
+  def _getRight(self, ) -> int:
+    return self.col + self.colSpan - 1
+
+  @spans.GET
+  def _getSpans(self, ) -> tuple[int, int]:
+    return self.rowSpan, self.colSpan
+
+  @topLeft.GET
+  def _getTopLeft(self, ) -> LayoutCell:
+    return LayoutCell(self.row, self.col, )
+
+  @topRight.GET
+  def _getTopRight(self, ) -> LayoutCell:
+    return LayoutCell(self.row, self.right, )
+
+  @bottomRight.GET
+  def _getBottomRight(self, ) -> LayoutCell:
+    return LayoutCell(self.bottom, self.right, )
+
+  @bottomLeft.GET
+  def _getBottomLeft(self, ) -> LayoutCell:
+    return LayoutCell(self.bottom, self.col, )
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @row.SET
-  def _setRow(self, value: int) -> None:
-    """Sets the row index. """
-    if self.__n_rows__ is not None:
-      raise WriteOnceError('__n_rows__', self.__n_rows__, value)
-    if not isinstance(value, int):
-      raise TypeError(typeMsg('__n_rows__', value, int))
-    self.__n_rows__ = value
+  def _setRow(self, row: int) -> None:
+    if self.__row_value__ is not None:
+      raise WriteOnceError(self, self.__row_value__, row)
+    if not isinstance(row, int):
+      raise TypeException('row', row, int)
+    self.__row_value__ = row
 
-  def __hash__(self, ) -> int:
-    """Returns the hash of the index. """
-    return hash((self.col, self.row))
+  @col.SET
+  def _setCol(self, col: int) -> None:
+    if self.__col_value__ is not None:
+      raise WriteOnceError(self, self.__col_value__, col)
+    if not isinstance(col, int):
+      raise TypeException('col', col, int)
+    self.__col_value__ = col
 
-  def __eq__(self, other: Self) -> bool:
-    """Returns True if the index is equal to the other index. """
-    if self.col == other.col and self.row == other.row:
+  @rowSpan.SET
+  def _setRowSpan(self, rowSpan: int) -> None:
+    if self.__rowSpan_value__ is not None:
+      raise WriteOnceError(self, self.__rowSpan_value__, rowSpan)
+    if not isinstance(rowSpan, int):
+      raise TypeException('rowSpan', rowSpan, int)
+    self.__rowSpan_value__ = rowSpan
+
+  @colSpan.SET
+  def _setColSpan(self, colSpan: int) -> None:
+    if self.__colSpan_value__ is not None:
+      raise WriteOnceError(self, self.__colSpan_value__, colSpan)
+    if not isinstance(colSpan, int):
+      raise TypeException('colSpan', colSpan, int)
+    self.__colSpan_value__ = colSpan
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def __iter__(self, ) -> IntIter:
+    yield self.row
+    yield self.col
+    yield self.rowSpan
+    yield self.colSpan
+
+  @classmethod
+  def _resolveOther(cls, other: Any) -> MaybeSelf:
+    if isinstance(other, cls):
+      return other
+    try:
+      resolved = cls(other)
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return resolved
+
+  def __contains__(self, other: Any) -> bool:
+    cls = type(self)
+    if isinstance(other, cls):
+      for cell in other.cells:
+        if cell not in self:
+          return False
       return True
+    if isinstance(other, LayoutCell):
+      for cell in self.cells:
+        if cell == other:
+          return True
     return False
 
-  def __str__(self) -> str:
-    """Returns the string representation of the index. """
-    infoSpec = """%s[row=%d, col=%d]"""
-    name = type(self).__name__
-    return infoSpec % (name, self.row, self.col)
+  def __abs__(self, ) -> int:
+    return self.rowSpan * self.colSpan
 
-  def __repr__(self) -> str:
-    """Returns the string representation of the index. """
-    infoSpec = """%s(row=%d, col=%d)"""
-    name = type(self).__name__
-    return infoSpec % (name, self.row, self.col)
+  def __bool__(self, ) -> bool:
+    return True if abs(self) else False
 
-  def __iter__(self) -> Self:
-    """Returns an iterator for the index. """
-    self.__iter_contents__ = [self.row, self.col]
-    return self
+  def __str__(self, ) -> str:
+    if not self:
+      return "<LayoutIndex: Empty>"
+    clsName = type(self).__name__
+    if abs(self) == 1:
+      infoSpec = """<%s: (%d, %d)>"""
+      info = infoSpec % (clsName, self.row, self.col)
+      return textFmt(info)
+    infoSpec = """<%s: rows: (%d, %d), columns: (%d, %d)>"""
+    dims = self.top, self.bottom, self.left, self.right
+    info = infoSpec % (clsName, *dims)
+    return textFmt(info)
 
-  def __bool__(self) -> bool:
-    """Returns True if the index is not empty. """
-    return True if self.row or self.col else False
+  def __repr__(self, ) -> str:
+    if not self:
+      infoSpec = """%s()"""
+      clsName = type(self).__name__
+      return infoSpec % (clsName,)
+    if abs(self) == 1:
+      infoSpec = """%s(%d, %d)"""
+      clsName = type(self).__name__
+      return infoSpec % (clsName, self.row, self.col)
+    infoSpec = """%s(%d, %d, %d, %d)"""
+    clsName = type(self).__name__
+    dims = self.row, self.col, self.rowSpan, self.colSpan
+    return infoSpec % (clsName, *dims)
 
-  def __next__(self) -> Any:
-    """Returns the next item in the iterator. """
-    try:
-      return self.__iter_contents__.pop(0)
-    except IndexError:
-      raise StopIteration
-    finally:
-      if not self.__iter_contents__:
-        self.__iter_contents__ = None
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @overload(int, int)
+  @overload(int, int, int, int, )
+  def __init__(self, row: int, col: int, rowSpan: int, colSpan: int) -> None:
+    self.row = row
+    self.col = col
+    self.rowSpan = rowSpan
+    self.colSpan = colSpan
+
+  @overload(int, int, )
   def __init__(self, row: int, col: int) -> None:
-    """Initializes the index with the given row and column. """
-    self.__n_rows__ = row
-    self.__n_cols__ = col
-
-  @overload(THIS)
-  def __init__(self, other: Self) -> None:
-    """Initializes the index with the given index. """
-    self.__n_rows__ = other.row
-    self.__n_cols__ = other.col
-
-  @overload(tuple)
-  @overload(list)
-  def __init__(self, other: tuple | list) -> None:
-    """Initializes the index with the given index. """
-    if len(other) != 2:
-      raise ValueError('Index must be a tuple or list of length 2.')
-    if not isinstance(other[0], int):
-      raise TypeError(typeMsg('row', other[0], int))
-    if not isinstance(other[1], int):
-      raise TypeError(typeMsg('col', other[1], int))
-    self.__n_rows__ = other[0]
-    self.__n_cols__ = other[1]
-
-  @overload(int)
-  def __init__(self, index: int) -> None:
-    """Initializes the index with the given index. """
-    self.__n_rows__ = index
-    self.__n_cols__ = index
+    self.row = row
+    self.col = col
 
   @overload()
-  def __init__(self, **kwargs) -> None:
-    """Initializes the index with the default values. """
-    self.__n_rows__ = kwargs.get('row', 0)
-    self.__n_cols__ = kwargs.get('col', 0)
+  def __init__(self, ) -> None:
+    pass
+
+  @overload(LayoutCell)
+  def __init__(self, cell: LayoutCell) -> None:
+    self.row = cell.row
+    self.col = cell.col
+
+  @overload(LayoutCell, LayoutCell, )
+  def __init__(self, topLeft: LayoutCell, bottomRight: LayoutCell) -> None:
+    self.row = topLeft.row
+    self.col = topLeft.col
+    self.rowSpan = bottomRight.row - topLeft.row + 1
+    self.colSpan = bottomRight.col - topLeft.col + 1

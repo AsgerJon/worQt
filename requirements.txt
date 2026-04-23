@@ -1,2 +1,2 @@
-pyside6~=6.9.0
-worktoy~=0.99.74
+pyside6>=6.10.2
+worktoy>=0.99.120

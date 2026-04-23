@@ -1,6 +1,6 @@
 """The 'yolo' function receives any number of callables and runs them."""
 #  AGPL-3.0 license
-#  Copyright (c) 2024 Asger Jon Vistisen
+#  Copyright (c) 2024-2025 Asger Jon Vistisen
 from __future__ import annotations
 
 import unittest
@@ -10,7 +10,7 @@ import time
 from math import log
 from typing import Callable
 
-from worktoy.text import stringList
+from worktoy.utilities import stringList
 
 
 def yolo(*args: Callable) -> None:
