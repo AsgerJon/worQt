@@ -10,7 +10,7 @@ from icecream import ic
 
 ic.configureOutput(includeContext=True)
 
-from worQt.app import AbstractApplication
+from worQt.app import AbstractApplication, App
 from yolo import yolo, runTests
 
 
@@ -26,9 +26,10 @@ def tester01(*args, ) -> int:
   """
   Testing that AbstractApplication does exist
   """
-  ic(AbstractApplication)
+  with App(*sys.argv) as app:
+    app.window.show()
   return 0
 
 
 if __name__ == '__main__':
-  yolo(runTests, tester01)
+  yolo(tester01)
