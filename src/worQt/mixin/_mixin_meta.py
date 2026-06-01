@@ -1,7 +1,7 @@
 """
 MixinMeta is a metaclass compatible with Shiboken.
 """
-#  AGPL-3.0 license
+#  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from shiboken6 import Shiboken
 from worktoy.core.sentinels import METACALL
 from worktoy.mcls import BaseMeta
 
-from worQt.mixin import MixinSpace
+from . import MixinSpace
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any, Type, TypeAlias
@@ -25,18 +25,21 @@ _ObjectType = type(Shiboken.Object)
 
 class _Shiboken(_ObjectType, ):
   """
-  In between class inserting fix to worktoy jank.
+  Intermediate metaclass placed between Shiboken's ObjectType and
+  BaseMeta in MixinMeta's MRO. Its sole job is to bridge Shiboken's
+  attribute lookup to the protocol that worktoy's AbstractMetaclass
+  expects.
   """
 
   def __getattr__(self, name: str) -> Any:
     """
-    The WType metaclass defined below cannot inherit from BaseMeta,
-    but must still return the special sentinel METACALL for certain
-    special names as expected by BaseMeta (through inheriting from
-    AbstractMetaclass). This metaclass system expects that certain names
-    return this special sentinel rather than raising AttributeError. Thus,
-    we intercept here after Shiboken.__getattr__. This ensures
-    compatibility with AbstractMetaclass.
+    Bridge Shiboken's attribute lookup to worktoy's AbstractMetaclass
+    protocol. AbstractMetaclass (a parent of BaseMeta) expects names
+    matching the __class*__ pattern to resolve to the METACALL sentinel
+    rather than raise AttributeError. Shiboken does not honour that
+    contract, so we intercept here and return METACALL for that
+    pattern. All other names fall through to ObjectType's __getattr__
+    if one is defined, otherwise raise AttributeError as normal.
     """
     if str.startswith(name, '__class') and str.endswith(name, '__'):
       return METACALL

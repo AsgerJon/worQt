@@ -1,21 +1,14 @@
 """
-The 'worQt.mixin' module inserts a metaclass under compatible with the
-Shiboken metaclass used by the PySide6 bindings for Qt for Python.
+The 'mixin' subpackage exposes the metaclass and namespace that fuse
+worktoy.mcls.BaseMeta with Shiboken's metaclass, enabling worktoy
+descriptor and overload machinery on Qt-derived classes.
 """
-#  AGPL-3.0 license
+#  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._free_desktop_icons import FreeDesktopIcon
-from ._keyboard_shortcuts import KeyboardShortcuts
 from ._mixin_space import MixinSpace
 from ._mixin_meta import MixinMeta
 from ._mixin_base import MixinBase
 
-__all__ = [
-  'MixinSpace',
-  'FreeDesktopIcon',
-  'KeyboardShortcuts',
-  'MixinMeta',
-  'MixinBase',
-  ]
+__all__ = ('MixinSpace', 'MixinMeta', 'MixinBase')

@@ -1,21 +1,16 @@
 """
-MixinSpace provides the namespace class used to create the mixin classes
-used throughout the worQt framework.
+MixinSpace is the namespace class used by MixinMeta. It is a straight
+subclass of BaseSpace, reserved for MixinMeta-specific space hooks.
 """
-#  AGPL-3.0 license
+#  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from worktoy.mcls import BaseSpace
-
-if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
 
 
 class MixinSpace(BaseSpace):
   """
-  MixinSpace provides the namespace class used to create the mixin classes
-  used throughout the worQt framework.
+  Namespace for classes constructed by MixinMeta. Inherits behaviour
+  from BaseSpace without modification at this stage.
   """

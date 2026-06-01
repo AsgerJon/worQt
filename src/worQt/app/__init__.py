@@ -1,13 +1,16 @@
-"""The 'worQt.app' module provides the App class inheriting from
-QApplication. """
-#  AGPL-3.0 license
-#  Copyright (c) 2025-2026 Asger Jon Vistisen
+"""
+The 'app' subpackage exposes the application classes for worQt.
+"""
+#  Apache-2.0 license
+#  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._application_mixin import ApplicationMixin
 from ._abstract_application import AbstractApplication
 from ._app import App
 
-__all__ = [
+__all__ = (
+  'ApplicationMixin',
   'AbstractApplication',
   'App',
-]
+)
