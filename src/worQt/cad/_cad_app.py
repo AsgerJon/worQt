@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import AbstractApplication
-from ..cad import CADSettings
-from ..window import CADWindow
+from ..app import AbstractApplication
+from ._cad_settings import CADSettings
+from ._cad_window import CADWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional

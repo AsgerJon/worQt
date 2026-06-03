@@ -31,11 +31,11 @@ from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
 from ..mixin import MixinBase
-from ..widgets import (
-  CADWidget,
-  SelectionToolPanel,
-  NewItemToolPanel,
-  ViewToolPanel,
+from ._cad_widget import CADWidget
+from ._selection_tool import SelectionToolPanel
+from ._new_item_tool import NewItemToolPanel
+from ._view_tool import ViewToolPanel
+from ._tool_icons import (
   navigateIcon,
   selectIcon,
   anchorIcon,
@@ -46,7 +46,7 @@ from ..widgets import (
   dimensionIcon,
   angleIcon,
 )
-from ..cad.draw import (
+from .draw import (
   AnchorPoint,
   Member,
   buildItem,
@@ -79,7 +79,8 @@ class CADWindow(QMainWindow, MixinBase):
   __tool_actions__ = None  # data ('navigate'/kind) -> checkable QAction
   __splitter__ = None  # central panel|canvas splitter
   __tool_boxes__ = None  # key -> QGroupBox wrapping each tool
-  __edit_index__ = None  # scene index being edited, or None when creating new
+  __edit_index__ = None  # scene index being edited, or None when creating
+  # new
   __undo_stack__ = None  # scene snapshots preceding each edit (list)
   __redo_stack__ = None  # snapshots undone, available to redo (list)
   __undo_action__ = None  # the Edit > Undo QAction
@@ -108,7 +109,8 @@ class CADWindow(QMainWindow, MixinBase):
     self._connectSignals()
     self._markSaved()  # the empty startup scene is the clean baseline
     self.statusBar().showMessage(
-        'Pick a tool: Navigate pans, the shape tools draw on the canvas')
+        'Pick a tool: Navigate pans, the shape tools draw on the canvas'
+    )
 
   def _buildMenus(self, ) -> None:
     """Populate the menubar."""
@@ -121,22 +123,27 @@ class CADWindow(QMainWindow, MixinBase):
     editMenu = self.menuBar().addMenu('&Edit')
     self.__undo_action__ = self._action('&Undo', 'Ctrl+Z', self._onUndo)
     self.__redo_action__ = self._action(
-        '&Redo', 'Ctrl+Shift+Z', self._onRedo)
+        '&Redo', 'Ctrl+Shift+Z', self._onRedo
+    )
     editMenu.addAction(self.__undo_action__)
     editMenu.addAction(self.__redo_action__)
     self._updateUndoActions()  # start disabled until the first edit
     viewMenu = self.menuBar().addMenu('&View')
     viewMenu.addAction(self._action('&Reset view', 'Ctrl+0', self._onReset))
     viewMenu.addAction(
-        self._action('&Delete selected (Del)', '', self._deleteSelected))
+        self._action('&Delete selected (Del)', '', self._deleteSelected)
+    )
     viewMenu.addAction(self._action('&Clear', 'Ctrl+L', self._onClear))
     viewMenu.addSeparator()
     self.__show_selection_action__ = self._toggle(
-        'Show &selection tool', self._onShowSelection)
+        'Show &selection tool', self._onShowSelection
+    )
     self.__show_new_item_action__ = self._toggle(
-        'Show &new-item tool', self._onShowNewItem)
+        'Show &new-item tool', self._onShowNewItem
+    )
     self.__show_view_action__ = self._toggle(
-        'Show &viewer tool', self._onShowView)
+        'Show &viewer tool', self._onShowView
+    )
     viewMenu.addAction(self.__show_selection_action__)
     viewMenu.addAction(self.__show_new_item_action__)
     viewMenu.addAction(self.__show_view_action__)
@@ -153,17 +160,27 @@ class CADWindow(QMainWindow, MixinBase):
       ('navigate', 'Navigate (pan / zoom)', navigateIcon()),
       ('select', 'Select (pick an item)', selectIcon()),
       ('Anchor', 'Anchor point (double-click to place)', anchorIcon()),
-      ('support', 'Support (click an anchor to cycle its support)',
-       supportIcon()),
-      ('load', 'Load (drag a force out of an anchor; click it to clear)',
-       loadIcon()),
-      ('Module', 'Module line (drag from origin toward its angle)',
-       moduleIcon()),
-      ('Member', 'Structural member (drag between two anchor nodes)',
-       memberIcon()),
+      (
+        'support', 'Support (click an anchor to cycle its support)',
+        supportIcon()
+      ),
+      (
+        'load', 'Load (drag a force out of an anchor; click it to clear)',
+        loadIcon()
+      ),
+      (
+        'Module', 'Module line (drag from origin toward its angle)',
+        moduleIcon()
+      ),
+      (
+        'Member', 'Structural member (drag between two anchor nodes)',
+        memberIcon()
+      ),
       ('Dimension', 'Dimension', dimensionIcon()),
-      ('Angle', 'Angular dimension (click vertex, then two arms)',
-       angleIcon()),
+      (
+        'Angle', 'Angular dimension (click vertex, then two arms)',
+        angleIcon()
+      ),
     )
     for data, tip, icon in specs:
       action = QAction(icon, tip, self)
@@ -203,11 +220,15 @@ class CADWindow(QMainWindow, MixinBase):
       boxLayout.setContentsMargins(6, 6, 6, 6)
       boxLayout.addWidget(panel)
       if not stretch:  # fix New-item / Viewer to their natural height
-        box.setSizePolicy(QSizePolicy.Policy.Preferred,
-                          QSizePolicy.Policy.Fixed)
+        box.setSizePolicy(
+          QSizePolicy.Policy.Preferred,
+          QSizePolicy.Policy.Fixed
+          )
       columnLayout.addWidget(box, stretch)
       self.__tool_boxes__[key] = box
-    self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # for the Delete key
+    self.canvas.setFocusPolicy(
+      Qt.FocusPolicy.StrongFocus
+      )  # for the Delete key
     splitter = QSplitter(Qt.Orientation.Horizontal, self)
     splitter.addWidget(column)
     splitter.addWidget(self.canvas)
@@ -420,7 +441,8 @@ class CADWindow(QMainWindow, MixinBase):
     self._setBoxVisible('view', visible)
 
   def _applyGridSpacing(self, pixels: float) -> None:
-    """Clamp 'pixels' to the allowed range, apply it, and sync the widgets."""
+    """Clamp 'pixels' to the allowed range, apply it, and sync the
+    widgets."""
     low, high = self.viewTool.spacingRange()
     pixels = max(low, min(high, int(round(pixels))))
     self.canvas.setGridTargetPx(float(pixels))
@@ -551,7 +573,8 @@ class CADWindow(QMainWindow, MixinBase):
     items = self.canvas.scene.items
     if anchor in items:  # refresh the list row to show the new support
       self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor))
+          str(anchor)
+      )
     self.canvas.update()
     self.statusBar().showMessage('Support: %s' % (kind,), 2000)
 
@@ -567,7 +590,8 @@ class CADWindow(QMainWindow, MixinBase):
     items = self.canvas.scene.items
     if anchor in items:  # refresh the list row to show the new load
       self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor))
+          str(anchor)
+      )
     self.canvas.update()
     self.statusBar().showMessage('Load: (%.2f, %.2f) N' % (fx, fy), 2000)
 
@@ -583,10 +607,12 @@ class CADWindow(QMainWindow, MixinBase):
     items = self.canvas.scene.items
     if anchor in items:  # refresh the list row to show the displacement
       self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor))
+          str(anchor)
+      )
     self.canvas.update()
     self.statusBar().showMessage(
-        'Prescribed displacement: (%.2f, %.2f)' % (dx, dy), 2000)
+        'Prescribed displacement: (%.2f, %.2f)' % (dx, dy), 2000
+    )
 
   def _onViewChanged(self, ) -> None:
     """
@@ -752,7 +778,8 @@ class CADWindow(QMainWindow, MixinBase):
     answer = QMessageBox.question(
         self, 'Unsaved changes',
         'The drawing has unsaved changes. Save them before continuing?',
-        save | discard | cancel)
+        save | discard | cancel
+    )
     if answer == save:
       return self._onSave()
     return True if answer == discard else False
@@ -774,20 +801,24 @@ class CADWindow(QMainWindow, MixinBase):
     self._markSaved()  # this scene is now the clean baseline
     self.statusBar().showMessage(
         'Saved %d item(s) to %s'
-        % (len(self.canvas.scene), self.__file_path__), 3000)
+        % (len(self.canvas.scene), self.__file_path__), 3000
+    )
     return True
 
   def _onRename(self, *_) -> bool:
     """
     Give the model a (new) name and save it there. The user picks the
     destination; the current scene is written to it, and if the model already
-    had a file the old one is removed once the new write succeeds, so a rename
-    moves the model rather than leaving a copy behind (there is no 'Save As').
+    had a file the old one is removed once the new write succeeds,
+    so a rename
+    moves the model rather than leaving a copy behind (there is no 'Save
+    As').
     Returns True when the drawing was written, False when it was not.
     """
     path, _filter = QFileDialog.getSaveFileName(
         self, 'Rename drawing', self.__file_path__ or '',
-        'worQt drawing (*.json)')
+        'worQt drawing (*.json)'
+    )
     if not path:
       return False
     if not path.endswith('.json'):
@@ -806,7 +837,8 @@ class CADWindow(QMainWindow, MixinBase):
         pass
     self._markSaved()  # the named scene is now the clean baseline
     self.statusBar().showMessage(
-        'Saved %d item(s) to %s' % (len(self.canvas.scene), path), 3000)
+        'Saved %d item(s) to %s' % (len(self.canvas.scene), path), 3000
+    )
     return True
 
   def _onOpen(self, *_) -> None:
@@ -814,7 +846,8 @@ class CADWindow(QMainWindow, MixinBase):
     if not self._confirmDiscard():  # keep unsaved work if the user cancels
       return
     path, _filter = QFileDialog.getOpenFileName(
-        self, 'Open drawing', '', 'worQt drawing (*.json)')
+        self, 'Open drawing', '', 'worQt drawing (*.json)'
+    )
     if not path:
       return
     try:
@@ -830,7 +863,8 @@ class CADWindow(QMainWindow, MixinBase):
     self._clearHistory()  # a freshly opened drawing starts a fresh history
     self._markSaved()  # the loaded scene matches its file: clean baseline
     self.statusBar().showMessage(
-        'Loaded %d item(s) from %s' % (len(self.canvas.scene), path), 3000)
+        'Loaded %d item(s) from %s' % (len(self.canvas.scene), path), 3000
+    )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GEOMETRY PERSISTENCE   # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -839,8 +873,10 @@ class CADWindow(QMainWindow, MixinBase):
   @staticmethod
   def _settings() -> QSettings:
     """The 'QSettings' store for this app's window geometry."""
-    return QSettings(QSettings.Format.IniFormat,
-                     QSettings.Scope.UserScope, 'worQt', 'draw')
+    return QSettings(
+      QSettings.Format.IniFormat,
+      QSettings.Scope.UserScope, 'worQt', 'draw'
+      )
 
   def _saveGeometry(self, ) -> None:
     """Persist the main window size/position and the splitter sizes."""

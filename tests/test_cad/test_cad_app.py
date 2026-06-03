@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from worktoy.work_test import BaseTest
 
-from worQt.app import CADApp, AbstractApplication
+from worQt.app import AbstractApplication
+from worQt.cad import CADApp
 from worQt.cad import CADSettings
-from worQt.window import CADWindow
+from worQt.cad import CADWindow
 
 
 class TestCADApp(BaseTest):
@@ -31,6 +32,8 @@ class TestCADApp(BaseTest):
     self.assertIs(CADApp.__settings_class__, CADSettings)
 
   def test_is_exported(self, ) -> None:
-    """'CADApp' is exported from the app package."""
+    """'CADApp' is exported from the cad package, not core worQt."""
     import worQt.app as appPackage
-    self.assertIn('CADApp', appPackage.__all__)
+    import worQt.cad as cadPackage
+    self.assertIn('CADApp', cadPackage.__all__)
+    self.assertNotIn('CADApp', appPackage.__all__)  # core has no cad knowledge

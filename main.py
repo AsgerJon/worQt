@@ -18,7 +18,7 @@ from worQt.qtest import AppTestSuite
 
 ic.configureOutput(includeContext=True)
 
-from worQt.app import AbstractApplication, App, JsonApp, DrawApp
+from worQt.app import AbstractApplication
 from yolo import yolo, runTests
 
 

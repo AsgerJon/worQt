@@ -17,8 +17,8 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QPolygonF
 from worktoy.desc import AttriBox
 
-from ._base_widget import BaseWidget
-from ..cad.draw import (
+from ..widgets import BaseWidget
+from .draw import (
   CADScene,
   AnchorPoint,
   ModuleLine,

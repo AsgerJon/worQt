@@ -28,8 +28,8 @@ from worQt.cad.draw import (
   saveScene,
   loadScene,
 )
-from worQt.widgets import CADWidget, VertexEditor
-from worQt.window import CADWindow
+from worQt.cad import CADWidget, VertexEditor
+from worQt.cad import CADWindow
 
 
 class _MouseEvent:
@@ -69,8 +69,10 @@ class TestCAD(AppTest):
 
   def test_items_hold_coordinates(self, ) -> None:
     """Each item stores exactly the coordinates it was built with."""
-    self.assertEqual((AnchorPoint(3.0, 4.0).x, AnchorPoint(3.0, 4.0).y),
-                     (3.0, 4.0))
+    self.assertEqual(
+        (AnchorPoint(3.0, 4.0).x, AnchorPoint(3.0, 4.0).y),
+        (3.0, 4.0)
+        )
     module = ModuleLine(1.0, 2.0, 90.0)
     self.assertEqual((module.x, module.y, module.angle), (1.0, 2.0, 90.0))
     dimension = Dimension(0.0, 1.0, 2.0, 3.0)
@@ -129,11 +131,15 @@ class TestCAD(AppTest):
     member = Member(a, b)
     self.assertIs(member.nodeA, a)
     self.assertIs(member.nodeB, b)
-    self.assertEqual((member.x1, member.y1, member.x2, member.y2),
-                     (0.0, 0.0, 3.0, 4.0))
+    self.assertEqual(
+        (member.x1, member.y1, member.x2, member.y2),
+        (0.0, 0.0, 3.0, 4.0)
+        )
     self.assertAlmostEqual(member.length(), 5.0)
-    self.assertEqual(describeItem(member),
-                     ('Member', [(0.0, 0.0), (3.0, 4.0)]))
+    self.assertEqual(
+      describeItem(member),
+      ('Member', [(0.0, 0.0), (3.0, 4.0)])
+      )
     a.x, a.y = 0.0, 10.0  # move the anchor -> the member tracks it
     self.assertEqual((member.x1, member.y1), (0.0, 10.0))
     self.assertIn('Member', KINDS)
@@ -150,8 +156,10 @@ class TestCAD(AppTest):
     dimension = buildItem('Dimension', [(0.0, 0.0), (3.0, 4.0)])
     self.assertIsInstance(dimension, Dimension)
     self.assertAlmostEqual(dimension.length(), 5.0)
-    self.assertEqual(describeItem(dimension),
-                     ('Dimension', [(0.0, 0.0), (3.0, 4.0)]))
+    self.assertEqual(
+      describeItem(dimension),
+      ('Dimension', [(0.0, 0.0), (3.0, 4.0)])
+      )
     self.assertIsInstance(itemFromCoords('Dimension', '0 0 3 4'), Dimension)
 
   def test_angular_dimension_from_coordinates(self, ) -> None:
@@ -159,10 +167,14 @@ class TestCAD(AppTest):
     angle = buildItem('Angle', [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)])
     self.assertIsInstance(angle, AngularDimension)
     self.assertAlmostEqual(angle.angle(), 90.0)
-    self.assertEqual(describeItem(angle),
-                     ('Angle', [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)]))
-    self.assertIsInstance(itemFromCoords('Angle', '0 0 5 0 0 5'),
-                          AngularDimension)
+    self.assertEqual(
+      describeItem(angle),
+      ('Angle', [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)])
+      )
+    self.assertIsInstance(
+      itemFromCoords('Angle', '0 0 5 0 0 5'),
+      AngularDimension
+      )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CANVAS (live QApplication)   # # # # # # # # # # # # # # # # # # # # # #
@@ -229,7 +241,8 @@ class TestCAD(AppTest):
     self.assertEqual(pixmap.width(), 400)
 
   def test_grid_step_is_pixel_invariant(self, ) -> None:
-    """Grid cell = targetPx / scale (mm); the pixel spacing stays constant."""
+    """Grid cell = targetPx / scale (mm); the pixel spacing stays
+    constant."""
     canvas = CADWidget()
     canvas.resize(400, 300)
     canvas.gridTargetPx = 64.0
@@ -240,8 +253,10 @@ class TestCAD(AppTest):
     #  but the on-screen pixel spacing is invariant across zoom
     for scale in (5.0, 40.0, 200.0):
       canvas.scale = scale
-      self.assertAlmostEqual(canvas.gridStep() * canvas.scale,
-                             canvas.gridTargetPx, places=6)
+      self.assertAlmostEqual(
+        canvas.gridStep() * canvas.scale,
+        canvas.gridTargetPx, places=6
+        )
 
   def test_grid_color_is_greenish_near_black(self, ) -> None:
     """The gridline colour stays near black but is greener and less blue."""
@@ -321,8 +336,10 @@ class TestCAD(AppTest):
     window._selectTool('Dimension')
     window._onAdd()
     window.selectionTool.itemList.setCurrentRow(1)
-    self.assertIs(getattr(window.canvas, '__selected__'),
-                  window.canvas.scene.items[1])
+    self.assertIs(
+      getattr(window.canvas, '__selected__'),
+      window.canvas.scene.items[1]
+      )
     window.clearScene()
     self.assertIsNone(getattr(window.canvas, '__selected__'))
 
@@ -353,7 +370,8 @@ class TestCAD(AppTest):
     self.assertIsInstance(window.centralWidget(), QSplitter)
     boxes = getattr(window, '__tool_boxes__')
     self.assertEqual(set(boxes), {'selection', 'newItem', 'view'})
-    #  each tool panel is parented into its group box (not a top-level window)
+    #  each tool panel is parented into its group box (not a top-level
+    #  window)
     self.assertFalse(window.selectionTool.isWindow())
     self.assertTrue(boxes['selection'].isAncestorOf(window.selectionTool))
     self.assertTrue(hasattr(window.selectionTool, 'itemList'))
@@ -364,8 +382,10 @@ class TestCAD(AppTest):
     """Saved window geometry is restored on the next launch."""
     import tempfile
     from PySide6.QtCore import QSettings
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope,
-                      tempfile.mkdtemp())
+    QSettings.setPath(
+      QSettings.Format.IniFormat, QSettings.Scope.UserScope,
+      tempfile.mkdtemp()
+      )
     first = CADWindow()
     first.show()
     first.resize(760, 760)  # request a size; the actual one may be clamped
@@ -376,8 +396,10 @@ class TestCAD(AppTest):
     first._saveGeometry()
     second = CADWindow()
     second.show()  # show() restores geometry from settings
-    self.assertEqual((second.size().width(), second.size().height()),
-                     expected)
+    self.assertEqual(
+        (second.size().width(), second.size().height()),
+        expected
+        )
 
   def test_view_menu_shows_tools(self, ) -> None:
     """The View toggles show and hide the grouped tool sections."""
@@ -401,8 +423,10 @@ class TestCAD(AppTest):
     self.assertEqual(len(window.canvas.scene), 2)
     window.selectionTool.itemList.setCurrentRow(1)  # the line
     self.assertEqual(window.canvas.activeKind(), 'Dimension')
-    self.assertIs(getattr(window.canvas, '__selected__'),
-                  window.canvas.scene.items[1])
+    self.assertIs(
+      getattr(window.canvas, '__selected__'),
+      window.canvas.scene.items[1]
+      )
 
   def test_add_keeps_values_as_running_default(self, ) -> None:
     """After adding, fields keep the used values and become the default."""
@@ -463,7 +487,9 @@ class TestCAD(AppTest):
     window = CADWindow()
     window.show()
     self.assertEqual(getattr(window.canvas, '__mode__'), 'navigate')
-    self.assertTrue(getattr(window, '__tool_actions__')['navigate'].isChecked())
+    self.assertTrue(
+      getattr(window, '__tool_actions__')['navigate'].isChecked()
+      )
 
   def test_navigate_drag_pans_without_adding(self, ) -> None:
     """In navigate mode a left drag pans the view and adds no item."""
@@ -528,8 +554,12 @@ class TestCAD(AppTest):
     self.assertAlmostEqual(module.x, start[0], places=6)  # origin=press
     self.assertAlmostEqual(module.y, start[1], places=6)
     import math
-    expectAngle = math.degrees(math.atan2(end[1] - start[1],
-                                          end[0] - start[0]))
+    expectAngle = math.degrees(
+      math.atan2(
+        end[1] - start[1],
+        end[0] - start[0]
+        )
+      )
     self.assertAlmostEqual(module.angle, expectAngle, places=4)
 
   def test_drag_reports_live_geometry_in_status_bar(self, ) -> None:
@@ -560,7 +590,8 @@ class TestCAD(AppTest):
     canvas.mouseReleaseEvent(_MouseEvent(300.0, 60.0))
 
   def test_drag_marks_start_and_current_snaplines(self, ) -> None:
-    """While dragging, both the start and current snapped nodes are tracked."""
+    """While dragging, both the start and current snapped nodes are
+    tracked."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
@@ -621,8 +652,10 @@ class TestCAD(AppTest):
     window.newItemTool.addButton.click()  # Update, not Add
     self.assertEqual(len(canvas.scene), count)  # replaced in place
     self.assertEqual(canvas.scene.items[1].x2, 9.0)
-    self.assertEqual(window.selectionTool.itemList.item(1).text(),
-                     str(canvas.scene.items[1]))
+    self.assertEqual(
+      window.selectionTool.itemList.item(1).text(),
+      str(canvas.scene.items[1])
+      )
 
     actions['Anchor'].trigger()  # back to creating new
     self.assertEqual(box.title(), 'New item')
@@ -661,7 +694,10 @@ class TestCAD(AppTest):
     self.assertTrue(panel.vertexEditor.isVisible())  # coordinates editable
     self.assertIn('pinned', panel.supportLabel.text())
     self.assertTrue(panel.loadHost.isVisible())  # load Fx/Fy fields
-    self.assertEqual(panel.loadYEdit.text(), '-20')  # prefilled with its load
+    self.assertEqual(
+      panel.loadYEdit.text(),
+      '-20'
+      )  # prefilled with its load
     self.assertTrue(panel.membersList.isVisible())
     self.assertEqual(panel.membersList.count(), 1)  # one attached member
     #  edit the coordinates and update -> the same anchor object moves
@@ -731,7 +767,10 @@ class TestCAD(AppTest):
     window.addItem(AnchorPoint(0.0, 0.0))
     window._selectTool('select')
     self.assertEqual(getattr(canvas, '__mode__'), 'select')
-    screen = canvas.worldToScreen(0.0, 0.0)  # current screen pos of the point
+    screen = canvas.worldToScreen(
+      0.0,
+      0.0
+      )  # current screen pos of the point
     canvas.mousePressEvent(_MouseEvent(screen.x(), screen.y()))
     self.assertIs(getattr(canvas, '__selected__'), canvas.scene.items[0])
     self.assertEqual(getattr(canvas, '__mode__'), 'select')
@@ -747,13 +786,16 @@ class TestCAD(AppTest):
     spot = canvas.worldToScreen(0.0, 0.0)
     canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
     self.assertIsNotNone(getattr(canvas, '__selected__'))
-    canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))  # same -> deselect
+    canvas.mousePressEvent(
+      _MouseEvent(spot.x(), spot.y())
+      )  # same -> deselect
     self.assertIsNone(getattr(canvas, '__selected__'))
     self.assertIsNone(getattr(window, '__edit_index__'))
     canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))  # reselect
     self.assertIsNotNone(getattr(canvas, '__selected__'))
     canvas.mousePressEvent(  # empty space -> deselect
-        _MouseEvent(spot.x() + 140.0, spot.y() + 90.0))
+        _MouseEvent(spot.x() + 140.0, spot.y() + 90.0)
+    )
     self.assertIsNone(getattr(canvas, '__selected__'))
 
   def test_dimension_tool_adds_dimension(self, ) -> None:
@@ -903,7 +945,8 @@ class TestCAD(AppTest):
     self.assertEqual(canvas.scene.items[0].supportKind(), 'free')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  NODAL LOADS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  NODAL LOADS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_anchor_load_and_label(self, ) -> None:
@@ -927,8 +970,10 @@ class TestCAD(AppTest):
     self.assertNotIn('attrs', data['items'][1])  # zero load stays minimal
     restored = sceneFromJson(sceneToJson(scene))
     self.assertAlmostEqual(restored.items[0].loadY, -30.0)
-    self.assertEqual((restored.items[1].loadX, restored.items[1].loadY),
-                     (0.0, 0.0))
+    self.assertEqual(
+        (restored.items[1].loadX, restored.items[1].loadY),
+        (0.0, 0.0)
+        )
 
   def test_load_tool_drag_sets_and_click_clears(self, ) -> None:
     """The Load tool drags a force from an anchor; a click clears it."""
@@ -1040,7 +1085,8 @@ class TestCAD(AppTest):
     self.assertAlmostEqual(point.y, round(point.y / step) * step, places=9)
 
   def test_viewer_tool_controls_grid_and_snap(self, ) -> None:
-    """The viewer tool's controls drive the canvas grid, snap and fineness."""
+    """The viewer tool's controls drive the canvas grid, snap and
+    fineness."""
     window = CADWindow()
     window.show()
     self.assertTrue(window.canvas.showGrid)
@@ -1069,7 +1115,8 @@ class TestCAD(AppTest):
     self.assertEqual(window.viewTool.spacingRange()[0], 8)
 
   def test_factor_readout_swaps_units(self, ) -> None:
-    """The factor reads integer mm/px when zoomed out, px/mm when zoomed in."""
+    """The factor reads integer mm/px when zoomed out, px/mm when zoomed
+    in."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
@@ -1092,7 +1139,9 @@ class TestCAD(AppTest):
     canvas.resize(400, 300)
     window._selectTool('Dimension')
     canvas.mousePressEvent(_MouseEvent(200.0, 150.0))
-    canvas.mouseReleaseEvent(_MouseEvent(201.0, 150.0))  # ~1px, below threshold
+    canvas.mouseReleaseEvent(
+      _MouseEvent(201.0, 150.0)
+      )  # ~1px, below threshold
     self.assertEqual(len(canvas.scene), 0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -1208,8 +1257,10 @@ class TestCAD(AppTest):
     self.assertTrue(os.path.exists(path))
     loaded = loadScene(path)
     self.assertEqual(len(loaded), 5)
-    self.assertEqual([describeItem(i) for i in loaded],
-                     [describeItem(i) for i in scene])
+    self.assertEqual(
+        [describeItem(i) for i in loaded],
+        [describeItem(i) for i in scene]
+        )
 
   def test_saved_file_is_plain_text_json_not_pickle(self, ) -> None:
     """The saved file is legible JSON text naming each kind."""
@@ -1274,8 +1325,10 @@ class TestCAD(AppTest):
     canvas.snapToGrid = True
     return canvas
 
-  def _nearSegment(self, canvas: CADWidget, a: tuple, b: tuple,
-                   off: float) -> QPointF:
+  def _nearSegment(
+      self, canvas: CADWidget, a: tuple, b: tuple,
+      off: float
+      ) -> QPointF:
     """A screen point 'off' pixels below the midpoint of segment a-b."""
     mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
     screen = canvas.worldToScreen(mid[0], mid[1])
@@ -1345,8 +1398,10 @@ class TestCAD(AppTest):
     self.assertAlmostEqual(wx, 30.0, 6)  # snapped to the exact crossing
     self.assertAlmostEqual(wy, 0.0, 6)
 
-  def _dragDimension(self, window: CADWindow, startWorld: tuple,
-                     endWorld: tuple) -> tuple:
+  def _dragDimension(
+      self, window: CADWindow, startWorld: tuple,
+      endWorld: tuple
+      ) -> tuple:
     """Drag a dimension between two world points; return its vertices."""
     canvas = window.canvas
     captured = []
@@ -1366,7 +1421,8 @@ class TestCAD(AppTest):
     window.canvas.resize(520, 420)
     window.canvas.scene.addItem(ModuleLine(0.0, 0.0, 0.0))  # datum
     (x1, y1), (x2, y2) = self._dragDimension(
-        window, (20.0, 0.0), (45.0, 30.0))  # start on datum, drag diagonally
+        window, (20.0, 0.0), (45.0, 30.0)
+    )  # start on datum, drag diagonally
     self.assertAlmostEqual(y1, 0.0, 6)  # start sits on the datum
     self.assertAlmostEqual(x2, x1, 6)  # locked vertical: perpendicular
 
@@ -1377,7 +1433,8 @@ class TestCAD(AppTest):
     window.canvas.resize(520, 420)
     window.canvas.scene.addItem(ModuleLine(0.0, 0.0, 0.0))
     (x1, y1), (x2, y2) = self._dragDimension(
-        window, (10.0, 50.0), (60.0, 80.0))  # well clear of the module line
+        window, (10.0, 50.0), (60.0, 80.0)
+    )  # well clear of the module line
     self.assertNotAlmostEqual(x2, x1, 3)  # free: both coordinates move
 
   def test_dimension_at_intersection_picks_axis_by_drag(self, ) -> None:
@@ -1388,7 +1445,8 @@ class TestCAD(AppTest):
     window.canvas.scene.addItem(ModuleLine(0.0, 0.0, 0.0))  # horizontal
     window.canvas.scene.addItem(ModuleLine(30.0, 0.0, 90.0))  # vertical
     (x1, y1), (x2, y2) = self._dragDimension(
-        window, (30.0, 0.0), (70.0, 8.0))  # at crossing, drag mostly right
+        window, (30.0, 0.0), (70.0, 8.0)
+    )  # at crossing, drag mostly right
     self.assertAlmostEqual(y2, y1, 6)  # locked horizontal
 
   def test_pointer_snaps_onto_dimension_body(self, ) -> None:
@@ -1401,7 +1459,8 @@ class TestCAD(AppTest):
   def test_pointer_snaps_onto_angle_arm(self, ) -> None:
     """The pointer snaps onto an arm of an existing angular dimension."""
     canvas = self._snapCanvas(
-        AngularDimension(0.0, 0.0, 60.0, 0.0, 0.0, 60.0))
+        AngularDimension(0.0, 0.0, 60.0, 0.0, 0.0, 60.0)
+    )
     near = self._nearSegment(canvas, (0.0, 0.0), (60.0, 0.0), 3.0)
     wx, wy = canvas._worldAt(near)
     self.assertAlmostEqual(wy, 0.0, 6)  # onto the horizontal arm
@@ -1446,7 +1505,7 @@ class TestCAD(AppTest):
     returns 'answer' with no real dialog. Returns '(module, original)' so the
     caller restores it in a 'finally'.
     """
-    import worQt.window._cad_window as windowModule
+    import worQt.cad._cad_window as windowModule
     from PySide6.QtWidgets import QMessageBox
 
     class _FakeMessageBox:
@@ -1501,7 +1560,8 @@ class TestCAD(AppTest):
     window.show()
     window.addItem(AnchorPoint(0.0, 0.0))  # make it dirty
     module, original = self._patchDiscardAnswer(
-        QMessageBox.StandardButton.Cancel)
+        QMessageBox.StandardButton.Cancel
+    )
     try:
       event = QCloseEvent()
       window.closeEvent(event)
@@ -1516,13 +1576,16 @@ class TestCAD(AppTest):
     from PySide6.QtGui import QCloseEvent
     from PySide6.QtWidgets import QMessageBox
     #  redirect QSettings so _saveGeometry never touches real config
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope,
-                      tempfile.mkdtemp())
+    QSettings.setPath(
+      QSettings.Format.IniFormat, QSettings.Scope.UserScope,
+      tempfile.mkdtemp()
+      )
     window = CADWindow()
     window.show()
     window.addItem(AnchorPoint(0.0, 0.0))
     module, original = self._patchDiscardAnswer(
-        QMessageBox.StandardButton.Discard)
+        QMessageBox.StandardButton.Discard
+    )
     try:
       event = QCloseEvent()
       window.closeEvent(event)
@@ -1543,12 +1606,16 @@ class TestCAD(AppTest):
     window._onUndo()
     self.assertEqual(len(window.canvas.scene), 1)
     self.assertEqual(window.selectionTool.itemList.count(), 1)
-    self.assertEqual(describeItem(window.canvas.scene.items[0]),
-                     ('Anchor', [(1.0, 2.0)]))
+    self.assertEqual(
+      describeItem(window.canvas.scene.items[0]),
+      ('Anchor', [(1.0, 2.0)])
+      )
     window._onRedo()
     self.assertEqual(len(window.canvas.scene), 2)
-    self.assertEqual(describeItem(window.canvas.scene.items[1]),
-                     ('Dimension', [(0.0, 0.0), (5.0, 5.0)]))
+    self.assertEqual(
+      describeItem(window.canvas.scene.items[1]),
+      ('Dimension', [(0.0, 0.0), (5.0, 5.0)])
+      )
 
   def test_undo_redo_actions_track_history(self, ) -> None:
     """Undo/Redo menu actions enable only when their stack has entries."""
@@ -1587,8 +1654,10 @@ class TestCAD(AppTest):
     self.assertEqual(len(window.canvas.scene), 1)
     window._onUndo()
     self.assertEqual(len(window.canvas.scene), 2)
-    self.assertEqual(describeItem(window.canvas.scene.items[0]),
-                     ('Anchor', [(3.0, 4.0)]))
+    self.assertEqual(
+      describeItem(window.canvas.scene.items[0]),
+      ('Anchor', [(3.0, 4.0)])
+      )
 
   def test_open_clears_undo_history(self, ) -> None:
     """Opening a drawing starts a fresh history with nothing to undo."""
@@ -1617,7 +1686,7 @@ class TestCAD(AppTest):
     no real modal. Returns '(module, original)' for the caller to restore
     in a 'finally'.
     """
-    import worQt.window._cad_window as windowModule
+    import worQt.cad._cad_window as windowModule
 
     class _FakeFileDialog:
       @staticmethod
@@ -1675,7 +1744,7 @@ class TestCAD(AppTest):
       module.QFileDialog = original
     window.addItem(AnchorPoint(3.0, 4.0))  # a further edit to save
 
-    import worQt.window._cad_window as windowModule
+    import worQt.cad._cad_window as windowModule
 
     class _NoDialog:
       @staticmethod

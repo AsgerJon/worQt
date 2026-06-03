@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
-from ._base_widget import BaseWidget
+from ..widgets import BaseWidget
 
 if TYPE_CHECKING:  # pragma: no cover
   pass

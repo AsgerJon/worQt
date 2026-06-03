@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 
-from worQt.app import CADApp
+from worQt.cad import CADApp
 
 
 def main(*args: str) -> int:

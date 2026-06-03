@@ -6,9 +6,7 @@ The 'window' subpackage exposes the window classes for worQt.
 from __future__ import annotations
 
 from ._main_window import MainWindow
-from ._cad_window import CADWindow
 
 __all__ = (
   'MainWindow',
-  'CADWindow',
 )

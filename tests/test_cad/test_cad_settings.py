@@ -15,7 +15,7 @@ import tempfile
 from worktoy.work_test import BaseTest
 
 from worQt.cad import CADSettings
-from worQt.widgets import CADWidget
+from worQt.cad import CADWidget
 
 
 class TestCADSettings(BaseTest):

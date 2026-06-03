@@ -1,5 +1,8 @@
 """
-The 'worQt.widgets' package provides custom widgets.
+The 'worQt.widgets' package provides the generic, reusable custom widgets:
+the fusion bases and the type-specific value editors with the VLC-style
+settings dialog. Example-specific widgets (the CAD canvas, tool panels and
+icons) live in 'worQt.cad', not here.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -14,22 +17,6 @@ from ._value_edits import (
   valueEditor,
 )
 from ._settings_dialog import SettingsDialog
-from ._cad_widget import CADWidget
-from ._vertex_editor import VertexEditor
-from ._selection_tool import SelectionToolPanel
-from ._new_item_tool import NewItemToolPanel
-from ._view_tool import ViewToolPanel
-from ._tool_icons import (
-  navigateIcon,
-  selectIcon,
-  anchorIcon,
-  moduleIcon,
-  memberIcon,
-  supportIcon,
-  loadIcon,
-  dimensionIcon,
-  angleIcon,
-)
 
 __all__ = (
   'BaseWidget',
@@ -39,18 +26,4 @@ __all__ = (
   'NumberValueEdit',
   'valueEditor',
   'SettingsDialog',
-  'CADWidget',
-  'VertexEditor',
-  'SelectionToolPanel',
-  'NewItemToolPanel',
-  'ViewToolPanel',
-  'navigateIcon',
-  'selectIcon',
-  'anchorIcon',
-  'moduleIcon',
-  'memberIcon',
-  'supportIcon',
-  'loadIcon',
-  'dimensionIcon',
-  'angleIcon',
 )

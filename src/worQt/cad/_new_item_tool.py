@@ -25,10 +25,10 @@ from PySide6.QtWidgets import (
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
-from ._base_widget import BaseWidget
-from ._container import Container
+from ..widgets import BaseWidget
+from ..widgets import Container
 from ._vertex_editor import VertexEditor
-from ..cad.draw import KINDS
+from .draw import KINDS
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
