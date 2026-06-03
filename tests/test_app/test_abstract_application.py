@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from worQt.app import AbstractApplication
 from worQt.mixin import MixinMeta
-from . import AppTest
+from worQt.qtest import AppTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import TypeAlias, Optional, Union

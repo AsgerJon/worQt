@@ -1,9 +1,9 @@
 """
-App is the concrete 'worQt' application class. It exposes a context
-manager protocol: '__enter__' returns the application instance and
-'__exit__' runs the Qt event loop. The shared app handles ('returnCode',
-'splash', 'window', 'settings') live on 'AbstractApplication'; 'App' only
-fixes its window type.
+CADApp is the concrete 'worQt' application for the structural-drawing / FEA
+modeller (the CAD tool). It builds a 'CADWindow' and carries 'CADSettings'
+(the colour palette and view defaults), loaded from disk on entry. A context
+manager whose '__exit__' runs the Qt event loop on a clean exit; the shared
+app machinery lives on 'AbstractApplication'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -12,23 +12,24 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from . import AbstractApplication
-from ..window import MainWindow
+from ..cad import CADSettings
+from ..window import CADWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional
 
 
-class App(AbstractApplication):
+class CADApp(AbstractApplication):
   """
-  Concrete 'worQt' application. Supports use as a context manager:
+  The structural-drawing / FEA-modeller application. Use as a context
+  manager:
 
-      with App(*sys.argv) as app:
-        app.splash.show()
+      with CADApp(*sys.argv) as app:
         app.window.show()
 
-  '__exit__' runs the Qt event loop and blocks until the application
-  quits. If the with-body raises, the event loop is not started and
-  the exception propagates.
+  On entry the saved settings are loaded over the defaults. '__exit__' runs
+  the Qt event loop and blocks until the application quits; if the with-body
+  raised, the event loop is not started and the exception propagates.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -36,7 +37,8 @@ class App(AbstractApplication):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Fallback Variables
-  __window_class__ = MainWindow  # 'window' builds a MainWindow
+  __window_class__ = CADWindow  # 'window' builds a CADWindow
+  __settings_class__ = CADSettings  # 'settings' builds a CADSettings
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -45,11 +47,13 @@ class App(AbstractApplication):
   def __init__(self, *args: str) -> None:
     """
     Construct the application. Positional arguments are forwarded to
-    'QApplication' as the argv list. Typical usage is 'App(*sys.argv)'.
+    'QApplication' as the argv list. Typical usage is 'CADApp(*sys.argv)'.
     """
     super().__init__([*args, ])
 
-  def __enter__(self) -> App:
+  def __enter__(self) -> CADApp:
+    """Load the saved settings over the defaults, then enter."""
+    self.settings.load()
     return self
 
   def __exit__(self, _, exception: Optional[BaseException], __) -> None:

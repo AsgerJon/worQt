@@ -1,9 +1,8 @@
 """
-App is the concrete 'worQt' application class. It exposes a context
-manager protocol: '__enter__' returns the application instance and
-'__exit__' runs the Qt event loop. The shared app handles ('returnCode',
-'splash', 'window', 'settings') live on 'AbstractApplication'; 'App' only
-fixes its window type.
+DrawApp is the concrete 'worQt' application for the drawing app. A context
+manager whose '__exit__' runs the Qt event loop on a clean exit. Its
+'window' is a 'DrawWindow' and its 'settings' a 'DrawSettings'; the shared
+app machinery lives on 'AbstractApplication'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -12,23 +11,23 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from . import AbstractApplication
-from ..window import MainWindow
+from ..draw import DrawSettings
+from ..window import DrawWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional
 
 
-class App(AbstractApplication):
+class DrawApp(AbstractApplication):
   """
-  Concrete 'worQt' application. Supports use as a context manager:
+  Concrete drawing application. Supports use as a context manager:
 
-      with App(*sys.argv) as app:
-        app.splash.show()
+      with DrawApp(*sys.argv) as app:
         app.window.show()
 
   '__exit__' runs the Qt event loop and blocks until the application
-  quits. If the with-body raises, the event loop is not started and
-  the exception propagates.
+  quits. If the with-body raises, the event loop is not started and the
+  exception propagates.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -36,7 +35,8 @@ class App(AbstractApplication):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Fallback Variables
-  __window_class__ = MainWindow  # 'window' builds a MainWindow
+  __window_class__ = DrawWindow  # 'window' builds a DrawWindow
+  __settings_class__ = DrawSettings  # 'settings' builds a DrawSettings
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -45,11 +45,11 @@ class App(AbstractApplication):
   def __init__(self, *args: str) -> None:
     """
     Construct the application. Positional arguments are forwarded to
-    'QApplication' as the argv list. Typical usage is 'App(*sys.argv)'.
+    'QApplication' as the argv list. Typical usage is 'DrawApp(*sys.argv)'.
     """
     super().__init__([*args, ])
 
-  def __enter__(self) -> App:
+  def __enter__(self) -> DrawApp:
     return self
 
   def __exit__(self, _, exception: Optional[BaseException], __) -> None:

@@ -1,6 +1,6 @@
 """
-The 'tests.test_app' package contains unit tests for the 'worQt.app'
-package.
+The 'tests.test_fea' package contains unit tests for the pure (Qt-free)
+'worQt.fea' truss finite-element model.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen

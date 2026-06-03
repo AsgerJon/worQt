@@ -1,9 +1,8 @@
 """
-App is the concrete 'worQt' application class. It exposes a context
-manager protocol: '__enter__' returns the application instance and
-'__exit__' runs the Qt event loop. The shared app handles ('returnCode',
-'splash', 'window', 'settings') live on 'AbstractApplication'; 'App' only
-fixes its window type.
+JsonApp is the concrete 'worQt' application for editing JSON documents. A
+context manager whose '__exit__' runs the Qt event loop on a clean exit.
+Its 'window' is a 'JsonWindow'; the shared app machinery lives on
+'AbstractApplication'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -12,23 +11,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from . import AbstractApplication
-from ..window import MainWindow
+from ..window import JsonWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional
 
 
-class App(AbstractApplication):
+class JsonApp(AbstractApplication):
   """
-  Concrete 'worQt' application. Supports use as a context manager:
+  Concrete JSON document application. Supports use as a context manager:
 
-      with App(*sys.argv) as app:
-        app.splash.show()
+      with JsonApp(*sys.argv) as app:
         app.window.show()
 
   '__exit__' runs the Qt event loop and blocks until the application
-  quits. If the with-body raises, the event loop is not started and
-  the exception propagates.
+  quits. If the with-body raises, the event loop is not started and the
+  exception propagates.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -36,7 +34,7 @@ class App(AbstractApplication):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Fallback Variables
-  __window_class__ = MainWindow  # 'window' builds a MainWindow
+  __window_class__ = JsonWindow  # 'window' builds a JsonWindow
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -45,11 +43,11 @@ class App(AbstractApplication):
   def __init__(self, *args: str) -> None:
     """
     Construct the application. Positional arguments are forwarded to
-    'QApplication' as the argv list. Typical usage is 'App(*sys.argv)'.
+    'QApplication' as the argv list. Typical usage is 'JsonApp(*sys.argv)'.
     """
     super().__init__([*args, ])
 
-  def __enter__(self) -> App:
+  def __enter__(self) -> JsonApp:
     return self
 
   def __exit__(self, _, exception: Optional[BaseException], __) -> None:
