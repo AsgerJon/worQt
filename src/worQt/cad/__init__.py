@@ -19,7 +19,7 @@ from . import fea
 from ._tool_icons import (
   navigateIcon,
   selectIcon,
-  anchorIcon,
+  nodeIcon,
   moduleIcon,
   memberIcon,
   supportIcon,
@@ -41,7 +41,7 @@ __all__ = [
   'fea',
   'navigateIcon',
   'selectIcon',
-  'anchorIcon',
+  'nodeIcon',
   'moduleIcon',
   'memberIcon',
   'supportIcon',

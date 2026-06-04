@@ -9,7 +9,7 @@ with no Qt dependency.
 from __future__ import annotations
 
 from ._items import (
-  AnchorPoint,
+  Node,
   ModuleLine,
   Member,
   Dimension,
@@ -36,7 +36,7 @@ from ._serialize import (
 )
 
 __all__ = (
-  'AnchorPoint',
+  'Node',
   'ModuleLine',
   'Member',
   'Dimension',

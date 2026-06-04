@@ -27,25 +27,18 @@ class TestCADSettings(BaseTest):
     self.assertEqual(settings.appName, 'worQtCAD')
     self.assertEqual(settings.names(), ['colours', 'defaults'])
 
-  def test_colours_match_canvas_constants(self, ) -> None:
-    """Every colour default equals the matching 'CADWidget' constant."""
+  def test_colours_tab_is_the_palette(self, ) -> None:
+    """The colours tab carries every canvas hue as a hex string. It is the
+    single source of truth: 'CADWidget' no longer holds colour constants,
+    it reads them from here via '_color'."""
     colours = CADSettings().tab('colours')
-    self.assertEqual(colours['grid'], getattr(CADWidget, '__grid_color__'))
-    self.assertEqual(colours['module'],
-                     getattr(CADWidget, '__module_color__'))
-    self.assertEqual(colours['moduleSelected'],
-                     getattr(CADWidget, '__module_sel_color__'))
-    self.assertEqual(colours['anchor'],
-                     getattr(CADWidget, '__anchor_color__'))
-    self.assertEqual(colours['member'],
-                     getattr(CADWidget, '__member_color__'))
-    self.assertEqual(colours['support'],
-                     getattr(CADWidget, '__support_color__'))
-    self.assertEqual(colours['load'], getattr(CADWidget, '__load_color__'))
-    self.assertEqual(colours['settlement'],
-                     getattr(CADWidget, '__disp_color__'))
-    self.assertEqual(colours['dimension'],
-                     getattr(CADWidget, '__dim_color__'))
+    expected = {'background', 'grid', 'axes', 'module', 'moduleSelected',
+                'node', 'member', 'support', 'load', 'settlement',
+                'dimension', 'preview', 'halo'}
+    self.assertEqual(set(colours.names()), expected)
+    for name in expected:
+      self.assertTrue(colours[name].startswith('#'))
+      self.assertIs(colours.setting(name).valueType, str)
 
   def test_defaults_match_canvas_constants(self, ) -> None:
     """Every numeric default equals the matching 'CADWidget' constant."""
@@ -54,8 +47,8 @@ class TestCADSettings(BaseTest):
                      getattr(CADWidget, '__snap_px__'))
     self.assertEqual(defaults['pointRadius'],
                      getattr(CADWidget, '__point_radius__'))
-    self.assertEqual(defaults['anchorRadius'],
-                     getattr(CADWidget, '__anchor_radius__'))
+    self.assertEqual(defaults['nodeRadius'],
+                     getattr(CADWidget, '__node_radius__'))
     self.assertEqual(defaults['perpTolPx'],
                      getattr(CADWidget, '__perp_tol_px__'))
     self.assertEqual(defaults['defaultScale'],

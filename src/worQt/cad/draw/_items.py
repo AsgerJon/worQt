@@ -1,8 +1,8 @@
 """
 The elements of the drawing model. Two families live here:
 
-- Reference geometry that anchors the drawing but is not itself 'real':
-  'AnchorPoint' (a bare coordinate node) and 'ModuleLine' (an infinite
+- Reference geometry that grounds the drawing but is not itself 'real':
+  'Node' (a bare coordinate node) and 'ModuleLine' (an infinite
   module/datum line - a 'modullinje' - through an origin at a given angle,
   experienced as a prominent super-gridline).
 - Dimensioning: 'Dimension' (linear) and 'AngularDimension' (angular).
@@ -27,21 +27,39 @@ if TYPE_CHECKING:  # pragma: no cover
   pass
 
 
-class AnchorPoint(BaseObject):
+class Node(BaseObject):
   """
-  A reference coordinate '(x, y)' that anchors reality - the structural node
-  other elements are placed against. 'fixX'/'fixY' are its support fixities
-  (the boundary conditions): which of its two translational DOFs is held.
+  A structural node at '(x, y)' in one of 6 boundary-condition states - the
+  cross of {free, roller, pinned} (translation) and {released, locked}
+  (rotation, the 'charniere'). Only the SET quantities are stored (the FEA
+  induces the rest):
+
+  - free   -> applied force load 'F = (loadX, loadY)'.
+  - roller -> locked direction 'theta'; a SET displacement 'rollerSet' along
+    theta (settlement) and a SET force 'rollerLoad' along the rolling
+    direction (perpendicular to theta).
+  - pinned -> SET displacement (settlement) '(dispX, dispY)'; with rotation
+    locked too this is the fixed/encastre support.
+  - rotation: 'released' (charniere) keeps a SET moment 'loadMoment' (Mf,
+    rotation free); 'locked' keeps a SET rotation 'setRot' (xy).
+
+  The drawn symbol is inferred from 'supportType' (+ 'theta' for a roller);
+  the analysis is OpenSees' job.
   """
 
-  x = AttriBox[float](0.0)
-  y = AttriBox[float](0.0)
-  fixX = AttriBox[bool](False)  # horizontal DOF held by a support
-  fixY = AttriBox[bool](False)  # vertical DOF held by a support
-  loadX = AttriBox[float](0.0)  # applied nodal force, horizontal (N)
-  loadY = AttriBox[float](0.0)  # applied nodal force, vertical (N)
-  dispX = AttriBox[float](0.0)  # prescribed support displacement, horizontal
-  dispY = AttriBox[float](0.0)  # prescribed support displacement, vertical
+  x = AttriBox[float](0.0)  # node position
+  y = AttriBox[float](0.0)  # node position
+  supportType = AttriBox[str]('free')  # 'free' | 'roller' | 'pinned'
+  released = AttriBox[bool](True)  # charniere: rotation released if True
+  theta = AttriBox[float](0.0)  # roller locked direction (degrees)
+  loadX = AttriBox[float](0.0)  # F: applied force x (free state), N
+  loadY = AttriBox[float](0.0)  # F: applied force y (free state), N
+  dispX = AttriBox[float](0.0)  # x: set displacement x (pinned settlement)
+  dispY = AttriBox[float](0.0)  # y: set displacement y (pinned settlement)
+  rollerSet = AttriBox[float](0.0)  # x: set displacement along theta
+  rollerLoad = AttriBox[float](0.0)  # F: set force across theta (along roll)
+  setRot = AttriBox[float](0.0)  # xy: set rotation (when locked)
+  loadMoment = AttriBox[float](0.0)  # Mf: set moment (when released)
 
   @overload(float, float)
   def __init__(self, x: float, y: float) -> None:
@@ -53,37 +71,40 @@ class AnchorPoint(BaseObject):
     pass
 
   def supportKind(self, ) -> str:
-    """
-    The boundary condition as a name: 'pinned' (both DOFs), 'rollerH' (rests
-    on horizontal ground, vertical DOF held), 'rollerV' (against a vertical
-    surface, horizontal DOF held) or 'free' (unsupported).
-    """
-    if self.fixX and self.fixY:
-      return 'pinned'
-    if self.fixY:
-      return 'rollerH'
-    if self.fixX:
-      return 'rollerV'
-    return 'free'
+    """The display kind: 'free', 'roller', 'pinned', or 'fixed' (a pinned
+    support with rotation also locked, the encastre)."""
+    if self.supportType == 'pinned' and not self.released:
+      return 'fixed'
+    return self.supportType
 
   def cycleSupport(self, ) -> str:
-    """Advance the support: free -> pinned -> rollerH -> rollerV -> free,
-    returning the new kind."""
-    order = {'free': 'pinned', 'pinned': 'rollerH',
-             'rollerH': 'rollerV', 'rollerV': 'free'}
-    kind = order[self.supportKind()]
-    self.fixX = True if kind in ('pinned', 'rollerV') else False
-    self.fixY = True if kind in ('pinned', 'rollerH') else False
-    return kind
+    """Advance the translational support free -> roller -> pinned -> free
+    (the quick click gesture); rotation (charniere) is left to the editor."""
+    order = {'free': 'roller', 'roller': 'pinned', 'pinned': 'free'}
+    self.supportType = order.get(self.supportType, 'free')
+    return self.supportKind()
 
   def __str__(self, ) -> str:
-    parts = ['Anchor(%g, %g)' % (self.x, self.y)]
-    if self.supportKind() != 'free':
-      parts.append(self.supportKind())
-    if self.loadX or self.loadY:
+    parts = ['Node(%g, %g)' % (self.x, self.y)]
+    if self.supportType == 'roller':
+      parts.append('roller@%g' % (self.theta,))
+    elif self.supportKind() != 'free':
+      parts.append(self.supportKind())  # pinned / fixed
+    if not self.released and self.supportKind() != 'fixed':
+      parts.append('rot-locked')
+    if self.supportType == 'free' and (self.loadX or self.loadY):
       parts.append('F(%g, %g)' % (self.loadX, self.loadY))
-    if self.dispX or self.dispY:
+    if self.supportType == 'pinned' and (self.dispX or self.dispY):
       parts.append('d(%g, %g)' % (self.dispX, self.dispY))
+    if self.supportType == 'roller':
+      if self.rollerSet:
+        parts.append('d%g' % (self.rollerSet,))
+      if self.rollerLoad:
+        parts.append('F%g' % (self.rollerLoad,))
+    if self.released and self.loadMoment:
+      parts.append('Mf(%g)' % (self.loadMoment,))
+    if not self.released and self.setRot:
+      parts.append('xy(%g)' % (self.setRot,))
     return ' '.join(parts)
 
   __repr__ = __str__
@@ -124,22 +145,22 @@ class ModuleLine(BaseObject):
 
 class Member(BaseObject):
   """
-  A structural member: a 'real', load-bearing element between two anchor
-  nodes. It holds references to its two 'AnchorPoint' endpoints, 'nodeA' and
+  A structural member: a 'real', load-bearing element between two node
+  nodes. It holds references to its two 'Node' endpoints, 'nodeA' and
   'nodeB'; its coordinates '(x1, y1)'/'(x2, y2)' read through to them, so
-  moving an anchor moves every member attached to it. Members are the
+  moving a node moves every member attached to it. Members are the
   geometry the FEA model is built from; they are drawn solid.
   """
 
-  nodeA = AttriBox[AnchorPoint]()  # the start node
-  nodeB = AttriBox[AnchorPoint]()  # the end node
+  nodeA = AttriBox[Node]()  # the start node
+  nodeB = AttriBox[Node]()  # the end node
   x1 = Field()  # read-through to nodeA.x
   y1 = Field()  # read-through to nodeA.y
   x2 = Field()  # read-through to nodeB.x
   y2 = Field()  # read-through to nodeB.y
 
-  @overload(AnchorPoint, AnchorPoint)
-  def __init__(self, nodeA: AnchorPoint, nodeB: AnchorPoint) -> None:
+  @overload(Node, Node)
+  def __init__(self, nodeA: Node, nodeB: Node) -> None:
     self.nodeA = nodeA
     self.nodeB = nodeB
 

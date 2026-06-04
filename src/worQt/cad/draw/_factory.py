@@ -17,7 +17,7 @@ import math
 from typing import TYPE_CHECKING
 
 from ._items import (
-  AnchorPoint,
+  Node,
   ModuleLine,
   Member,
   Dimension,
@@ -27,12 +27,12 @@ from ._items import (
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
 
-KINDS = ('Anchor', 'Module', 'Member', 'Dimension', 'Angle')
+KINDS = ('Node', 'Module', 'Member', 'Dimension', 'Angle')
 
 HINTS = {
-  'Anchor': 'x, y',
+  'Node': 'x, y',
   'Module': 'x, y, angle',
-  'Member': 'drag between two anchors',
+  'Member': 'drag between two nodes',
   'Dimension': 'x1, y1, x2, y2',
   'Angle': 'vx, vy, ax, ay, bx, by',
 }
@@ -53,16 +53,16 @@ def itemFromCoords(kind: str, text: str) -> Any:
   'ValueError' on an unknown kind or a wrong number of coordinates.
   """
   nums = parseNumbers(text)
-  if kind == 'Anchor':
+  if kind == 'Node':
     if len(nums) != 2:
-      raise ValueError('Anchor needs 2 numbers: x, y')
-    return AnchorPoint(nums[0], nums[1])
+      raise ValueError('Node needs 2 numbers: x, y')
+    return Node(nums[0], nums[1])
   if kind == 'Module':
     if len(nums) != 3:
       raise ValueError('Module needs 3 numbers: x, y, angle')
     return ModuleLine(nums[0], nums[1], nums[2])
   if kind == 'Member':
-    raise ValueError('Members connect two anchors, not raw coordinates')
+    raise ValueError('Members connect two nodes, not raw coordinates')
   if kind == 'Dimension':
     if len(nums) != 4:
       raise ValueError('Dimension needs 4 numbers: x1, y1, x2, y2')
@@ -80,8 +80,8 @@ def describeItem(item: Any) -> tuple:
   coordinates as a list of '(x, y)' pairs. Inverse of 'buildItem'. A module
   line reports its origin and a point one unit along it (encoding the angle).
   """
-  if isinstance(item, AnchorPoint):
-    return ('Anchor', [(item.x, item.y)])
+  if isinstance(item, Node):
+    return ('Node', [(item.x, item.y)])
   if isinstance(item, ModuleLine):
     dx, dy = item.direction()
     return ('Module', [(item.x, item.y), (item.x + dx, item.y + dy)])
@@ -98,36 +98,32 @@ def describeItem(item: Any) -> tuple:
 def itemAttrs(item: Any) -> dict:
   """
   The non-geometric attributes to persist for 'item' beyond its vertices -
-  currently an anchor's support fixities. Returns an empty dict when there is
+  currently a node's support fixities. Returns an empty dict when there is
   nothing extra to store, so the saved form stays minimal.
   """
-  if isinstance(item, AnchorPoint):
+  if isinstance(item, Node):
     attrs = {}
-    if item.fixX:
-      attrs['fixX'] = True
-    if item.fixY:
-      attrs['fixY'] = True
-    if item.loadX:
-      attrs['loadX'] = item.loadX
-    if item.loadY:
-      attrs['loadY'] = item.loadY
-    if item.dispX:
-      attrs['dispX'] = item.dispX
-    if item.dispY:
-      attrs['dispY'] = item.dispY
+    if item.supportType != 'free':  # 'free' is the default
+      attrs['supportType'] = item.supportType
+    if not item.released:  # 'released' (charniere) is the default
+      attrs['released'] = False
+    for name in ('theta', 'loadX', 'loadY', 'dispX', 'dispY',
+                 'rollerSet', 'rollerLoad', 'setRot', 'loadMoment'):
+      value = getattr(item, name)
+      if value:  # only the non-zero SET values
+        attrs[name] = value
     return attrs
   return {}
 
 
 def applyAttrs(item: Any, attrs: dict) -> None:
   """Apply the persisted non-geometric attributes onto 'item'."""
-  if isinstance(item, AnchorPoint):
-    item.fixX = True if attrs.get('fixX') else False
-    item.fixY = True if attrs.get('fixY') else False
-    item.loadX = float(attrs.get('loadX', 0.0))
-    item.loadY = float(attrs.get('loadY', 0.0))
-    item.dispX = float(attrs.get('dispX', 0.0))
-    item.dispY = float(attrs.get('dispY', 0.0))
+  if isinstance(item, Node):
+    item.supportType = attrs.get('supportType', 'free')
+    item.released = False if attrs.get('released') is False else True
+    for name in ('theta', 'loadX', 'loadY', 'dispX', 'dispY',
+                 'rollerSet', 'rollerLoad', 'setRot', 'loadMoment'):
+      setattr(item, name, float(attrs.get(name, 0.0)))
 
 
 def buildItem(kind: str, vertices: list) -> Any:
@@ -137,11 +133,11 @@ def buildItem(kind: str, vertices: list) -> Any:
   the wrong number of vertices. A module line takes two vertices - origin and
   a point it passes through - and derives its angle from them.
   """
-  if kind == 'Anchor':
+  if kind == 'Node':
     if len(vertices) != 1:
-      raise ValueError('Anchor needs 1 vertex')
+      raise ValueError('Node needs 1 vertex')
     x, y = vertices[0]
-    return AnchorPoint(float(x), float(y))
+    return Node(float(x), float(y))
   if kind == 'Module':
     if len(vertices) != 2:
       raise ValueError('Module needs 2 vertices: origin, through-point')
@@ -150,7 +146,7 @@ def buildItem(kind: str, vertices: list) -> Any:
                                     float(px) - float(ox)))
     return ModuleLine(float(ox), float(oy), float(angle))
   if kind == 'Member':
-    raise ValueError('Members reference two anchors; build via Member(a, b)')
+    raise ValueError('Members reference two nodes; build via Member(a, b)')
   if kind == 'Dimension':
     if len(vertices) != 2:
       raise ValueError('Dimension needs 2 vertices')

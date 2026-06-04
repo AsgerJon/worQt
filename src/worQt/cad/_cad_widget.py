@@ -1,6 +1,6 @@
 """
 CADWidget is the canvas for the drawing app. It renders a 'CADScene' of
-elements - anchor points, infinite module lines and dimensions - under a
+elements - node points, infinite module lines and dimensions - under a
 world-to-screen transform with adjustable zoom. The mouse wheel zooms in and
 out around the cursor; a hover callback reports the world coordinate under
 the pointer. World 'y' points up, screen 'y' points down (the transform
@@ -18,9 +18,10 @@ from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QPolygonF
 from worktoy.desc import AttriBox
 
 from ..widgets import BaseWidget
+from ._cad_settings import CADSettings
 from .draw import (
   CADScene,
-  AnchorPoint,
+  Node,
   ModuleLine,
   Member,
   Dimension,
@@ -47,24 +48,20 @@ class CADWidget(BaseWidget):
   __max_scale__ = 4000.0
   __default_scale__ = 1.0  # pixels per mm at the default view (1 px = 1 mm)
   __point_radius__ = 4.0
-  __anchor_radius__ = 5.0  # the crossed-circle anchor marker, in pixels
+  __node_radius__ = 5.0  # charniere (released) node: the hinge ring, pixels
+  __node_dot__ = 3.0  # rigid (neutral) node: the small filled dot, pixels
   __fit_padding__ = 0.08  # fraction of span left as margin when refitting
+  __min_focus_margin__ = 250.0  # world mm of surroundings when focusing
   __glow_radius_factor__ = 3.5  # point glow disc, in point radii
   __glow_width_factor__ = 3.0  # line glow stroke, in point radii
   __halo_pad__ = 3.0  # extra pixels of the bright outline barrier
   __min_drag_px__ = 3.0  # ignore press-drag gestures shorter than this
   __snap_px__ = 10.0  # object-snap pixel tolerance (pulls onto a segment)
   __perp_tol_px__ = 2.0  # 'on the module line' tolerance for the perp lock
-  __grid_color__ = '#2a3628'  # near-black gridlines, more green / less blue
-  __module_color__ = '#6f9a58'  # prominent super-gridline (a bold grid hue)
-  __module_sel_color__ = '#a6e07a'  # a selected module line, brighter still
-  __anchor_color__ = '#c678dd'  # reference-node colour (distinct from items)
-  __member_color__ = '#61afef'  # structural member (solid, load-bearing)
-  __support_color__ = '#56b6c2'  # support / boundary-condition symbols
-  __load_color__ = '#e06c75'  # nodal load (force) arrows
+  #  Colours are NOT held here: every paint reads them from the settings
+  #  object via '_color(name)', so the 'CADSettings' palette is the single
+  #  source of truth (see '_color').
   __load_len__ = 34.0  # committed load arrow length, in pixels
-  __disp_color__ = '#d19a66'  # prescribed support-displacement arrows
-  __dim_color__ = '#ffd24a'  # prominent colour for interim dimensions
   __dim_font_pt__ = 11  # larger font for interim dimension text
 
   #  Private Variables
@@ -72,45 +69,56 @@ class CADWidget(BaseWidget):
   __on_drag__ = None  # Callable[[str, tuple, tuple], None] mid-gesture
   __on_view_changed__ = None  # Callable[[], None] after zoom/pan/grid change
   __selected__ = None  # the emphasised item, or None
-  __active_kind__ = 'Anchor'  # the kind the mouse adds
+  __active_kind__ = 'Node'  # the kind the mouse adds
   __on_request_add__ = None  # Callable[[str, list], None]
   __dragging__ = False
   __drag_start__ = None  # world (x, y) of the press
   __drag_current__ = None  # world (x, y) under the pointer mid-drag
   __mode__ = 'navigate'  # 'navigate' (pan), 'draw' (create), 'select' (pick)
   __panning__ = False
-  __pan_anchor__ = None  # world point grabbed at the start of a pan
+  __pan_origin__ = None  # world point grabbed at the start of a pan
   __hover_world__ = None  # snapped grid node under the pointer, or None
   __on_pick__ = None  # Callable[[int], None] when an item is clicked
   __on_delete__ = None  # Callable[[], None] on the Delete key
-  __on_support__ = None  # Callable[[AnchorPoint], None] in support mode
-  __on_load__ = None  # Callable[[AnchorPoint, float, float], None] load set
-  __load_anchor__ = None  # anchor being loaded mid-drag, or None
+  __on_support__ = None  # Callable[[Node], None] in support mode
+  __on_load__ = None  # Callable[[Node, float, float], None] load set
+  __load_node__ = None  # node being loaded mid-drag, or None
   __load_current__ = None  # world point under the pointer while loading
-  __on_displace__ = None  # Callable[[AnchorPoint, float, float], None] disp
-  __support_anchor__ = None  # anchor pressed in support mode (click or drag)
+  __on_displace__ = None  # Callable[[Node, float, float], None] disp
+  __support_node__ = None  # node pressed in support mode (click or drag)
   __support_press__ = None  # press screen pos, to tell a click from a drag
   __support_current__ = None  # world tip while dragging a displacement
-  __on_request_member__ = None  # Callable[[AnchorPoint, AnchorPoint], None]
-  __member_start__ = None  # the anchor a member is being dragged from
+  __on_request_member__ = None  # Callable[[Node, Node], None]
+  __member_start__ = None  # the node a member is being dragged from
   __member_current__ = None  # world point under the pointer mid-member-drag
   __angle_points__ = None  # collected world points while placing an angle
-  __click_anchor__ = None  # press screen pos, to tell clicks from drags
+  __click_origin__ = None  # press screen pos, to tell clicks from drags
   __perp_origin__ = None  # dimension start, when locked perpendicular
   __perp_normals__ = None  # module-line normals available to lock onto
 
   #  Public Variables
   scene = AttriBox[CADScene]()
+  settings = AttriBox[CADSettings]()  # the palette source; inject the app's
   scale = AttriBox[float](1.0)  # pixels per mm
   panX = AttriBox[float](0.0)
   panY = AttriBox[float](0.0)
   showGrid = AttriBox[bool](True)
   snapToGrid = AttriBox[bool](True)
   gridTargetPx = AttriBox[float](24.0)  # aim for ~this pixel spacing per cell
+  showNodes = AttriBox[bool](True)  # draw the node markers
+  showElements = AttriBox[bool](True)  # draw the members
+  showGuides = AttriBox[bool](True)  # module lines + node crossed circles
+  showDimensions = AttriBox[bool](True)  # draw (angular) dimensions
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _color(self, name: str) -> QColor:
+    """The named canvas colour, read live from the settings 'Colours' tab.
+    Every paint asks for its colour here, so editing a colour in the
+    settings repaints with it - the settings object is the only palette."""
+    return QColor(self.settings.tab('colours')[name])
 
   def worldToScreen(self, wx: float, wy: float) -> QPointF:
     """Map a world coordinate to its pixel position in the widget."""
@@ -154,6 +162,27 @@ class CADWidget(BaseWidget):
     self.showGrid = True if show else False
     self.update()
 
+  def setShowNodes(self, show: bool) -> None:
+    """Show or hide the node markers (their dots/rings and supports)."""
+    self.showNodes = True if show else False
+    self.update()
+
+  def setShowElements(self, show: bool) -> None:
+    """Show or hide the structural members."""
+    self.showElements = True if show else False
+    self.update()
+
+  def setShowGuides(self, show: bool) -> None:
+    """Show or hide the guides: the module lines and the crossed-circle
+    guide glyph drawn on every node."""
+    self.showGuides = True if show else False
+    self.update()
+
+  def setShowDimensions(self, show: bool) -> None:
+    """Show or hide the linear and angular dimensions."""
+    self.showDimensions = True if show else False
+    self.update()
+
   def setSnap(self, enabled: bool) -> None:
     """Enable or disable snapping mouse gestures to the grid."""
     self.snapToGrid = True if enabled else False
@@ -179,7 +208,7 @@ class CADWidget(BaseWidget):
   def _worldAt(self, pos: QPointF) -> tuple:
     """
     The world coordinate under a screen position. With snapping on, the
-    pointer is pulled onto the nearest reference - a node first (an anchor
+    pointer is pulled onto the nearest reference - a node first (a node
     point or a module-line intersection), then an infinite module line, then
     a dimension segment - and only otherwise rounded to the grid.
     """
@@ -213,12 +242,12 @@ class CADWidget(BaseWidget):
 
   def _snapNodes(self, ) -> list:
     """
-    The world nodes to snap to: every anchor point, plus every intersection
+    The world nodes to snap to: every node point, plus every intersection
     of two module lines (the grid crossings the layout is anchored on).
     """
     modules = self._moduleLines()
     nodes = [(item.x, item.y) for item in self.scene
-             if isinstance(item, AnchorPoint)]
+             if isinstance(item, Node)]
     for i in range(len(modules)):
       for j in range(i + 1, len(modules)):
         hit = self._lineIntersection(modules[i], modules[j])
@@ -389,7 +418,7 @@ class CADWidget(BaseWidget):
     extent. A module line is infinite, so it returns 'None' and never drives
     auto-fit (it is always visible across the whole view anyway).
     """
-    if isinstance(item, AnchorPoint):
+    if isinstance(item, Node):
       return (item.x, item.y, item.x, item.y)
     if isinstance(item, (Member, Dimension)):
       return (min(item.x1, item.x2), min(item.y1, item.y2),
@@ -464,6 +493,47 @@ class CADWidget(BaseWidget):
       return
     self.fitWorldRect(bounds[0], bounds[1], bounds[2], bounds[3])
 
+  def _sceneBounds(self, ) -> tuple:
+    """The world bounding box of every finite item, or None when empty."""
+    bounds = None
+    for item in self.scene:
+      itemBounds = self._itemBounds(item)
+      if itemBounds is None:
+        continue
+      if bounds is None:
+        bounds = itemBounds
+      else:
+        bounds = (
+          min(bounds[0], itemBounds[0]), min(bounds[1], itemBounds[1]),
+          max(bounds[2], itemBounds[2]), max(bounds[3], itemBounds[3]))
+    return bounds
+
+  def focusOn(self, item: object) -> None:
+    """
+    Frame 'item' in the view, zoomed out enough to show its surroundings.
+    The margin grows with the whole drawing, so focusing a single node still
+    reveals its neighbourhood rather than filling the view with one point. An
+    item with no finite extent (a module line) leaves the view unchanged.
+    """
+    bounds = self._itemBounds(item)
+    if bounds is None:
+      return
+    minX, minY, maxX, maxY = bounds
+    margin = self._focusMargin(maxX - minX, maxY - minY)
+    self.fitWorldRect(minX - margin, minY - margin,
+                      maxX + margin, maxY + margin)
+
+  def _focusMargin(self, itemWidth: float, itemHeight: float) -> float:
+    """The world-space margin to leave around a focused item: enough to
+    show its surroundings, scaled to the drawing's overall size."""
+    sceneBounds = self._sceneBounds()
+    sceneSpan = 0.0
+    if sceneBounds is not None:
+      sceneSpan = max(sceneBounds[2] - sceneBounds[0],
+                      sceneBounds[3] - sceneBounds[1])
+    return max(sceneSpan * 0.15, max(itemWidth, itemHeight) * 0.75,
+               self.__min_focus_margin__)
+
   def setHoverCallback(self, callback: Callable) -> None:
     """Register a callback invoked with the world coords under the mouse."""
     self.__on_hover__ = callback
@@ -475,11 +545,11 @@ class CADWidget(BaseWidget):
     self.update()
 
   def setActiveKind(self, kind: str) -> None:
-    """Set the item kind the mouse will add ('Anchor', 'Module', ...)."""
+    """Set the item kind the mouse will add ('Node', 'Module', ...)."""
     self.__active_kind__ = kind
     self.__angle_points__ = None  # abandon any half-placed angle
     self.__perp_normals__ = None  # drop any perpendicular lock
-    self.__load_anchor__ = None  # abandon any half-set load
+    self.__load_node__ = None  # abandon any half-set load
     self.__member_start__ = None  # abandon any half-drawn member
 
   def _addAnglePoint(self, point: tuple) -> None:
@@ -503,8 +573,8 @@ class CADWidget(BaseWidget):
     self.__mode__ = mode
     self.__angle_points__ = None
     self.__perp_normals__ = None
-    self.__load_anchor__ = None
-    self.__support_anchor__ = None
+    self.__load_node__ = None
+    self.__support_node__ = None
     self.__member_start__ = None
     self._updateCursor()
 
@@ -528,37 +598,37 @@ class CADWidget(BaseWidget):
     self.__on_delete__ = callback
 
   def setSupportCallback(self, callback: Callable) -> None:
-    """Register a callback for the anchor clicked in support mode."""
+    """Register a callback for the node clicked in support mode."""
     self.__on_support__ = callback
 
   def setLoadCallback(self, callback: Callable) -> None:
-    """Register a callback for a load: 'callback(anchor, fx, fy)'."""
+    """Register a callback for a load: 'callback(node, fx, fy)'."""
     self.__on_load__ = callback
 
   def setDisplaceCallback(self, callback: Callable) -> None:
-    """Register a settlement callback: 'callback(anchor, dx, dy)'."""
+    """Register a settlement callback: 'callback(node, dx, dy)'."""
     self.__on_displace__ = callback
 
-  def _forceTip(self, pos: QPointF, anchor: AnchorPoint) -> tuple:
+  def _forceTip(self, pos: QPointF, node: Node) -> tuple:
     """
-    The world tip of a force or displacement dragged out of 'anchor'. With
+    The world tip of a force or displacement dragged out of 'node'. With
     snapping on the vector is snapped to the nearest axis (pure horizontal or
     pure vertical), so forces and settlements come out axis-aligned.
     """
     wx, wy = self.screenToWorld(pos.x(), pos.y())
-    fx, fy = wx - anchor.x, wy - anchor.y
+    fx, fy = wx - node.x, wy - node.y
     if self.snapToGrid:
       if abs(fx) >= abs(fy):
         fy = 0.0
       else:
         fx = 0.0
-    return (anchor.x + fx, anchor.y + fy)
+    return (node.x + fx, node.y + fy)
 
-  def _anchorAt(self, pos: QPointF) -> object:
-    """The anchor point nearest 'pos' within tolerance, or None."""
+  def _nodeAt(self, pos: QPointF) -> object:
+    """The node point nearest 'pos' within tolerance, or None."""
     best, bestDistance = None, self.__snap_px__
     for item in self.scene:
-      if isinstance(item, AnchorPoint):
+      if isinstance(item, Node):
         screen = self.worldToScreen(item.x, item.y)
         distance = math.hypot(pos.x() - screen.x(), pos.y() - screen.y())
         if distance <= bestDistance:
@@ -566,18 +636,30 @@ class CADWidget(BaseWidget):
     return best
 
   def _itemAt(self, screenPos: QPointF) -> object:
-    """The scene item nearest the screen position within a tolerance."""
+    """
+    The scene item nearest the screen position within a tolerance, with
+    nodes winning over everything else. A member runs through its two
+    nodes, so an endpoint click sits on both; without this priority the
+    member would always swallow the click and the node could never be
+    picked. Any node within tolerance beats the nearest non-node item.
+    """
     tolerance = 8.0
-    best, bestDistance = None, tolerance
+    bestNode, bestNodeDistance = None, tolerance
+    bestOther, bestOtherDistance = None, tolerance
     for item in self.scene:
       distance = self._screenDistanceTo(item, screenPos)
-      if distance is not None and distance <= bestDistance:
-        best, bestDistance = item, distance
-    return best
+      if distance is None or distance > tolerance:
+        continue
+      if isinstance(item, Node):
+        if distance <= bestNodeDistance:
+          bestNode, bestNodeDistance = item, distance
+      elif distance <= bestOtherDistance:
+        bestOther, bestOtherDistance = item, distance
+    return bestNode if bestNode is not None else bestOther
 
   def _screenDistanceTo(self, item: object, p: QPointF) -> float:
     """Screen-space distance from 'p' to 'item' (None if not applicable)."""
-    if isinstance(item, AnchorPoint):
+    if isinstance(item, Node):
       q = self.worldToScreen(item.x, item.y)
       return math.hypot(p.x() - q.x(), p.y() - q.y())
     if isinstance(item, ModuleLine):
@@ -634,7 +716,7 @@ class CADWidget(BaseWidget):
     self.__on_request_add__ = callback
 
   def setMemberCallback(self, callback: Callable) -> None:
-    """Register a member callback: 'callback(anchorA, anchorB)'."""
+    """Register a member callback: 'callback(nodeA, nodeB)'."""
     self.__on_request_member__ = callback
 
   def setDragCallback(self, callback: Callable) -> None:
@@ -662,7 +744,7 @@ class CADWidget(BaseWidget):
     """CAD faint gridlines at the current grid spacing across the view."""
     step = self.gridStep()
     minX, minY, maxX, maxY = self.visibleWorldRect()
-    painter.setPen(QPen(QColor(self.__grid_color__), 1))
+    painter.setPen(QPen(self._color('grid'), 1))
     startX = math.floor(minX / step) * step
     for i in range(int((maxX - startX) / step) + 1):
       x = startX + i * step
@@ -689,7 +771,7 @@ class CADWidget(BaseWidget):
       nodes.append(self.__drag_start__)
     if not nodes:
       return
-    base = QColor(self.__grid_color__)
+    base = self._color('grid')
     hue, saturation, value, _ = base.getHsv()
     shade = QColor.fromHsv(hue, saturation, min(255, int(value * 1.6)))
     painter.setPen(QPen(shade, 1))
@@ -701,32 +783,75 @@ class CADWidget(BaseWidget):
 
   def _paintAxes(self, painter: QPainter) -> None:
     """CAD faint x and y axes through the world origin."""
-    painter.setPen(QPen(QColor('#3a3f4b'), 1))
+    painter.setPen(QPen(self._color('axes'), 1))
     origin = self.worldToScreen(0.0, 0.0)
     painter.drawLine(QPointF(0, origin.y()),
                      QPointF(self.width(), origin.y()))
     painter.drawLine(QPointF(origin.x(), 0),
                      QPointF(origin.x(), self.height()))
 
-  def _paintAnchor(self, painter: QPainter, item: AnchorPoint) -> None:
-    """Render an anchor (crossed circle) plus its support symbol, if any."""
+  def _paintNode(self, painter: QPainter, item: Node) -> None:
+    """
+    Render a node marker that reads its rotational continuity, then any
+    support glyph and committed load/settlement over it. A rigid node (the
+    neutral case, moment traverses between the members on either side) is a
+    small filled dot; a charniere (released) node is a larger ring with a
+    background-filled centre - the moment release / hinge.
+    """
     p = self.worldToScreen(item.x, item.y)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QPen(QColor(self.__anchor_color__), 1.5))
-    radius = self.__anchor_radius__
-    painter.drawEllipse(p, radius, radius)
-    painter.drawLine(QPointF(p.x() - radius, p.y()),
-                     QPointF(p.x() + radius, p.y()))
-    painter.drawLine(QPointF(p.x(), p.y() - radius),
-                     QPointF(p.x(), p.y() + radius))
+    colour = self._color('node')
+    painter.save()
+    if item.released:  # charniere: a hollow hinge ring
+      painter.setBrush(QBrush(self._color('background')))
+      painter.setPen(QPen(colour, 1.5))
+      radius = self.__node_radius__
+      painter.drawEllipse(p, radius, radius)
+    else:  # rigid: a small filled dot, the neutral joint
+      painter.setPen(Qt.PenStyle.NoPen)
+      painter.setBrush(QBrush(colour))
+      radius = self.__node_dot__
+      painter.drawEllipse(p, radius, radius)
+    painter.restore()
     if item.supportKind() != 'free':
-      self._paintSupport(painter, p, item.supportKind())
+      self._paintSupport(painter, p, item)
     if item.dispX or item.dispY:
       self._paintDisplacement(painter, item)
     if item.loadX or item.loadY:
       self._paintLoad(painter, item)
 
-  def _paintDisplacement(self, painter: QPainter, item: AnchorPoint) -> None:
+  def _categoryShown(self, item: object) -> bool:
+    """Whether 'item's category is currently visible (module lines are
+    handled separately, as guides)."""
+    if isinstance(item, Node):
+      return self.showNodes
+    if isinstance(item, Member):
+      return self.showElements
+    if isinstance(item, (Dimension, AngularDimension)):
+      return self.showDimensions
+    return True
+
+  def _paintNodeGuides(self, painter: QPainter) -> None:
+    """When guides are shown, mark every node with the crossed-circle guide
+    glyph (the old anchor symbol) at its position - independent of whether
+    the node markers themselves are shown."""
+    for item in self.scene:
+      if isinstance(item, Node):
+        self._paintNodeGuide(painter, self.worldToScreen(item.x, item.y))
+
+  def _paintNodeGuide(self, painter: QPainter, p: QPointF) -> None:
+    """The crossed-circle guide glyph at screen point 'p'."""
+    radius = self.__node_radius__
+    painter.save()
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(QPen(self._color('node'), 1.0))
+    painter.drawEllipse(p, radius, radius)
+    painter.drawLine(QPointF(p.x() - radius, p.y()),
+                     QPointF(p.x() + radius, p.y()))
+    painter.drawLine(QPointF(p.x(), p.y() - radius),
+                     QPointF(p.x(), p.y() + radius))
+    painter.restore()
+
+  def _paintDisplacement(self, painter: QPainter, item: Node) -> None:
     """
     CAD the committed prescribed displacement on 'item' as a dashed,
     fixed-length arrow along '(dispX, dispY)' - the imposed settlement that
@@ -743,10 +868,10 @@ class CADWidget(BaseWidget):
     unitX, unitY = deltaX / length, deltaY / length
     tip = QPointF(node.x() + unitX * self.__load_len__,
                   node.y() + unitY * self.__load_len__)
-    pen = QPen(QColor(self.__disp_color__), 2, Qt.PenStyle.DashLine)
+    pen = QPen(self._color('settlement'), 2, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     painter.drawLine(node, tip)
-    self._arrowHead(painter, tip, unitX, unitY, self.__disp_color__)
+    self._arrowHead(painter, tip, unitX, unitY, self._color('settlement'))
     font = painter.font()
     font.setPointSize(self.__dim_font_pt__ - 1)
     font.setBold(False)
@@ -756,25 +881,25 @@ class CADWidget(BaseWidget):
 
   def _paintDisplacePreview(self, painter: QPainter) -> None:
     """The rubber-band settlement arrow while a displacement is dragged."""
-    anchor = self.__support_anchor__
-    node = self.worldToScreen(anchor.x, anchor.y)
+    node = self.__support_node__
+    node = self.worldToScreen(node.x, node.y)
     tip = self.worldToScreen(self.__support_current__[0],
                              self.__support_current__[1])
     deltaX, deltaY = tip.x() - node.x(), tip.y() - node.y()
     length = math.hypot(deltaX, deltaY)
     if length < 1.0:
       return  # still a click, not a drag: nothing to preview yet
-    pen = QPen(QColor(self.__disp_color__), 2, Qt.PenStyle.DashLine)
+    pen = QPen(self._color('settlement'), 2, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     painter.drawLine(node, tip)
     self._arrowHead(painter, tip, deltaX / length, deltaY / length,
-                    self.__disp_color__)
-    dx = self.__support_current__[0] - anchor.x
-    dy = self.__support_current__[1] - anchor.y
+                    self._color('settlement'))
+    dx = self.__support_current__[0] - node.x
+    dy = self.__support_current__[1] - node.y
     painter.drawText(QPointF(tip.x() + 5, tip.y() + 12),
                      'd %.4g' % math.hypot(dx, dy))
 
-  def _paintLoad(self, painter: QPainter, item: AnchorPoint) -> None:
+  def _paintLoad(self, painter: QPainter, item: Node) -> None:
     """
     CAD the committed nodal load on 'item' as a fixed-length force arrow
     along '(loadX, loadY)', labelled with its magnitude in N. The arrow is a
@@ -792,9 +917,9 @@ class CADWidget(BaseWidget):
     unitX, unitY = deltaX / length, deltaY / length
     tip = QPointF(node.x() + unitX * self.__load_len__,
                   node.y() + unitY * self.__load_len__)
-    painter.setPen(QPen(QColor(self.__load_color__), 2))
+    painter.setPen(QPen(self._color('load'), 2))
     painter.drawLine(node, tip)
-    self._arrowHead(painter, tip, unitX, unitY, self.__load_color__)
+    self._arrowHead(painter, tip, unitX, unitY, self._color('load'))
     font = painter.font()
     font.setPointSize(self.__dim_font_pt__ - 1)
     font.setBold(False)
@@ -803,52 +928,120 @@ class CADWidget(BaseWidget):
 
   def _paintLoadPreview(self, painter: QPainter) -> None:
     """The rubber-band force arrow while a load is dragged from a node."""
-    anchor = self.__load_anchor__
-    node = self.worldToScreen(anchor.x, anchor.y)
+    node = self.__load_node__
+    node = self.worldToScreen(node.x, node.y)
     tip = self.worldToScreen(self.__load_current__[0],
                              self.__load_current__[1])
-    pen = QPen(QColor(self.__load_color__), 2, Qt.PenStyle.DashLine)
+    pen = QPen(self._color('load'), 2, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     painter.drawLine(node, tip)
     deltaX, deltaY = tip.x() - node.x(), tip.y() - node.y()
     length = math.hypot(deltaX, deltaY)
     if length > 1.0:
       self._arrowHead(painter, tip, deltaX / length, deltaY / length,
-                      self.__load_color__)
-    fx = self.__load_current__[0] - anchor.x
-    fy = self.__load_current__[1] - anchor.y
+                      self._color('load'))
+    fx = self.__load_current__[0] - node.x
+    fy = self.__load_current__[1] - node.y
     painter.drawText(QPointF(tip.x() + 5, tip.y() - 5),
                      '%.4g N' % math.hypot(fx, fy))
 
+  def _memberSum(self, item: Node) -> tuple:
+    """
+    The summed unit directions from 'item' to the far node of every member
+    attached to it, seeded with world up '(0, 1)' so a lone pinned/fixed
+    support still faces down (drawn opposite this sum). This is the 'S' the
+    encastre orients its ground perpendicular to.
+    """
+    sumX, sumY = 0.0, 1.0
+    for member in self.scene:
+      if not isinstance(member, Member):
+        continue
+      if member.nodeA is item:
+        other = member.nodeB
+      elif member.nodeB is item:
+        other = member.nodeA
+      else:
+        continue
+      dx, dy = other.x - item.x, other.y - item.y
+      distance = math.hypot(dx, dy)
+      if distance > 1e-9:
+        sumX += dx / distance
+        sumY += dy / distance
+    return (sumX, sumY)
+
+  def _supportAxis(self, item: Node) -> tuple:
+    """
+    The screen-space '(normal, side)' unit vectors of the support glyph:
+    'normal' runs from the node toward the ground (the held direction),
+    'side' runs across the base. A roller aligns with its locked 'theta'; a
+    pin or encastre faces opposite the summed member directions, so its
+    ground sits perpendicular to what it braces. World 'y' is flipped to
+    screen here.
+    """
+    if item.supportKind() == 'roller':
+      radians = math.radians(item.theta)
+      worldX, worldY = math.cos(radians), math.sin(radians)
+    else:
+      worldX, worldY = self._memberSum(item)
+      worldX, worldY = -worldX, -worldY  # the ground opposes the members
+    length = math.hypot(worldX, worldY) or 1.0
+    normalX, normalY = worldX / length, -worldY / length  # world -> screen
+    return ((normalX, normalY), (-normalY, normalX))
+
   def _paintSupport(self, painter: QPainter, node: QPointF,
-                    kind: str) -> None:
+                    item: Node) -> None:
     """
-    CAD a support symbol at 'node': a triangle for the held direction, with
-    ground hatching for a pin or roller circles for a roller. 'rollerV' holds
-    the horizontal DOF (triangle to the side); the others, vertical.
+    CAD an oriented support glyph at 'node': a triangle whose axis is the
+    held direction (a roller along its locked 'theta', a pin or encastre
+    opposite the connected members) over a base - rollers for a roller,
+    hatched earth for a pin or fixed support. The rotational state (pin
+    versus encastre) is carried by the node marker itself (ring versus dot),
+    not repeated here.
     """
-    normalX, normalY = (-1.0, 0.0) if kind == 'rollerV' else (0.0, 1.0)
-    sideX, sideY = -normalY, normalX  # base direction, across the triangle
-    size, half = 14.0, 9.0
+    (normalX, normalY), (sideX, sideY) = self._supportAxis(item)
+    size, half = 16.0, 10.0
     base = QPointF(node.x() + normalX * size, node.y() + normalY * size)
     cornerA = QPointF(base.x() + sideX * half, base.y() + sideY * half)
     cornerB = QPointF(base.x() - sideX * half, base.y() - sideY * half)
     painter.save()
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QPen(QColor(self.__support_color__), 1.5))
+    painter.setPen(QPen(self._color('support'), 1.5))
     painter.drawPolygon(QPolygonF([node, cornerA, cornerB]))
-    if kind == 'pinned':
-      for offset in (-0.7, -0.1, 0.5):  # ground hatching beyond the base
-        start = QPointF(base.x() + sideX * half * offset,
-                        base.y() + sideY * half * offset)
-        painter.drawLine(start, QPointF(start.x() + normalX * 5 - sideX * 4,
-                                        start.y() + normalY * 5 - sideY * 4))
+    if item.supportKind() == 'roller':
+      self._paintRollerBase(painter, base, normalX, normalY, sideX, sideY,
+                            half)
     else:
-      for offset in (-0.45, 0.45):  # roller circles beyond the base
-        centre = QPointF(base.x() + sideX * half * offset + normalX * 4,
-                         base.y() + sideY * half * offset + normalY * 4)
-        painter.drawEllipse(centre, 3.0, 3.0)
+      self._paintGroundBase(painter, base, normalX, normalY, sideX, sideY,
+                            half)
     painter.restore()
+
+  def _paintRollerBase(self, painter: QPainter, base: QPointF, normalX: float,
+                       normalY: float, sideX: float, sideY: float,
+                       half: float) -> None:
+    """Two rollers under the triangle base on a ground line perpendicular to
+    the held direction - the support is free to slide along that line."""
+    ground = QPointF(base.x() + normalX * 7, base.y() + normalY * 7)
+    painter.drawLine(
+        QPointF(ground.x() + sideX * half, ground.y() + sideY * half),
+        QPointF(ground.x() - sideX * half, ground.y() - sideY * half))
+    for offset in (-0.5, 0.5):
+      centre = QPointF(base.x() + sideX * half * offset + normalX * 3.5,
+                       base.y() + sideY * half * offset + normalY * 3.5)
+      painter.drawEllipse(centre, 3.0, 3.0)
+
+  def _paintGroundBase(self, painter: QPainter, base: QPointF, normalX: float,
+                       normalY: float, sideX: float, sideY: float,
+                       half: float) -> None:
+    """A ground line under the triangle base with diagonal hatching - the
+    fixed earth a pin or encastre is anchored to."""
+    painter.drawLine(
+        QPointF(base.x() + sideX * half, base.y() + sideY * half),
+        QPointF(base.x() - sideX * half, base.y() - sideY * half))
+    for offset in (-0.7, -0.2, 0.3, 0.8):
+      start = QPointF(base.x() + sideX * half * offset,
+                      base.y() + sideY * half * offset)
+      painter.drawLine(start, QPointF(start.x() + normalX * 5 - sideX * 4,
+                                      start.y() + normalY * 5 - sideY * 4))
 
   def _infiniteEnds(self, a: QPointF, b: QPointF) -> tuple:
     """Two screen points spanning the widget along the line through a, b."""
@@ -867,9 +1060,9 @@ class CADWidget(BaseWidget):
     b = self.worldToScreen(item.x + dx, item.y + dy)
     first, second = self._infiniteEnds(a, b)
     if selected:
-      painter.setPen(QPen(QColor(self.__module_sel_color__), 2.5))
+      painter.setPen(QPen(self._color('moduleSelected'), 2.5))
     else:
-      painter.setPen(QPen(QColor(self.__module_color__), 1.5))
+      painter.setPen(QPen(self._color('module'), 1.5))
     painter.drawLine(first, second)
 
   def _paintModuleLines(self, painter: QPainter) -> None:
@@ -880,7 +1073,7 @@ class CADWidget(BaseWidget):
 
   def _paintMember(self, painter: QPainter, item: Member) -> None:
     """Render a structural member as a solid, load-bearing line."""
-    painter.setPen(QPen(QColor(self.__member_color__), 3))
+    painter.setPen(QPen(self._color('member'), 3))
     a = self.worldToScreen(item.x1, item.y1)
     b = self.worldToScreen(item.x2, item.y2)
     painter.drawLine(a, b)
@@ -891,14 +1084,14 @@ class CADWidget(BaseWidget):
     a = self.worldToScreen(start.x, start.y)
     b = self.worldToScreen(self.__member_current__[0],
                            self.__member_current__[1])
-    pen = QPen(QColor(self.__member_color__), 2, Qt.PenStyle.DashLine)
+    pen = QPen(self._color('member'), 2, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     painter.drawLine(a, b)
 
   def _paintItem(self, painter: QPainter, item: object) -> None:
     """Dispatch an item to the painter for its type (modules drawn apart)."""
-    if isinstance(item, AnchorPoint):
-      self._paintAnchor(painter, item)
+    if isinstance(item, Node):
+      self._paintNode(painter, item)
     elif isinstance(item, Member):
       self._paintMember(painter, item)
     elif isinstance(item, Dimension):
@@ -908,7 +1101,7 @@ class CADWidget(BaseWidget):
 
   def _paintAngularItem(self, painter: QPainter, item: AngularDimension) -> None:
     """Render a committed angular dimension: two arms, an arc and the value."""
-    painter.setPen(QPen(QColor(self.__dim_color__), 1))
+    painter.setPen(QPen(self._color('dimension'), 1))
     font = painter.font()
     font.setPointSize(self.__dim_font_pt__ - 1)
     font.setBold(False)
@@ -933,8 +1126,8 @@ class CADWidget(BaseWidget):
   def _paintAnglePreview(self, painter: QPainter) -> None:
     """Show the angle points collected so far, with rays to the pointer."""
     points = [self.worldToScreen(x, y) for x, y in self.__angle_points__]
-    painter.setPen(QPen(QColor('#e5c07b'), 1, Qt.PenStyle.DashLine))
-    painter.setBrush(QBrush(QColor('#e5c07b')))
+    painter.setPen(QPen(self._color('preview'), 1, Qt.PenStyle.DashLine))
+    painter.setBrush(QBrush(self._color('preview')))
     for q in points:
       painter.drawEllipse(q, 3, 3)
     vertex = points[0]
@@ -946,7 +1139,7 @@ class CADWidget(BaseWidget):
 
   def _paintDimensionItem(self, painter: QPainter, item: Dimension) -> None:
     """Render a committed linear dimension between its two points."""
-    painter.setPen(QPen(QColor(self.__dim_color__), 1))
+    painter.setPen(QPen(self._color('dimension'), 1))
     font = painter.font()
     font.setPointSize(self.__dim_font_pt__ - 1)
     font.setBold(False)
@@ -958,12 +1151,13 @@ class CADWidget(BaseWidget):
 
   def _paintGlow(self, painter: QPainter, item: object) -> None:
     """Paint a soft warm light behind the selected item."""
-    glow = QColor(255, 224, 130, 90)
+    glow = self._color('halo')  # selection glow: halo hue, softened
+    glow.setAlpha(90)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    if isinstance(item, AnchorPoint):
+    if isinstance(item, Node):
       painter.setPen(Qt.PenStyle.NoPen)
       painter.setBrush(QBrush(glow))
-      radius = self.__anchor_radius__ * self.__glow_radius_factor__
+      radius = self.__node_radius__ * self.__glow_radius_factor__
       painter.drawEllipse(self.worldToScreen(item.x, item.y), radius, radius)
       return
     pen = QPen(glow, self.__point_radius__ * self.__glow_width_factor__)
@@ -982,9 +1176,9 @@ class CADWidget(BaseWidget):
   def _paintHalo(self, painter: QPainter, item: object) -> None:
     """Paint a bright outline barrier around the selected item."""
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QPen(QColor('#ffe082'), 1.5))
-    if isinstance(item, AnchorPoint):
-      radius = self.__anchor_radius__ + self.__halo_pad__
+    painter.setPen(QPen(self._color('halo'), 1.5))
+    if isinstance(item, Node):
+      radius = self.__node_radius__ + self.__halo_pad__
       painter.drawEllipse(self.worldToScreen(item.x, item.y), radius, radius)
     elif isinstance(item, (Member, Dimension)):
       a = self.worldToScreen(item.x1, item.y1)
@@ -1002,7 +1196,7 @@ class CADWidget(BaseWidget):
       return
     a = self.worldToScreen(start[0], start[1])
     b = self.worldToScreen(current[0], current[1])
-    painter.setPen(QPen(QColor('#e5c07b'), 1, Qt.PenStyle.DashLine))
+    painter.setPen(QPen(self._color('preview'), 1, Qt.PenStyle.DashLine))
     painter.setBrush(Qt.BrushStyle.NoBrush)
     if self.__active_kind__ == 'Module':
       first, second = self._infiniteEnds(a, b)  # preview the infinite line
@@ -1032,7 +1226,7 @@ class CADWidget(BaseWidget):
     elbow = QPointF(corner.x() + perpX * size, corner.y() + perpY * size)
     foot = QPointF(a.x() + perpX * size, a.y() + perpY * size)
     painter.save()
-    painter.setPen(QPen(QColor(self.__module_sel_color__), 1.5))
+    painter.setPen(QPen(self._color('moduleSelected'), 1.5))
     painter.drawLine(corner, elbow)
     painter.drawLine(elbow, foot)
     painter.restore()
@@ -1045,7 +1239,7 @@ class CADWidget(BaseWidget):
     """Annotate the dimension gesture like a technical drawing: the two
     coordinates, the linear dimension and the angle from the horizontal."""
     (sx, sy), (ex, ey) = self.__drag_start__, self.__drag_current__
-    painter.setPen(QPen(QColor(self.__dim_color__), 1))
+    painter.setPen(QPen(self._color('dimension'), 1))
     font = painter.font()
     font.setPointSize(self.__dim_font_pt__)
     font.setBold(True)
@@ -1068,25 +1262,25 @@ class CADWidget(BaseWidget):
     angle = math.degrees(math.atan2(ey - sy, ex - sx))
     self._angleDimension(painter, start, current, angle)
 
-  def _coordLabel(self, painter: QPainter, anchor: QPointF,
+  def _coordLabel(self, painter: QPainter, at: QPointF,
                   x: float, y: float, leftAlign: bool = True) -> None:
     """
-    Label a point with its world coordinate near 'anchor'. With 'leftAlign'
-    the text starts at the anchor; otherwise it ends there (so labels can be
+    Label a point with its world coordinate near 'at'. With 'leftAlign' the
+    text starts at that point; otherwise it ends there (so labels can be
     placed clear of the line on either side).
     """
     text = '(%.2f, %.2f)' % (x, y)
     if leftAlign:
-      position = QPointF(anchor.x() + 6, anchor.y() - 6)
+      position = QPointF(at.x() + 6, at.y() - 6)
     else:
       width = painter.fontMetrics().horizontalAdvance(text)
-      position = QPointF(anchor.x() - width - 6, anchor.y() - 6)
+      position = QPointF(at.x() - width - 6, at.y() - 6)
     painter.drawText(position, text)
 
   def _arrowHead(self, painter: QPainter, tip: QPointF, dirX: float,
                  dirY: float, color: str = None) -> None:
     """A small filled arrowhead at 'tip' pointing along '(dirX, dirY)'."""
-    fill = self.__dim_color__ if color is None else color
+    fill = self._color('dimension') if color is None else color
     size, half = 8.0, 3.0
     baseX, baseY = tip.x() - dirX * size, tip.y() - dirY * size
     perpX, perpY = -dirY, dirX
@@ -1153,14 +1347,19 @@ class CADWidget(BaseWidget):
     """Paint the background, axes, every item and any in-progress gesture."""
     painter = QPainter(self)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.fillRect(self.rect(), QColor('#1e1e1e'))
+    painter.fillRect(self.rect(), self._color('background'))
     if self.showGrid:
       self._paintGrid(painter)
-    self._paintModuleLines(painter)  # super-gridlines, over the faint grid
+    if self.showGuides:  # module lines + crossed-circle node guides
+      self._paintModuleLines(painter)  # super-gridlines, over the faint grid
     self._paintAxes(painter)
+    if self.showGuides:
+      self._paintNodeGuides(painter)
     for item in self.scene:
       if isinstance(item, ModuleLine):
-        continue  # already drawn as a super-gridline
+        continue  # a guide; drawn (or not) above
+      if not self._categoryShown(item):
+        continue  # its category is hidden
       selected = item is self.__selected__
       if selected:
         self._paintGlow(painter, item)
@@ -1171,9 +1370,9 @@ class CADWidget(BaseWidget):
       self._paintPreview(painter)
     if self.__angle_points__:
       self._paintAnglePreview(painter)
-    if self.__load_anchor__ is not None:
+    if self.__load_node__ is not None:
       self._paintLoadPreview(painter)
-    if self.__support_anchor__ is not None:
+    if self.__support_node__ is not None:
       self._paintDisplacePreview(painter)
     if self.__member_start__ is not None:
       self._paintMemberPreview(painter)
@@ -1195,23 +1394,23 @@ class CADWidget(BaseWidget):
     pos = event.position()
     if self.__panning__:
       cur = self.screenToWorld(pos.x(), pos.y())
-      anchorX, anchorY = self.__pan_anchor__
-      self.panX += anchorX - cur[0]
-      self.panY += anchorY - cur[1]
+      originX, originY = self.__pan_origin__
+      self.panX += originX - cur[0]
+      self.panY += originY - cur[1]
       self.update()
       if self.__on_hover__ is not None:
-        self.__on_hover__(anchorX, anchorY)
+        self.__on_hover__(originX, originY)
       return
-    if self.__load_anchor__ is not None:  # dragging a force out of a node
-      self.__load_current__ = self._forceTip(pos, self.__load_anchor__)
+    if self.__load_node__ is not None:  # dragging a force out of a node
+      self.__load_current__ = self._forceTip(pos, self.__load_node__)
       self.update()
       return
-    if self.__support_anchor__ is not None:  # dragging a settlement out
-      self.__support_current__ = self._forceTip(pos, self.__support_anchor__)
+    if self.__support_node__ is not None:  # dragging a settlement out
+      self.__support_current__ = self._forceTip(pos, self.__support_node__)
       self.update()
       return
     if self.__member_start__ is not None:  # dragging a member to a node
-      target = self._anchorAt(pos)
+      target = self._nodeAt(pos)
       if target is not None:  # snap the preview to a candidate end node
         self.__member_current__ = (target.x, target.y)
       else:
@@ -1244,7 +1443,7 @@ class CADWidget(BaseWidget):
     pos = event.position()
     if self.__mode__ == 'navigate':
       self.__panning__ = True
-      self.__pan_anchor__ = self.screenToWorld(pos.x(), pos.y())
+      self.__pan_origin__ = self.screenToWorld(pos.x(), pos.y())
       self._updateCursor()
       event.accept()
       return
@@ -1260,27 +1459,27 @@ class CADWidget(BaseWidget):
       event.accept()
       return
     if self.__mode__ == 'support':
-      anchor = self._anchorAt(pos)
-      if anchor is not None:  # a click cycles; a drag sets a settlement
-        self.__support_anchor__ = anchor
+      node = self._nodeAt(pos)
+      if node is not None:  # a click cycles; a drag sets a settlement
+        self.__support_node__ = node
         self.__support_press__ = pos
-        self.__support_current__ = (anchor.x, anchor.y)
+        self.__support_current__ = (node.x, node.y)
         self.update()
       event.accept()
       return
     if self.__mode__ == 'load':
-      anchor = self._anchorAt(pos)
-      if anchor is not None:  # drag a force out of this node
-        self.__load_anchor__ = anchor
-        self.__load_current__ = (anchor.x, anchor.y)
+      node = self._nodeAt(pos)
+      if node is not None:  # drag a force out of this node
+        self.__load_node__ = node
+        self.__load_current__ = (node.x, node.y)
         self.update()
       event.accept()
       return
-    if self.__active_kind__ == 'Member':  # drag from one anchor to another
-      anchor = self._anchorAt(pos)
-      if anchor is not None:
-        self.__member_start__ = anchor
-        self.__member_current__ = (anchor.x, anchor.y)
+    if self.__active_kind__ == 'Member':  # drag from one node to another
+      node = self._nodeAt(pos)
+      if node is not None:
+        self.__member_start__ = node
+        self.__member_current__ = (node.x, node.y)
         self.update()
       event.accept()
       return
@@ -1298,7 +1497,7 @@ class CADWidget(BaseWidget):
       event.accept()
       return
     if self.__active_kind__ == 'Angle':
-      self.__click_anchor__ = pos
+      self.__click_origin__ = pos
       event.accept()
 
   def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -1310,38 +1509,38 @@ class CADWidget(BaseWidget):
       self._updateCursor()
       event.accept()
       return
-    if self.__load_anchor__ is not None:  # finish setting a nodal load
-      anchor = self.__load_anchor__
-      fx = self.__load_current__[0] - anchor.x
-      fy = self.__load_current__[1] - anchor.y
-      self.__load_anchor__ = None
+    if self.__load_node__ is not None:  # finish setting a nodal load
+      node = self.__load_node__
+      fx = self.__load_current__[0] - node.x
+      fy = self.__load_current__[1] - node.y
+      self.__load_node__ = None
       self.__load_current__ = None
       self.update()
       if self.__on_load__ is not None:
-        self.__on_load__(anchor, fx, fy)
+        self.__on_load__(node, fx, fy)
       event.accept()
       return
-    if self.__support_anchor__ is not None:  # click cycles, drag displaces
-      anchor = self.__support_anchor__
+    if self.__support_node__ is not None:  # click cycles, drag displaces
+      node = self.__support_node__
       press = self.__support_press__
       moved = (abs(event.position().x() - press.x())
                + abs(event.position().y() - press.y()))
-      dx = self.__support_current__[0] - anchor.x
-      dy = self.__support_current__[1] - anchor.y
-      self.__support_anchor__ = None
+      dx = self.__support_current__[0] - node.x
+      dy = self.__support_current__[1] - node.y
+      self.__support_node__ = None
       self.__support_press__ = None
       self.__support_current__ = None
       self.update()
       if moved < self.__min_drag_px__:
         if self.__on_support__ is not None:
-          self.__on_support__(anchor)  # a click: cycle the support kind
+          self.__on_support__(node)  # a click: cycle the support kind
       elif self.__on_displace__ is not None:
-        self.__on_displace__(anchor, dx, dy)  # a drag: prescribed settlement
+        self.__on_displace__(node, dx, dy)  # a drag: prescribed settlement
       event.accept()
       return
-    if self.__member_start__ is not None:  # finish a member at an anchor
+    if self.__member_start__ is not None:  # finish a member at a node
       start = self.__member_start__
-      target = self._anchorAt(event.position())
+      target = self._nodeAt(event.position())
       self.__member_start__ = None
       self.__member_current__ = None
       self.update()
@@ -1350,11 +1549,11 @@ class CADWidget(BaseWidget):
         self.__on_request_member__(start, target)
       event.accept()
       return
-    if self.__active_kind__ == 'Angle' and self.__click_anchor__ is not None:
-      anchor = self.__click_anchor__
-      self.__click_anchor__ = None
-      moved = (abs(event.position().x() - anchor.x())
-               + abs(event.position().y() - anchor.y()))
+    if self.__active_kind__ == 'Angle' and self.__click_origin__ is not None:
+      origin = self.__click_origin__
+      self.__click_origin__ = None
+      moved = (abs(event.position().x() - origin.x())
+               + abs(event.position().y() - origin.y()))
       if moved < self.__min_drag_px__:
         self._addAnglePoint(self._worldAt(event.position()))
       event.accept()
@@ -1385,14 +1584,14 @@ class CADWidget(BaseWidget):
     super().keyPressEvent(event)
 
   def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-    """Place an anchor point at a left double-click in anchor draw mode."""
+    """Place a node point at a left double-click in node draw mode."""
     if event.button() != Qt.MouseButton.LeftButton:
       return
-    if self.__mode__ != 'draw' or self.__active_kind__ != 'Anchor':
+    if self.__mode__ != 'draw' or self.__active_kind__ != 'Node':
       return
     wx, wy = self._worldAt(event.position())
     if self.__on_request_add__ is not None:
-      self.__on_request_add__('Anchor', [(wx, wy)])
+      self.__on_request_add__('Node', [(wx, wy)])
     event.accept()
 
   def _draggedFarEnough(self, start: tuple, end: tuple) -> bool:

@@ -32,7 +32,7 @@ def sceneToData(scene: CADScene) -> dict:
   """
   Return a plain, JSON-serialisable structure for every item in 'scene'. Most
   items store their kind and '(x, y)' vertices (plus 'attrs'); a member,
-  being reference-based, instead stores the scene indices of its two anchor
+  being reference-based, instead stores the scene indices of its two node
   nodes ('{"kind": "Member", "nodes": [i, j]}').
   """
   items = list(scene)
@@ -59,7 +59,7 @@ def sceneFromData(data: dict, scene: CADScene = None) -> CADScene:
   """
   Rebuild a 'CADScene' from a 'sceneToData' structure. Built in two passes -
   vertex items first, then members resolving their node indices to the
-  rebuilt anchors - so member references survive the round-trip. A malformed
+  rebuilt nodes - so member references survive the round-trip. A malformed
   entry raises before 'scene' is touched. When 'scene' is given it is cleared
   and refilled in place (keeping its identity); else a fresh one is returned.
   """

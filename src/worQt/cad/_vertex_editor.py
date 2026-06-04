@@ -2,7 +2,7 @@
 VertexEditor presents a vertex as a labelled row, 'v1   x [..] y [..]', and
 keeps a fixed baseline of rows on screen so the controls below it never
 shift when the item kind changes. 'configure' sets how many leading rows are
-*active* for the chosen kind: an 'Anchor' activates one, a 'Module' or
+*active* for the chosen kind: an 'Node' activates one, a 'Module' or
 'Dimension' two, an 'Angle' three. Inactive rows stay visible but greyed out
 (disabled) rather than removed, so the layout height is stable. 'vertices'
 reads back only the active rows as '(x, y)' float pairs.

@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QPoint, QPointF
 
 from worQt.qtest import AppTest
 from worQt.cad.draw import (
-  AnchorPoint,
+  Node,
   ModuleLine,
   Member,
   Dimension,
@@ -70,7 +70,7 @@ class TestCAD(AppTest):
   def test_items_hold_coordinates(self, ) -> None:
     """Each item stores exactly the coordinates it was built with."""
     self.assertEqual(
-        (AnchorPoint(3.0, 4.0).x, AnchorPoint(3.0, 4.0).y),
+        (Node(3.0, 4.0).x, Node(3.0, 4.0).y),
         (3.0, 4.0)
         )
     module = ModuleLine(1.0, 2.0, 90.0)
@@ -91,7 +91,7 @@ class TestCAD(AppTest):
   def test_scene_collects_items(self, ) -> None:
     """The scene appends, iterates and clears its items."""
     scene = CADScene()
-    scene.addItem(AnchorPoint(1.0, 1.0))
+    scene.addItem(Node(1.0, 1.0))
     scene.addItem(ModuleLine(0.0, 0.0, 45.0))
     self.assertEqual(len(scene), 2)
     scene.clear()
@@ -99,22 +99,22 @@ class TestCAD(AppTest):
 
   def test_factory_builds_each_kind(self, ) -> None:
     """'itemFromCoords' parses coordinates into the right item type."""
-    self.assertIsInstance(itemFromCoords('Anchor', '1, 2'), AnchorPoint)
+    self.assertIsInstance(itemFromCoords('Node', '1, 2'), Node)
     self.assertIsInstance(itemFromCoords('Module', '0, 0, 30'), ModuleLine)
     self.assertIsInstance(itemFromCoords('Dimension', '1 2 3 4'), Dimension)
 
   def test_factory_rejects_bad_arity(self, ) -> None:
     """Wrong coordinate counts raise 'ValueError'."""
     with self.assertRaises(ValueError):
-      itemFromCoords('Anchor', '1 2 3')
+      itemFromCoords('Node', '1 2 3')
     with self.assertRaises(ValueError):
       itemFromCoords('Module', '0 0')  # missing the angle
 
-  def test_anchor_and_module_round_trip(self, ) -> None:
-    """Anchor and module describe/build round-trip through the factory."""
-    anchor = buildItem('Anchor', [(1.0, 2.0)])
-    self.assertIsInstance(anchor, AnchorPoint)
-    self.assertEqual(describeItem(anchor), ('Anchor', [(1.0, 2.0)]))
+  def test_node_and_module_round_trip(self, ) -> None:
+    """Node and module describe/build round-trip through the factory."""
+    node = buildItem('Node', [(1.0, 2.0)])
+    self.assertIsInstance(node, Node)
+    self.assertEqual(describeItem(node), ('Node', [(1.0, 2.0)]))
     #  A module is built from origin + a through-point; the angle is derived.
     module = buildItem('Module', [(0.0, 0.0), (0.0, 5.0)])  # straight up
     self.assertIsInstance(module, ModuleLine)
@@ -125,9 +125,9 @@ class TestCAD(AppTest):
     with self.assertRaises(ValueError):
       buildItem('Module', [(0.0, 0.0)])  # needs origin + through-point
 
-  def test_member_references_anchors_and_follows(self, ) -> None:
-    """A member references two anchors; coords read through and follow."""
-    a, b = AnchorPoint(0.0, 0.0), AnchorPoint(3.0, 4.0)
+  def test_member_references_nodes_and_follows(self, ) -> None:
+    """A member references two nodes; coords read through and follow."""
+    a, b = Node(0.0, 0.0), Node(3.0, 4.0)
     member = Member(a, b)
     self.assertIs(member.nodeA, a)
     self.assertIs(member.nodeB, b)
@@ -140,12 +140,12 @@ class TestCAD(AppTest):
       describeItem(member),
       ('Member', [(0.0, 0.0), (3.0, 4.0)])
       )
-    a.x, a.y = 0.0, 10.0  # move the anchor -> the member tracks it
+    a.x, a.y = 0.0, 10.0  # move the node -> the member tracks it
     self.assertEqual((member.x1, member.y1), (0.0, 10.0))
     self.assertIn('Member', KINDS)
 
   def test_member_not_built_from_coordinates(self, ) -> None:
-    """Members cannot be built from raw coordinates (they need anchors)."""
+    """Members cannot be built from raw coordinates (they need nodes)."""
     with self.assertRaises(ValueError):
       buildItem('Member', [(0.0, 0.0), (3.0, 4.0)])
     with self.assertRaises(ValueError):
@@ -232,7 +232,7 @@ class TestCAD(AppTest):
     """A scene with every element kind renders without error."""
     canvas = CADWidget()
     canvas.resize(400, 300)
-    canvas.scene.addItem(AnchorPoint(0.0, 0.0))
+    canvas.scene.addItem(Node(0.0, 0.0))
     canvas.scene.addItem(ModuleLine(0.0, 0.0, 30.0))
     canvas.scene.addItem(Dimension(-2.0, -1.0, 3.0, 2.0))
     canvas.scene.addItem(AngularDimension(0.0, 0.0, 5.0, 0.0, 0.0, 5.0))
@@ -259,12 +259,21 @@ class TestCAD(AppTest):
         )
 
   def test_grid_color_is_greenish_near_black(self, ) -> None:
-    """The gridline colour stays near black but is greener and less blue."""
-    from PySide6.QtGui import QColor
-    colour = QColor(getattr(CADWidget, '__grid_color__'))
+    """The gridline colour (from settings) stays near black, greener,
+    less blue, and the canvas reads it live from the settings object."""
+    colour = CADWidget()._color('grid')  # asked from the settings palette
     self.assertLess(colour.red() + colour.green() + colour.blue(), 180)
     self.assertGreater(colour.green(), colour.blue())  # more green
     self.assertLess(colour.blue(), 55)  # less blue than the old #2a2e37
+
+  def test_canvas_reads_colours_from_settings(self, ) -> None:
+    """Each colour is asked from the settings object, so editing a colour
+    in the settings changes what the canvas paints with."""
+    canvas = CADWidget()
+    self.assertEqual(canvas._color('member').name(), '#61afef')
+    canvas.settings.tab('colours')['member'] = '#123456'
+    self.assertEqual(canvas._color('member').name(), '#123456')
+    self.assertFalse(canvas.grab().isNull())  # repaints with the edit
 
   def test_hover_highlights_snapped_gridlines(self, ) -> None:
     """Hovering tracks the snapped grid node so its gridlines highlight."""
@@ -297,7 +306,7 @@ class TestCAD(AppTest):
     canvas = CADWidget()
     canvas.resize(400, 300)
     canvas.scale = 100.0  # zoomed in near the origin
-    far = AnchorPoint(50.0, 50.0)
+    far = Node(50.0, 50.0)
     minX, minY, maxX, maxY = canvas.visibleWorldRect()
     self.assertFalse(minX <= 50.0 <= maxX and minY <= 50.0 <= maxY)
     canvas.ensureContains(far)
@@ -312,14 +321,14 @@ class TestCAD(AppTest):
     canvas = CADWidget()
     canvas.resize(400, 300)
     scale = canvas.scale
-    canvas.ensureContains(AnchorPoint(0.0, 0.0))
+    canvas.ensureContains(Node(0.0, 0.0))
     self.assertEqual(canvas.scale, scale)
 
   def test_selection_emphasis_paints(self, ) -> None:
     """A selected item paints (glow + halo) without error; None clears it."""
     canvas = CADWidget()
     canvas.resize(400, 300)
-    point = AnchorPoint(0.0, 0.0)
+    point = Node(0.0, 0.0)
     canvas.scene.addItem(point)
     canvas.setSelected(point)
     self.assertIs(getattr(canvas, '__selected__'), point)
@@ -327,15 +336,29 @@ class TestCAD(AppTest):
     canvas.setSelected(None)
     self.assertIsNone(getattr(canvas, '__selected__'))
 
+  def test_node_wins_over_member_under_cursor(self, ) -> None:
+    """At a shared endpoint the node is picked, not the member through it;
+    away from any node the member is still picked."""
+    canvas = CADWidget()
+    canvas.resize(400, 300)
+    a, b = Node(-50.0, 0.0), Node(50.0, 0.0)
+    canvas.scene.addItem(a)
+    canvas.scene.addItem(b)
+    canvas.scene.addItem(Member(a, b))
+    atEndpoint = canvas.worldToScreen(a.x, a.y)
+    self.assertIs(canvas._itemAt(atEndpoint), a)
+    atMidpoint = canvas.worldToScreen(0.0, 0.0)
+    self.assertIsInstance(canvas._itemAt(atMidpoint), Member)
+
   def test_list_row_selects_scene_item(self, ) -> None:
     """Selecting a list row emphasises the matching scene item."""
     window = CADWindow()
     window.show()
-    window._selectTool('Anchor')
+    window._selectTool('Node')
     window._onAdd()
     window._selectTool('Dimension')
     window._onAdd()
-    window.selectionTool.itemList.setCurrentRow(1)
+    window.selectionTool.dimensionList.setCurrentRow(0)  # the dimension
     self.assertIs(
       getattr(window.canvas, '__selected__'),
       window.canvas.scene.items[1]
@@ -347,12 +370,14 @@ class TestCAD(AppTest):
     """'clearScene' drops items, list rows and the selection."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     window.addItem(Dimension(-1.0, -1.0, 2.0, 2.0))
-    window.selectionTool.itemList.setCurrentRow(0)
+    window.selectionTool.nodeList.setCurrentRow(0)
     window.clearScene()
     self.assertEqual(len(window.canvas.scene), 0)
-    self.assertEqual(window.selectionTool.itemList.count(), 0)
+    self.assertEqual(window.selectionTool.nodeList.count(), 0)
+    self.assertEqual(window.selectionTool.elementList.count(), 0)
+    self.assertEqual(window.selectionTool.dimensionList.count(), 0)
     self.assertIsNone(getattr(window.canvas, '__selected__'))
 
   def test_clear_empty_scene_needs_no_confirmation(self, ) -> None:
@@ -362,21 +387,49 @@ class TestCAD(AppTest):
     window._onClear()  # no items -> no modal, just a no-op clear
     self.assertEqual(len(window.canvas.scene), 0)
 
-  def test_tools_live_in_left_panel(self, ) -> None:
-    """The tools are grouped in the left panel beside the canvas splitter."""
-    from PySide6.QtWidgets import QSplitter
+  def test_tools_live_in_tabbed_panel(self, ) -> None:
+    """The tools sit on the left as two tabs: a 'Selection' tab holding both
+    the item lists and the item editor, and a 'Viewer' tab. The editor is
+    routed to the Selection tab (not a separate one)."""
+    from PySide6.QtWidgets import QSplitter, QTabWidget
     window = CADWindow()
     window.show()
-    self.assertIsInstance(window.centralWidget(), QSplitter)
-    boxes = getattr(window, '__tool_boxes__')
-    self.assertEqual(set(boxes), {'selection', 'newItem', 'view'})
-    #  each tool panel is parented into its group box (not a top-level
-    #  window)
-    self.assertFalse(window.selectionTool.isWindow())
-    self.assertTrue(boxes['selection'].isAncestorOf(window.selectionTool))
-    self.assertTrue(hasattr(window.selectionTool, 'itemList'))
+    splitter = window.centralWidget()
+    self.assertIsInstance(splitter, QSplitter)
+    self.assertEqual(splitter.count(), 2)  # tabbed tools | canvas
+    self.assertIs(splitter.widget(1), window.canvas)
+    tabs = splitter.widget(0)
+    self.assertIsInstance(tabs, QTabWidget)
+    self.assertEqual(tabs.count(), 2)  # Selection, Viewer
+    index = getattr(window, '__tab_index__')
+    self.assertEqual(index['newItem'], index['selection'])  # editor w/ lists
+    self.assertEqual(tabs.tabText(index['selection']), 'Selection')
+    self.assertEqual(tabs.tabText(index['view']), 'Viewer')
+    selectionTab = tabs.widget(index['selection'])
+    #  the Selection tab contains BOTH the lists and the editor
+    self.assertTrue(selectionTab.isAncestorOf(window.selectionTool))
+    self.assertTrue(selectionTab.isAncestorOf(window.newItemTool))
+    self.assertIs(tabs.widget(index['view']), window.viewTool)
+    self.assertTrue(hasattr(window.selectionTool, 'nodeList'))
+    self.assertTrue(hasattr(window.selectionTool, 'guideList'))
+    self.assertTrue(hasattr(window.selectionTool, 'dimensionList'))
     self.assertTrue(hasattr(window.newItemTool, 'vertexEditor'))
-    self.assertIn('Anchor', getattr(window, '__tool_actions__'))
+    self.assertIn('Node', getattr(window, '__tool_actions__'))
+
+  def test_selecting_item_shows_editor_with_lists(self, ) -> None:
+    """Selecting an item shows its editor in the same Selection tab as the
+    lists - both visible at once, no tab switch away from the lists."""
+    window = CADWindow()
+    window.show()
+    tabs = getattr(window, '__tool_tabs__')
+    index = getattr(window, '__tab_index__')
+    self.assertEqual(tabs.currentIndex(), index['selection'])  # opens here
+    window.addItem(Node(3.0, 4.0))
+    window.selectionTool.nodeList.setCurrentRow(0)  # select to edit
+    self.assertEqual(tabs.currentIndex(), index['selection'])  # still here
+    self.assertTrue(window.selectionTool.nodeList.isVisible())  # lists shown
+    self.assertTrue(window.newItemTool.coordHost.isVisible())  # editor too
+    self.assertEqual(window.newItemTool.addButton.text(), 'Update item')
 
   def test_window_geometry_persists(self, ) -> None:
     """Saved window geometry is restored on the next launch."""
@@ -401,27 +454,29 @@ class TestCAD(AppTest):
         expected
         )
 
-  def test_view_menu_shows_tools(self, ) -> None:
-    """The View toggles show and hide the grouped tool sections."""
+  def test_view_menu_switches_tabs(self, ) -> None:
+    """The View menu entries switch the tool panel to the named tab."""
     window = CADWindow()
     window.show()
-    action = getattr(window, '__show_selection_action__')
-    self.assertTrue(action.isChecked())  # shown on launch
-    self.assertTrue(window.selectionTool.isVisible())
-    action.setChecked(False)
-    self.assertFalse(window.selectionTool.isVisible())
-    action.setChecked(True)
-    self.assertTrue(window.selectionTool.isVisible())
+    tabs = getattr(window, '__tool_tabs__')
+    index = getattr(window, '__tab_index__')
+    window._onShowView()  # 'Viewer tab'
+    self.assertEqual(tabs.currentIndex(), index['view'])
+    window._onShowSelection()  # 'Selection tab'
+    self.assertEqual(tabs.currentIndex(), index['selection'])
 
-  def test_add_item_keeps_list_aligned(self, ) -> None:
-    """Items added via 'addItem' stay index-aligned with the list rows."""
+  def test_add_item_routes_to_correct_list(self, ) -> None:
+    """Items added via 'addItem' land in the right list by type - a node in
+    Nodes, a dimension in Dimensions - and a row still maps to its item."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     window.addItem(Dimension(-3.0, -2.0, 4.0, 3.0))
-    self.assertEqual(window.selectionTool.itemList.count(), 2)
+    self.assertEqual(window.selectionTool.nodeList.count(), 1)
+    self.assertEqual(window.selectionTool.elementList.count(), 0)
+    self.assertEqual(window.selectionTool.dimensionList.count(), 1)
     self.assertEqual(len(window.canvas.scene), 2)
-    window.selectionTool.itemList.setCurrentRow(1)  # the line
+    window.selectionTool.dimensionList.setCurrentRow(0)  # the line
     self.assertEqual(window.canvas.activeKind(), 'Dimension')
     self.assertIs(
       getattr(window.canvas, '__selected__'),
@@ -429,21 +484,20 @@ class TestCAD(AppTest):
       )
 
   def test_add_keeps_values_as_running_default(self, ) -> None:
-    """After adding, fields keep the used values and become the default."""
+    """After adding a node, the x/y fields keep the used coordinate."""
     window = CADWindow()
     window.show()
     tool = window.newItemTool
-    window._selectTool('Anchor')
-    rows = getattr(tool.vertexEditor, '__rows__')
-    rows[0][2].setText('7')
-    rows[0][3].setText('8')
+    window._selectTool('Node')
+    tool.xEdit.setText('7')
+    tool.yEdit.setText('8')
     tool.addButton.click()
     #  fields are not reset to the original default
-    self.assertEqual(tool.vertexEditor.vertices(), [(7.0, 8.0)])
+    self.assertEqual((tool.xEdit.text(), tool.yEdit.text()), ('7', '8'))
     #  switching away and back restores the most recently used values
     window._selectTool('Dimension')
-    window._selectTool('Anchor')
-    self.assertEqual(tool.vertexEditor.vertices(), [(7.0, 8.0)])
+    window._selectTool('Node')
+    self.assertEqual((tool.xEdit.text(), tool.yEdit.text()), ('7', '8'))
 
   def test_select_loads_item_into_panel(self, ) -> None:
     """Selecting an item sets the tool kind and vertex rows to match it."""
@@ -461,22 +515,21 @@ class TestCAD(AppTest):
     rows[1][3].setText('9')
     window._onAdd()
 
-    #  an anchor point
-    window._selectTool('Anchor')
-    rows = getattr(editor, '__rows__')
-    rows[0][2].setText('4')
-    rows[0][3].setText('5')
+    #  a node point (its own x / y fields, not the vertex grid)
+    window._selectTool('Node')
+    tool.xEdit.setText('4')
+    tool.yEdit.setText('5')
     window._onAdd()
 
-    #  selecting the dimension restores its kind and coordinates
-    window.selectionTool.itemList.setCurrentRow(0)
+    #  selecting the dimension restores its kind and vertex coordinates
+    window.selectionTool.dimensionList.setCurrentRow(0)
     self.assertEqual(window.canvas.activeKind(), 'Dimension')
     self.assertEqual(editor.vertices(), [(1.0, 2.0), (8.0, 9.0)])
 
-    #  selecting the anchor restores a single active row and its coordinate
-    window.selectionTool.itemList.setCurrentRow(1)
-    self.assertEqual(window.canvas.activeKind(), 'Anchor')
-    self.assertEqual(editor.vertices(), [(4.0, 5.0)])
+    #  selecting the node restores its coordinate into the x / y fields
+    window.selectionTool.nodeList.setCurrentRow(0)
+    self.assertEqual(window.canvas.activeKind(), 'Node')
+    self.assertEqual((tool.xEdit.text(), tool.yEdit.text()), ('4', '5'))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  MOUSE GESTURES (live QApplication)   # # # # # # # # # # # # # # # # # #
@@ -511,30 +564,30 @@ class TestCAD(AppTest):
     canvas = window.canvas
     canvas.resize(400, 300)
     actions = getattr(window, '__tool_actions__')
-    actions['Anchor'].trigger()  # as if the Anchor icon were clicked
+    actions['Node'].trigger()  # as if the Node icon were clicked
     self.assertEqual(getattr(canvas, '__mode__'), 'draw')
-    self.assertEqual(canvas.activeKind(), 'Anchor')
+    self.assertEqual(canvas.activeKind(), 'Node')
     canvas.mouseDoubleClickEvent(_MouseEvent(120.0, 80.0))
     self.assertEqual(len(canvas.scene), 1)
     actions['navigate'].trigger()
     self.assertEqual(getattr(canvas, '__mode__'), 'navigate')
 
-  def test_mouse_double_click_adds_anchor(self, ) -> None:
-    """A left double-click adds an anchor at that world coordinate."""
+  def test_mouse_double_click_adds_node(self, ) -> None:
+    """A left double-click adds a node at that world coordinate."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(400, 300)
     canvas.snapToGrid = False  # land exactly where clicked
-    window._selectTool('Anchor')
+    window._selectTool('Node')
     expect = canvas.screenToWorld(120.0, 80.0)
     canvas.mouseDoubleClickEvent(_MouseEvent(120.0, 80.0))
     self.assertEqual(len(canvas.scene), 1)
-    anchor = canvas.scene.items[0]
-    self.assertIsInstance(anchor, AnchorPoint)
-    self.assertAlmostEqual(anchor.x, expect[0], places=6)
-    self.assertAlmostEqual(anchor.y, expect[1], places=6)
-    self.assertEqual(window.selectionTool.itemList.count(), 1)
+    node = canvas.scene.items[0]
+    self.assertIsInstance(node, Node)
+    self.assertAlmostEqual(node.x, expect[0], places=6)
+    self.assertAlmostEqual(node.y, expect[1], places=6)
+    self.assertEqual(window.selectionTool.nodeList.count(), 1)
 
   def test_mouse_drag_adds_module_line(self, ) -> None:
     """A press-drag adds a module line: press is origin, drag sets angle."""
@@ -625,21 +678,20 @@ class TestCAD(AppTest):
     self.assertIsInstance(canvas.scene.items[0], AngularDimension)
 
   def test_selecting_item_enters_edit_mode(self, ) -> None:
-    """Selecting an item retitles the tool to Edit and updates in place."""
+    """Selecting an item flips the editor to Edit mode and updates in place
+    (the button reads 'Update item' and an edit index is held)."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(400, 300)
-    box = getattr(window, '__tool_boxes__')['newItem']
     actions = getattr(window, '__tool_actions__')
-    actions['Anchor'].trigger()
+    actions['Node'].trigger()
     window.newItemTool.addButton.click()
     actions['Dimension'].trigger()
     window.newItemTool.addButton.click()
-    self.assertEqual(box.title(), 'New item')
+    self.assertEqual(window.newItemTool.addButton.text(), 'Add item')
 
-    window.selectionTool.itemList.setCurrentRow(1)  # select the line
-    self.assertEqual(box.title(), 'Edit item')
+    window.selectionTool.dimensionList.setCurrentRow(0)  # select the line
     self.assertEqual(window.newItemTool.addButton.text(), 'Update item')
     self.assertEqual(getattr(window, '__edit_index__'), 1)
 
@@ -653,12 +705,11 @@ class TestCAD(AppTest):
     self.assertEqual(len(canvas.scene), count)  # replaced in place
     self.assertEqual(canvas.scene.items[1].x2, 9.0)
     self.assertEqual(
-      window.selectionTool.itemList.item(1).text(),
+      window.selectionTool.dimensionList.item(0).text(),
       str(canvas.scene.items[1])
       )
 
-    actions['Anchor'].trigger()  # back to creating new
-    self.assertEqual(box.title(), 'New item')
+    actions['Node'].trigger()  # back to creating new
     self.assertEqual(window.newItemTool.addButton.text(), 'Add item')
     self.assertIsNone(getattr(window, '__edit_index__'))
 
@@ -669,88 +720,80 @@ class TestCAD(AppTest):
     window.show()
     button = window.newItemTool.deleteButton
     self.assertFalse(button.isVisible())  # New mode: no delete button
-    window.addItem(AnchorPoint(1.0, 2.0))
-    window.addItem(AnchorPoint(3.0, 4.0))
-    window.selectionTool.itemList.setCurrentRow(0)  # edit the first item
+    window.addItem(Node(1.0, 2.0))
+    window.addItem(Node(3.0, 4.0))
+    window.selectionTool.nodeList.setCurrentRow(0)  # edit the first item
     self.assertTrue(button.isVisible())
     count = len(window.canvas.scene)
     button.click()
     self.assertEqual(len(window.canvas.scene), count - 1)
     self.assertFalse(button.isVisible())  # back to New mode
 
-  def test_anchor_edit_panel_updates_in_place(self, ) -> None:
-    """Editing an anchor shows its support/load/members and updates in place
-    so attached members keep their reference and follow it."""
+  def test_node_edit_panel_updates_in_place(self, ) -> None:
+    """Editing a node shows its coords / state / members and updates in
+    place so attached members keep their reference and follow it."""
     window = CADWindow()
     window.show()
     panel = window.newItemTool
-    a = AnchorPoint(10.0, 10.0)
-    a.fixX, a.fixY, a.loadY = True, True, -20.0
-    b = AnchorPoint(90.0, 60.0)
+    a = Node(10.0, 10.0)
+    a.supportType = 'pinned'
+    a.dispY = -20.0  # the support has settled 20 down
+    b = Node(90.0, 60.0)
     window.addItem(a)
     window.addItem(b)
     window.addItem(Member(a, b))
-    window.selectionTool.itemList.setCurrentRow(0)  # edit anchor 'a'
-    self.assertTrue(panel.vertexEditor.isVisible())  # coordinates editable
+    window.selectionTool.nodeList.setCurrentRow(0)  # edit node 'a'
+    self.assertTrue(panel.coordHost.isVisible())  # x / y fields
+    self.assertTrue(panel.stateHost.isVisible())  # state selector
+    self.assertTrue(panel.pinnedHost.isVisible())  # pinned settlement fields
     self.assertIn('pinned', panel.supportLabel.text())
-    self.assertTrue(panel.loadHost.isVisible())  # load Fx/Fy fields
-    self.assertEqual(
-      panel.loadYEdit.text(),
-      '-20'
-      )  # prefilled with its load
-    self.assertTrue(panel.membersList.isVisible())
+    self.assertEqual(panel.dyEdit.text(), '-20')  # settlement prefilled
     self.assertEqual(panel.membersList.count(), 1)  # one attached member
-    #  edit the coordinates and update -> the same anchor object moves
-    rows = getattr(panel.vertexEditor, '__rows__')
-    rows[0][2].setText('25')
-    rows[0][3].setText('15')
+    #  edit the coordinates and update -> the same node object moves
+    panel.xEdit.setText('25')
+    panel.yEdit.setText('15')
     window._onAdd()
     self.assertIs(window.canvas.scene.items[0], a)  # identity preserved
     self.assertEqual((a.x, a.y), (25.0, 15.0))
     member = [i for i in window.canvas.scene if isinstance(i, Member)][0]
     self.assertEqual((member.x1, member.y1), (25.0, 15.0))  # member follows
 
-  def test_anchor_panel_edits_load_and_settlement(self, ) -> None:
-    """The anchor panel edits load by component, and settlement when it has a
-    support; a free anchor hides the settlement and keeps none."""
+  def test_node_panel_edits_state(self, ) -> None:
+    """The state-driven panel edits the BC state: select Roller, lock
+    rotation, set theta and values, and they apply in place (only the
+    active state's SET quantities are stored)."""
     window = CADWindow()
     window.show()
     panel = window.newItemTool
-    a = AnchorPoint(0.0, 0.0)
-    a.fixX, a.fixY = True, True  # pinned -> settlement fields available
-    b = AnchorPoint(80.0, 0.0)
+    a = Node(0.0, 0.0)
     window.addItem(a)
-    window.addItem(b)
-    window.selectionTool.itemList.setCurrentRow(0)  # edit the pinned anchor
-    self.assertTrue(panel.loadHost.isVisible())
-    self.assertTrue(panel.dispHost.isVisible())  # has a support
-    panel.loadXEdit.setText('12')
-    panel.loadYEdit.setText('-30')
-    panel.dispYEdit.setText('-5')
+    window.selectionTool.nodeList.setCurrentRow(0)  # edit the node
+    panel.transCombo.setCurrentIndex(1)  # Roller
+    self.assertTrue(panel.rollerHost.isVisible())  # roller fields appear
+    panel.thetaEdit.setText('30')
+    panel.rsetEdit.setText('-2')
+    panel.rloadEdit.setText('15')
+    panel.charniereCheck.setChecked(False)  # lock rotation
+    panel.rotEdit.setText('0.01')  # prescribed rotation xy
     window._onAdd()
     self.assertIs(window.canvas.scene.items[0], a)  # applied in place
-    self.assertEqual((a.loadX, a.loadY), (12.0, -30.0))
-    self.assertEqual((a.dispX, a.dispY), (0.0, -5.0))
-    #  a free anchor: settlement fields hidden and never applied
-    window.selectionTool.itemList.setCurrentRow(1)
-    self.assertFalse(panel.dispHost.isVisible())
-    panel.loadXEdit.setText('5')
-    panel.dispYEdit.setText('99')  # typed but ignored: no support
-    window._onAdd()
-    self.assertEqual(b.loadX, 5.0)
-    self.assertEqual((b.dispX, b.dispY), (0.0, 0.0))
+    self.assertEqual(a.supportType, 'roller')
+    self.assertEqual((a.theta, a.rollerSet, a.rollerLoad), (30.0, -2.0, 15.0))
+    self.assertFalse(a.released)
+    self.assertEqual(a.setRot, 0.01)  # locked -> xy stored
+    self.assertEqual(a.loadMoment, 0.0)  # released-only value stays zero
 
   def test_member_edit_panel_shows_nodes_only(self, ) -> None:
-    """Editing a member shows its two anchors; no coordinate edit."""
+    """Editing a member shows its two nodes; no coordinate edit."""
     window = CADWindow()
     window.show()
     panel = window.newItemTool
-    a = AnchorPoint(0.0, 0.0)
-    b = AnchorPoint(80.0, 0.0)
+    a = Node(0.0, 0.0)
+    b = Node(80.0, 0.0)
     window.addItem(a)
     window.addItem(b)
     window.addItem(Member(a, b))
-    window.selectionTool.itemList.setCurrentRow(2)  # the member
+    window.selectionTool.elementList.setCurrentRow(0)  # the member
     self.assertFalse(panel.vertexEditor.isVisible())  # no vertex fields
     self.assertTrue(panel.infoLabel.isVisible())
     self.assertIn('Node A', panel.infoLabel.text())
@@ -764,7 +807,7 @@ class TestCAD(AppTest):
     window.show()
     canvas = window.canvas
     canvas.resize(400, 300)
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     window._selectTool('select')
     self.assertEqual(getattr(canvas, '__mode__'), 'select')
     screen = canvas.worldToScreen(
@@ -781,7 +824,7 @@ class TestCAD(AppTest):
     window.show()
     canvas = window.canvas
     canvas.resize(400, 300)
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     window._selectTool('select')
     spot = canvas.worldToScreen(0.0, 0.0)
     canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
@@ -813,14 +856,14 @@ class TestCAD(AppTest):
     self.assertIsInstance(canvas.scene.items[0], Dimension)
     self.assertFalse(canvas.grab().isNull())  # committed dimension renders
 
-  def test_member_drag_snaps_endpoints_to_anchors(self, ) -> None:
-    """A member dragged between two anchors latches onto them as nodes."""
+  def test_member_drag_snaps_endpoints_to_nodes(self, ) -> None:
+    """A member dragged between two nodes latches onto them as nodes."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(520, 420)
-    window.addItem(AnchorPoint(20.0, 20.0))
-    window.addItem(AnchorPoint(120.0, 80.0))
+    window.addItem(Node(20.0, 20.0))
+    window.addItem(Node(120.0, 80.0))
     window._selectTool('Member')
     self.assertEqual(canvas.activeKind(), 'Member')
     start = canvas.worldToScreen(20.0, 20.0)
@@ -831,7 +874,7 @@ class TestCAD(AppTest):
     members = [item for item in canvas.scene if isinstance(item, Member)]
     self.assertEqual(len(members), 1)
     member = members[0]
-    #  the member references the two anchor nodes, its coords read through
+    #  the member references the two nodes, its coords read through
     self.assertIs(member.nodeA, canvas.scene.items[0])
     self.assertIs(member.nodeB, canvas.scene.items[1])
     self.assertEqual((member.x1, member.y1), (20.0, 20.0))
@@ -839,31 +882,31 @@ class TestCAD(AppTest):
     self.assertFalse(canvas.grab().isNull())  # the member renders
 
   def test_member_drag_to_empty_adds_nothing(self, ) -> None:
-    """A member drag that does not end on a second anchor adds no member."""
+    """A member drag that does not end on a second node adds no member."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(520, 420)
-    window.addItem(AnchorPoint(20.0, 20.0))
+    window.addItem(Node(20.0, 20.0))
     window._selectTool('Member')
     start = canvas.worldToScreen(20.0, 20.0)
     canvas.mousePressEvent(_MouseEvent(start.x(), start.y()))
     canvas.mouseReleaseEvent(_MouseEvent(300.0, 300.0))  # empty space
     self.assertEqual([i for i in canvas.scene if isinstance(i, Member)], [])
 
-  def test_deleting_anchor_cascades_to_members(self, ) -> None:
-    """Deleting an anchor removes every member that used it, undoably."""
+  def test_deleting_node_cascades_to_members(self, ) -> None:
+    """Deleting a node removes every member that used it, undoably."""
     window = CADWindow()
     window.show()
-    a = AnchorPoint(0.0, 0.0)
-    b = AnchorPoint(80.0, 0.0)
-    c = AnchorPoint(40.0, 50.0)
+    a = Node(0.0, 0.0)
+    b = Node(80.0, 0.0)
+    c = Node(40.0, 50.0)
     for node in (a, b, c):
       window.addItem(node)
     window.addItem(Member(a, c))
     window.addItem(Member(b, c))  # both members touch 'c'
     total = len(window.canvas.scene)
-    window.selectionTool.itemList.setCurrentRow(2)  # the anchor 'c'
+    window.selectionTool.nodeList.setCurrentRow(2)  # the node 'c'
     window._deleteSelected()
     members = [i for i in window.canvas.scene if isinstance(i, Member)]
     self.assertEqual(members, [])  # both members went with 'c'
@@ -874,62 +917,76 @@ class TestCAD(AppTest):
   def test_member_serialization_round_trip(self, ) -> None:
     """Members survive a JSON round-trip by node index, references intact."""
     scene = CADScene()
-    a = AnchorPoint(0.0, 0.0)
-    b = AnchorPoint(80.0, 60.0)
+    a = Node(0.0, 0.0)
+    b = Node(80.0, 60.0)
     scene.addItem(a)
     scene.addItem(b)
     scene.addItem(Member(a, b))
     restored = sceneFromJson(sceneToJson(scene))
-    anchors = [i for i in restored if isinstance(i, AnchorPoint)]
+    nodes = [i for i in restored if isinstance(i, Node)]
     member = [i for i in restored if isinstance(i, Member)][0]
-    self.assertIs(member.nodeA, anchors[0])  # rebuilt-anchor identity
-    self.assertIs(member.nodeB, anchors[1])
-    anchors[0].x = 5.0  # the restored member tracks the restored anchor
+    self.assertIs(member.nodeA, nodes[0])  # rebuilt-node identity
+    self.assertIs(member.nodeB, nodes[1])
+    nodes[0].x = 5.0  # the restored member tracks the restored node
     self.assertEqual(member.x1, 5.0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  BOUNDARY CONDITIONS (supports)   # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_anchor_support_cycle(self, ) -> None:
-    """An anchor cycles free -> pinned -> rollerH -> rollerV -> free."""
-    anchor = AnchorPoint(0.0, 0.0)
-    self.assertEqual(anchor.supportKind(), 'free')
-    self.assertEqual(anchor.cycleSupport(), 'pinned')
-    self.assertTrue(anchor.fixX and anchor.fixY)
-    self.assertEqual(anchor.cycleSupport(), 'rollerH')  # fixed Y only
-    self.assertTrue(anchor.fixY)
-    self.assertFalse(anchor.fixX)
-    self.assertEqual(anchor.cycleSupport(), 'rollerV')  # fixed X only
-    self.assertTrue(anchor.fixX)
-    self.assertFalse(anchor.fixY)
-    self.assertEqual(anchor.cycleSupport(), 'free')
-    pinned = AnchorPoint(1.0, 2.0)
-    pinned.cycleSupport()
+  def test_node_support_cycle(self, ) -> None:
+    """A node cycles free -> roller -> pinned -> free."""
+    node = Node(0.0, 0.0)
+    self.assertEqual(node.supportKind(), 'free')
+    self.assertEqual(node.cycleSupport(), 'roller')
+    self.assertEqual(node.supportType, 'roller')
+    self.assertEqual(node.cycleSupport(), 'pinned')
+    self.assertEqual(node.supportType, 'pinned')
+    self.assertEqual(node.cycleSupport(), 'free')
+    pinned = Node(1.0, 2.0)
+    pinned.supportType = 'pinned'
     self.assertIn('pinned', str(pinned))  # the support shows in the label
 
-  def test_support_persists_through_json(self, ) -> None:
-    """An anchor's support survives JSON; a free anchor stores nothing."""
+  def test_node_rotation_dof(self, ) -> None:
+    """Rotation: a pin releases it (charniere); locking it makes a 'fixed'
+    support; an applied moment round-trips."""
+    a = Node(0.0, 0.0)
+    a.supportType = 'pinned'
+    self.assertEqual(a.supportKind(), 'pinned')  # released by default
+    a.released = False
+    self.assertEqual(a.supportKind(), 'fixed')  # rotation locked too
+    a.released = True
+    a.loadMoment = 150.0  # released with an applied moment
+    self.assertIn('Mf(150)', str(a))
     scene = CADScene()
-    supported = AnchorPoint(5.0, 0.0)
-    supported.cycleSupport()  # pinned
+    scene.addItem(a)
+    restored = sceneFromJson(sceneToJson(scene)).items[0]
+    self.assertEqual(restored.supportType, 'pinned')
+    self.assertTrue(restored.released)
+    self.assertEqual(restored.loadMoment, 150.0)
+
+  def test_support_persists_through_json(self, ) -> None:
+    """A node's support survives JSON; a free node stores nothing."""
+    scene = CADScene()
+    supported = Node(5.0, 0.0)
+    supported.supportType = 'pinned'
     scene.addItem(supported)
-    scene.addItem(AnchorPoint(9.0, 0.0))  # left free
+    scene.addItem(Node(9.0, 0.0))  # left free
     data = sceneToData(scene)
-    self.assertEqual(data['items'][0]['attrs'], {'fixX': True, 'fixY': True})
-    self.assertNotIn('attrs', data['items'][1])  # free anchor stays minimal
+    self.assertEqual(data['items'][0]['attrs'], {'supportType': 'pinned'})
+    self.assertNotIn('attrs', data['items'][1])  # free node stays minimal
     restored = sceneFromJson(sceneToJson(scene))
     self.assertEqual(restored.items[0].supportKind(), 'pinned')
     self.assertEqual(restored.items[1].supportKind(), 'free')
 
   def test_support_tool_cycles_on_click(self, ) -> None:
-    """The Support tool cycles the clicked anchor's boundary condition."""
+    """The Support tool cycles the clicked node's boundary condition."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(520, 420)
-    anchor = AnchorPoint(30.0, 30.0)
-    window.addItem(anchor)
+    node = Node(30.0, 30.0)
+    window.addItem(node)
     window._selectTool('support')
     self.assertEqual(getattr(canvas, '__mode__'), 'support')
     spot = canvas.worldToScreen(30.0, 30.0)
@@ -937,10 +994,10 @@ class TestCAD(AppTest):
     #  release; a drag would instead set a prescribed displacement).
     canvas.mousePressEvent(_MouseEvent(spot.x() + 2.0, spot.y() - 2.0))
     canvas.mouseReleaseEvent(_MouseEvent(spot.x() + 2.0, spot.y() - 2.0))
-    self.assertEqual(anchor.supportKind(), 'pinned')
+    self.assertEqual(node.supportKind(), 'roller')  # free -> roller
     self.assertTrue(window.dirty)
     #  the list row reflects the new support
-    self.assertIn('pinned', window.selectionTool.itemList.item(0).text())
+    self.assertIn('roller', window.selectionTool.nodeList.item(0).text())
     window._onUndo()  # cycling is undoable
     self.assertEqual(canvas.scene.items[0].supportKind(), 'free')
 
@@ -949,22 +1006,22 @@ class TestCAD(AppTest):
   # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_anchor_load_and_label(self, ) -> None:
-    """An anchor carries a nodal force that shows in its label."""
-    anchor = AnchorPoint(0.0, 0.0)
-    self.assertEqual((anchor.loadX, anchor.loadY), (0.0, 0.0))
-    self.assertNotIn('F(', str(anchor))  # no load -> no force in the label
-    anchor.loadX = 10.0
-    anchor.loadY = -25.0
-    self.assertIn('F(10, -25)', str(anchor))
+  def test_node_load_and_label(self, ) -> None:
+    """A node carries a nodal force that shows in its label."""
+    node = Node(0.0, 0.0)
+    self.assertEqual((node.loadX, node.loadY), (0.0, 0.0))
+    self.assertNotIn('F(', str(node))  # no load -> no force in the label
+    node.loadX = 10.0
+    node.loadY = -25.0
+    self.assertIn('F(10, -25)', str(node))
 
   def test_load_persists_through_json(self, ) -> None:
     """A nodal load survives a JSON round-trip; zero loads store nothing."""
     scene = CADScene()
-    loaded = AnchorPoint(5.0, 0.0)
+    loaded = Node(5.0, 0.0)
     loaded.loadY = -30.0
     scene.addItem(loaded)
-    scene.addItem(AnchorPoint(9.0, 0.0))  # no load
+    scene.addItem(Node(9.0, 0.0))  # no load
     data = sceneToData(scene)
     self.assertEqual(data['items'][0]['attrs'], {'loadY': -30.0})
     self.assertNotIn('attrs', data['items'][1])  # zero load stays minimal
@@ -976,13 +1033,13 @@ class TestCAD(AppTest):
         )
 
   def test_load_tool_drag_sets_and_click_clears(self, ) -> None:
-    """The Load tool drags a force from an anchor; a click clears it."""
+    """The Load tool drags a force from a node; a click clears it."""
     window = CADWindow()
     window.show()
     canvas = window.canvas
     canvas.resize(520, 420)
-    anchor = AnchorPoint(50.0, 50.0)
-    window.addItem(anchor)
+    node = Node(50.0, 50.0)
+    window.addItem(node)
     window._selectTool('load')
     self.assertEqual(getattr(canvas, '__mode__'), 'load')
     origin = canvas.worldToScreen(50.0, 50.0)
@@ -990,13 +1047,13 @@ class TestCAD(AppTest):
     canvas.mousePressEvent(_MouseEvent(origin.x() + 2.0, origin.y() - 2.0))
     canvas.mouseMoveEvent(_MouseEvent(end.x(), end.y()))
     canvas.mouseReleaseEvent(_MouseEvent(end.x(), end.y()))
-    self.assertAlmostEqual(anchor.loadX, 0.0, 3)
-    self.assertAlmostEqual(anchor.loadY, -30.0, 3)
+    self.assertAlmostEqual(node.loadX, 0.0, 3)
+    self.assertAlmostEqual(node.loadY, -30.0, 3)
     self.assertTrue(window.dirty)
-    self.assertIn('F(', window.selectionTool.itemList.item(0).text())
+    self.assertIn('F(', window.selectionTool.nodeList.item(0).text())
     window._onUndo()  # setting a load is undoable
     self.assertEqual(canvas.scene.items[0].loadY, 0.0)
-    window._onRedo()  # undo/redo rebuild the scene; re-fetch the live anchor
+    window._onRedo()  # undo/redo rebuild the scene; re-fetch the live node
     #  a click with no appreciable drag clears the load
     spot = canvas.worldToScreen(50.0, 50.0)
     canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
@@ -1011,8 +1068,8 @@ class TestCAD(AppTest):
     canvas = window.canvas
     canvas.resize(520, 420)
     canvas.snapToGrid = True
-    anchor = AnchorPoint(50.0, 50.0)
-    window.addItem(anchor)
+    node = Node(50.0, 50.0)
+    window.addItem(node)
     window._selectTool('load')
     origin = canvas.worldToScreen(50.0, 50.0)
     #  drag down 30 with a small 8 sideways -> the vertical axis wins
@@ -1020,8 +1077,8 @@ class TestCAD(AppTest):
     canvas.mousePressEvent(_MouseEvent(origin.x(), origin.y()))
     canvas.mouseMoveEvent(_MouseEvent(end.x(), end.y()))
     canvas.mouseReleaseEvent(_MouseEvent(end.x(), end.y()))
-    self.assertAlmostEqual(anchor.loadX, 0.0, 6)  # snapped to pure vertical
-    self.assertAlmostEqual(anchor.loadY, -30.0, 3)
+    self.assertAlmostEqual(node.loadX, 0.0, 6)  # snapped to pure vertical
+    self.assertAlmostEqual(node.loadY, -30.0, 3)
 
   def test_support_click_cycles_drag_displaces(self, ) -> None:
     """In support mode a click cycles support; a drag sets a settlement."""
@@ -1030,28 +1087,29 @@ class TestCAD(AppTest):
     canvas = window.canvas
     canvas.resize(520, 420)
     canvas.snapToGrid = True
-    anchor = AnchorPoint(50.0, 50.0)
-    window.addItem(anchor)
+    node = Node(50.0, 50.0)
+    window.addItem(node)
     window._selectTool('support')
     spot = canvas.worldToScreen(50.0, 50.0)
-    #  a click (press-release, no move) cycles the support kind
-    canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
-    canvas.mouseReleaseEvent(_MouseEvent(spot.x(), spot.y()))
-    self.assertEqual(anchor.supportKind(), 'pinned')
+    #  two clicks (each press-release, no move) cycle free -> roller -> pinned
+    for _ in range(2):
+      canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
+      canvas.mouseReleaseEvent(_MouseEvent(spot.x(), spot.y()))
+    self.assertEqual(node.supportKind(), 'pinned')
     #  a drag sets a prescribed displacement, leaving the support kind alone
     down = canvas.worldToScreen(50.0, 30.0)  # 20 mm down -> dispY = -20
     canvas.mousePressEvent(_MouseEvent(spot.x(), spot.y()))
     canvas.mouseMoveEvent(_MouseEvent(down.x(), down.y()))
     canvas.mouseReleaseEvent(_MouseEvent(down.x(), down.y()))
-    self.assertAlmostEqual(anchor.dispX, 0.0, 6)
-    self.assertAlmostEqual(anchor.dispY, -20.0, 3)
-    self.assertEqual(anchor.supportKind(), 'pinned')  # drag did not cycle
-    self.assertIn('d(', window.selectionTool.itemList.item(0).text())
+    self.assertAlmostEqual(node.dispX, 0.0, 6)
+    self.assertAlmostEqual(node.dispY, -20.0, 3)
+    self.assertEqual(node.supportKind(), 'pinned')  # drag did not cycle
+    self.assertIn('d(', window.selectionTool.nodeList.item(0).text())
 
   def test_displacement_persists_through_json(self, ) -> None:
     """A prescribed displacement survives a JSON round-trip."""
     scene = CADScene()
-    settled = AnchorPoint(0.0, 0.0)
+    settled = Node(0.0, 0.0)
     settled.dispY = -8.0
     scene.addItem(settled)
     data = sceneToData(scene)
@@ -1077,7 +1135,7 @@ class TestCAD(AppTest):
     window.show()
     canvas = window.canvas
     canvas.resize(400, 300)
-    window._selectTool('Anchor')
+    window._selectTool('Node')
     canvas.mouseDoubleClickEvent(_MouseEvent(207.0, 143.0))
     point = canvas.scene.items[-1]
     step = canvas.gridStep()
@@ -1163,7 +1221,7 @@ class TestCAD(AppTest):
   def test_vertex_editor_greys_surplus_rows(self, ) -> None:
     """Fewer-input kinds keep the surplus rows present but disabled."""
     editor = VertexEditor()
-    editor.configure(1, False, [(0.0, 0.0)])  # Anchor: 1 active of 3
+    editor.configure(1, False, [(0.0, 0.0)])  # Node: 1 active of 3
     rows = getattr(editor, '__rows__')
     self.assertEqual(len(rows), 3)  # height unchanged
     self.assertTrue(rows[0][0].isEnabled())  # active row
@@ -1217,7 +1275,7 @@ class TestCAD(AppTest):
   def _populatedScene() -> CADScene:
     """A scene holding one of every kind, for serialisation tests."""
     scene = CADScene()
-    scene.addItem(AnchorPoint(1.0, 2.0))
+    scene.addItem(Node(1.0, 2.0))
     scene.addItem(ModuleLine(0.0, 0.0, 30.0))
     scene.addItem(Dimension(-3.0, -2.0, 4.0, 3.0))
     scene.addItem(Dimension(0.0, 0.0, 3.0, 4.0))
@@ -1230,7 +1288,7 @@ class TestCAD(AppTest):
     self.assertEqual(data['version'], 1)
     self.assertEqual(len(data['items']), 5)
     first = data['items'][0]
-    self.assertEqual(first['kind'], 'Anchor')
+    self.assertEqual(first['kind'], 'Node')
     self.assertEqual(first['vertices'], [[1.0, 2.0]])
     for entry in data['items']:
       self.assertIsInstance(entry['kind'], str)
@@ -1262,6 +1320,73 @@ class TestCAD(AppTest):
         [describeItem(i) for i in scene]
         )
 
+  def test_view_state_round_trips_through_json(self, ) -> None:
+    """The window save stores the category-visibility and grid view flags in
+    a 'view' block; opening restores them and syncs the tool controls. A
+    file with no 'view' block leaves the defaults intact."""
+    import os
+    import tempfile
+    window = CADWindow()
+    window.show()
+    a, b = Node(1.0, 0.0), Node(2.0, 0.0)
+    window.addItem(a)
+    window.addItem(b)
+    window.addItem(Member(a, b))  # a member between two scene nodes
+    window.selectionTool.showGuidesCheck.setChecked(False)
+    window.selectionTool.showDimensionsCheck.setChecked(False)
+    window.viewTool.snapCheck.setChecked(False)
+    window.canvas.setGridTargetPx(40.0)
+    path = os.path.join(tempfile.mkdtemp(), 'doc.json')
+    window._writeScene(path)
+    #  a fresh window restores both the scene and the saved view
+    other = CADWindow()
+    other.show()
+    other._readScene(path)
+    self.assertEqual(len(other.canvas.scene), 3)  # scene rebuilt too
+    self.assertFalse(other.canvas.showGuides)
+    self.assertFalse(other.canvas.showDimensions)
+    self.assertFalse(other.canvas.snapToGrid)
+    self.assertTrue(other.canvas.showNodes)  # untouched flags stay on
+    self.assertEqual(other.canvas.gridTargetPx, 40.0)
+    #  the tool controls reflect the restored state
+    self.assertFalse(other.selectionTool.showGuidesCheck.isChecked())
+    self.assertFalse(other.viewTool.snapCheck.isChecked())
+    self.assertEqual(other.viewTool.gridEdit.text(), '40')
+    #  a hand-written file with no 'view' block keeps the defaults
+    bare = os.path.join(tempfile.mkdtemp(), 'bare.json')
+    saveScene(self._populatedScene(), bare)  # scene-only, no 'view'
+    third = CADWindow()
+    third.show()
+    third._readScene(bare)
+    self.assertTrue(third.canvas.showGuides)
+    self.assertTrue(third.canvas.showDimensions)
+
+  def test_node_state_round_trips_through_window_save(self, ) -> None:
+    """The window's own save/load preserves a node's full boundary-condition
+    state (the six-state model), not just its coordinates."""
+    import os
+    import tempfile
+    window = CADWindow()
+    window.show()
+    node = Node(10.0, 20.0)
+    node.supportType = 'roller'
+    node.theta = 30.0
+    node.rollerSet = -2.0
+    node.released = False
+    node.setRot = 0.01
+    window.addItem(node)
+    path = os.path.join(tempfile.mkdtemp(), 'node.json')
+    window._writeScene(path)
+    other = CADWindow()
+    other.show()
+    other._readScene(path)
+    restored = other.canvas.scene.items[0]
+    self.assertEqual(restored.supportType, 'roller')
+    self.assertEqual(restored.theta, 30.0)
+    self.assertEqual(restored.rollerSet, -2.0)
+    self.assertFalse(restored.released)
+    self.assertEqual(restored.setRot, 0.01)
+
   def test_saved_file_is_plain_text_json_not_pickle(self, ) -> None:
     """The saved file is legible JSON text naming each kind."""
     import os
@@ -1277,7 +1402,7 @@ class TestCAD(AppTest):
   def test_load_into_existing_scene_keeps_identity(self, ) -> None:
     """Loading into a given scene refills it in place, not replacing it."""
     scene = CADScene()
-    scene.addItem(AnchorPoint(9.0, 9.0))
+    scene.addItem(Node(9.0, 9.0))
     same = loadScene  # alias to keep the line short
     import os
     import tempfile
@@ -1303,13 +1428,16 @@ class TestCAD(AppTest):
     saveScene(self._populatedScene(), path)
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))  # something to be replaced
+    window.addItem(Node(0.0, 0.0))  # something to be replaced
     loaded = loadScene(path, window.canvas.scene)
-    window._syncListToScene()
+    window._rebuildLists()
     window._enterNewMode()
     window.canvas.fitAll()
     self.assertEqual(len(loaded), 5)
-    self.assertEqual(window.selectionTool.itemList.count(), 5)
+    tool = window.selectionTool
+    total = (tool.nodeList.count() + tool.elementList.count()
+             + tool.guideList.count() + tool.dimensionList.count())
+    self.assertEqual(total, 5)
     self.assertIsNone(getattr(window.canvas, '__selected__'))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -1468,7 +1596,7 @@ class TestCAD(AppTest):
 
   def test_pointer_snaps_onto_point_node(self, ) -> None:
     """The pointer snaps exactly onto a nearby standalone point node."""
-    canvas = self._snapCanvas(AnchorPoint(40.0, 40.0))
+    canvas = self._snapCanvas(Node(40.0, 40.0))
     screen = canvas.worldToScreen(40.0, 40.0)
     near = QPointF(screen.x() + 3.0, screen.y() - 3.0)
     wx, wy = canvas._worldAt(near)
@@ -1478,7 +1606,7 @@ class TestCAD(AppTest):
   def test_point_snap_takes_priority_over_segment(self, ) -> None:
     """A point node near a line wins the snap over the line beneath it."""
     canvas = self._snapCanvas(Dimension(0.0, 0.0, 100.0, 0.0))  # along y = 0
-    canvas.scene.addItem(AnchorPoint(50.0, 3.0))  # 3 mm above the line
+    canvas.scene.addItem(Node(50.0, 3.0))  # 3 mm above the line
     screen = canvas.worldToScreen(50.0, 3.0)
     near = QPointF(screen.x() + 1.0, screen.y() + 1.0)
     wx, wy = canvas._worldAt(near)
@@ -1491,7 +1619,7 @@ class TestCAD(AppTest):
     canvas.scene.addItem(Dimension(0.0, 0.0, 1.0, 0.0))  # 1 segment
     canvas.scene.addItem(AngularDimension(0.0, 0.0, 1.0, 0.0, 0.0, 1.0))  # 2
     canvas.scene.addItem(ModuleLine(0.0, 0.0, 45.0))  # infinite, no seg
-    canvas.scene.addItem(AnchorPoint(5.0, 5.0))  # a node, not a segment
+    canvas.scene.addItem(Node(5.0, 5.0))  # a node, not a segment
     self.assertEqual(len(canvas._snapSegments()), 1 + 2)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -1524,7 +1652,7 @@ class TestCAD(AppTest):
     window = CADWindow()
     window.show()
     self.assertFalse(window.dirty)
-    window.addItem(AnchorPoint(1.0, 2.0))
+    window.addItem(Node(1.0, 2.0))
     self.assertTrue(window.dirty)
     window._onUndo()  # back to the empty startup baseline
     self.assertFalse(window.dirty)  # matches the original document again
@@ -1533,10 +1661,10 @@ class TestCAD(AppTest):
     """Dirty clears when undo/redo returns the scene to the saved state."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(1.0, 1.0))
+    window.addItem(Node(1.0, 1.0))
     window._markSaved()  # stand in for a successful save of this state
     self.assertFalse(window.dirty)
-    window.addItem(AnchorPoint(2.0, 2.0))  # diverge from the saved state
+    window.addItem(Node(2.0, 2.0))  # diverge from the saved state
     self.assertTrue(window.dirty)
     window._onUndo()  # back to exactly the saved state
     self.assertFalse(window.dirty)
@@ -1548,7 +1676,7 @@ class TestCAD(AppTest):
     window = CADWindow()
     window.show()
     self.assertTrue(window._confirmDiscard())  # clean -> True, no modal
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     window.dirty = False  # as if it had just been saved
     self.assertTrue(window._confirmDiscard())
 
@@ -1558,7 +1686,7 @@ class TestCAD(AppTest):
     from PySide6.QtWidgets import QMessageBox
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))  # make it dirty
+    window.addItem(Node(0.0, 0.0))  # make it dirty
     module, original = self._patchDiscardAnswer(
         QMessageBox.StandardButton.Cancel
     )
@@ -1582,7 +1710,7 @@ class TestCAD(AppTest):
       )
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     module, original = self._patchDiscardAnswer(
         QMessageBox.StandardButton.Discard
     )
@@ -1601,14 +1729,15 @@ class TestCAD(AppTest):
     """Undo removes the last added item; redo brings it back identically."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(1.0, 2.0))
+    window.addItem(Node(1.0, 2.0))
     window.addItem(Dimension(0.0, 0.0, 5.0, 5.0))
     window._onUndo()
     self.assertEqual(len(window.canvas.scene), 1)
-    self.assertEqual(window.selectionTool.itemList.count(), 1)
+    self.assertEqual(window.selectionTool.nodeList.count(), 1)
+    self.assertEqual(window.selectionTool.elementList.count(), 0)
     self.assertEqual(
       describeItem(window.canvas.scene.items[0]),
-      ('Anchor', [(1.0, 2.0)])
+      ('Node', [(1.0, 2.0)])
       )
     window._onRedo()
     self.assertEqual(len(window.canvas.scene), 2)
@@ -1625,7 +1754,7 @@ class TestCAD(AppTest):
     redo = getattr(window, '__redo_action__')
     self.assertFalse(undo.isEnabled())  # nothing to undo on a fresh document
     self.assertFalse(redo.isEnabled())
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     self.assertTrue(undo.isEnabled())
     self.assertFalse(redo.isEnabled())
     window._onUndo()
@@ -1636,27 +1765,27 @@ class TestCAD(AppTest):
     """A fresh edit after an undo clears the redo trail."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
-    window.addItem(AnchorPoint(1.0, 1.0))
+    window.addItem(Node(0.0, 0.0))
+    window.addItem(Node(1.0, 1.0))
     window._onUndo()  # redo now holds one entry
     self.assertTrue(getattr(window, '__redo_action__').isEnabled())
-    window.addItem(AnchorPoint(2.0, 2.0))  # a new edit
+    window.addItem(Node(2.0, 2.0))  # a new edit
     self.assertFalse(getattr(window, '__redo_action__').isEnabled())
 
   def test_delete_is_undoable(self, ) -> None:
     """Undo restores an item removed with the delete action."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(3.0, 4.0))
+    window.addItem(Node(3.0, 4.0))
     window.addItem(Dimension(0.0, 0.0, 1.0, 1.0))
-    window.selectionTool.itemList.setCurrentRow(0)  # enter edit mode
+    window.selectionTool.nodeList.setCurrentRow(0)  # enter edit mode
     window._deleteSelected()
     self.assertEqual(len(window.canvas.scene), 1)
     window._onUndo()
     self.assertEqual(len(window.canvas.scene), 2)
     self.assertEqual(
       describeItem(window.canvas.scene.items[0]),
-      ('Anchor', [(3.0, 4.0)])
+      ('Node', [(3.0, 4.0)])
       )
 
   def test_open_clears_undo_history(self, ) -> None:
@@ -1667,9 +1796,9 @@ class TestCAD(AppTest):
     saveScene(self._populatedScene(), path)
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))  # gives the history an entry
+    window.addItem(Node(0.0, 0.0))  # gives the history an entry
     loadScene(path, window.canvas.scene)
-    window._syncListToScene()
+    window._rebuildLists()
     window._clearHistory()
     self.assertFalse(getattr(window, '__undo_action__').isEnabled())
     self.assertFalse(getattr(window, '__redo_action__').isEnabled())
@@ -1707,7 +1836,7 @@ class TestCAD(AppTest):
     window.show()
     self.assertIsNone(getattr(window, '__file_path__'))
     self.assertEqual(window.windowTitle(), 'worQt CAD - untitled')
-    window.addItem(AnchorPoint(1.0, 2.0))  # an edit -> dirty
+    window.addItem(Node(1.0, 2.0))  # an edit -> dirty
     self.assertEqual(window.windowTitle(), 'worQt CAD - untitled*')
 
   def test_save_while_untitled_runs_rename(self, ) -> None:
@@ -1717,7 +1846,7 @@ class TestCAD(AppTest):
     path = os.path.join(tempfile.mkdtemp(), 'model.json')
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(1.0, 2.0))
+    window.addItem(Node(1.0, 2.0))
     module, original = self._patchFileDialog(path)
     try:
       self.assertTrue(window._onSave())  # untitled -> rename dialog
@@ -1736,13 +1865,13 @@ class TestCAD(AppTest):
     path = os.path.join(tempfile.mkdtemp(), 'model.json')
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(1.0, 2.0))
+    window.addItem(Node(1.0, 2.0))
     module, original = self._patchFileDialog(path)
     try:
       window._onSave()  # the first save names the model
     finally:
       module.QFileDialog = original
-    window.addItem(AnchorPoint(3.0, 4.0))  # a further edit to save
+    window.addItem(Node(3.0, 4.0))  # a further edit to save
 
     import worQt.cad._cad_window as windowModule
 
@@ -1770,7 +1899,7 @@ class TestCAD(AppTest):
     pathB = os.path.join(folder, 'b.json')
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     module, original = self._patchFileDialog(pathA)
     try:
       window._onSave()  # named a.json
@@ -1793,7 +1922,7 @@ class TestCAD(AppTest):
     base = os.path.join(tempfile.mkdtemp(), 'noext')
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     module, original = self._patchFileDialog(base)  # no '.json'
     try:
       window._onRename()
@@ -1805,7 +1934,7 @@ class TestCAD(AppTest):
     """Cancelling the Rename dialog leaves the model untitled and dirty."""
     window = CADWindow()
     window.show()
-    window.addItem(AnchorPoint(0.0, 0.0))
+    window.addItem(Node(0.0, 0.0))
     module, original = self._patchFileDialog('')  # cancelled
     try:
       self.assertFalse(window._onRename())

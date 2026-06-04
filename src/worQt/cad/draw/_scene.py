@@ -1,6 +1,6 @@
 """
 CADScene is the document model for the drawing app: an ordered collection
-of elements (anchor points, module lines and dimensions). It is a pure
+of elements (node points, module lines and dimensions). It is a pure
 'worktoy' model with no Qt dependency; the canvas renders whatever it holds.
 """
 #  Apache-2.0 license

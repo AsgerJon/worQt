@@ -1,7 +1,7 @@
 """
 Small painter-built icons for the drawing app's tool palette, so no image
 asset files are needed. Each function returns a 24x24 'QIcon': a four-way
-arrow for navigate, a pointer for select, a crossed node for anchor points,
+arrow for navigate, a pointer for select, a crossed node for node points,
 a bold full-width line for module lines, and the dimension glyphs.
 """
 #  Apache-2.0 license
@@ -56,8 +56,8 @@ def navigateIcon() -> QIcon:
   return QIcon(pixmap)
 
 
-def anchorIcon() -> QIcon:
-  """A small circle with a cross for the anchor-point tool (a node glyph)."""
+def nodeIcon() -> QIcon:
+  """A small circle with a cross for the node-point tool (a node glyph)."""
   pixmap, painter = _canvas()
   painter.setPen(QPen(QColor('#c678dd'), 2))
   painter.setBrush(Qt.BrushStyle.NoBrush)

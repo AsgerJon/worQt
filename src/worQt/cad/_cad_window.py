@@ -1,8 +1,8 @@
 """
-CADWindow composes the drawing app from a central 'CADWidget' canvas and a
-left tool panel holding three grouped sections: 'Selection' (the list of
-existing items and 'Clear all'), 'New item' (the vertex fields) and 'Viewer'
-(grid, snap and zoom). The panel and canvas sit in a 'QSplitter', so the
+CADWindow composes the drawing app from three splitter columns: the
+'Selection' tools (the four item lists and 'Clear all') on the left, the
+central 'CADWidget' canvas, and the 'New item'/edit and 'Viewer' (grid, snap
+and zoom) tools on the right. Everything sits in one 'QSplitter', so the
 layout is fully under the app's control - no separate top-level windows for
 the compositor to misplace. The window owns the wiring between the tools and
 the canvas and reports the hovered world coordinate on the status bar.
@@ -11,6 +11,7 @@ the canvas and reports the hovered world coordinate on the status bar.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import json
 import math
 import os
 from typing import TYPE_CHECKING
@@ -22,10 +23,11 @@ from PySide6.QtWidgets import (
   QMessageBox,
   QFileDialog,
   QSplitter,
+  QTabWidget,
   QWidget,
-  QGroupBox,
   QVBoxLayout,
   QSizePolicy,
+  QListWidgetItem,
 )
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
@@ -38,7 +40,7 @@ from ._view_tool import ViewToolPanel
 from ._tool_icons import (
   navigateIcon,
   selectIcon,
-  anchorIcon,
+  nodeIcon,
   moduleIcon,
   memberIcon,
   supportIcon,
@@ -47,12 +49,11 @@ from ._tool_icons import (
   angleIcon,
 )
 from .draw import (
-  AnchorPoint,
+  Node,
   Member,
+  ModuleLine,
   buildItem,
   describeItem,
-  saveScene,
-  loadScene,
   sceneToData,
   sceneFromData,
 )
@@ -72,13 +73,11 @@ class CADWindow(QMainWindow, MixinBase):
   __undo_limit__ = 100  # cap on how many edits the history keeps
 
   #  Private Variables
-  __show_selection_action__ = None  # checkable QAction toggling the group
-  __show_new_item_action__ = None
-  __show_view_action__ = None
   __tool_group__ = None  # exclusive QActionGroup for the tool palette
   __tool_actions__ = None  # data ('navigate'/kind) -> checkable QAction
   __splitter__ = None  # central panel|canvas splitter
-  __tool_boxes__ = None  # key -> QGroupBox wrapping each tool
+  __tool_tabs__ = None  # the QTabWidget holding the tool panels
+  __tab_index__ = None  # key ('selection'/'newItem'/'view') -> tab index
   __edit_index__ = None  # scene index being edited, or None when creating
   # new
   __undo_stack__ = None  # scene snapshots preceding each edit (list)
@@ -107,6 +106,7 @@ class CADWindow(QMainWindow, MixinBase):
     self._buildToolBar()
     self._buildCentral()
     self._connectSignals()
+    self._useAppSettings()  # drive the canvas palette from the app settings
     self._markSaved()  # the empty startup scene is the clean baseline
     self.statusBar().showMessage(
         'Pick a tool: Navigate pans, the shape tools draw on the canvas'
@@ -135,21 +135,13 @@ class CADWindow(QMainWindow, MixinBase):
     )
     viewMenu.addAction(self._action('&Clear', 'Ctrl+L', self._onClear))
     viewMenu.addSeparator()
-    self.__show_selection_action__ = self._toggle(
-        'Show &selection tool', self._onShowSelection
-    )
-    self.__show_new_item_action__ = self._toggle(
-        'Show &new-item tool', self._onShowNewItem
-    )
-    self.__show_view_action__ = self._toggle(
-        'Show &viewer tool', self._onShowView
-    )
-    viewMenu.addAction(self.__show_selection_action__)
-    viewMenu.addAction(self.__show_new_item_action__)
-    viewMenu.addAction(self.__show_view_action__)
+    viewMenu.addAction(
+        self._action('&Selection tab', '', self._onShowSelection))
+    viewMenu.addAction(
+        self._action('&Viewer tab', '', self._onShowView))
 
   def _buildToolBar(self, ) -> None:
-    """Build the icon palette: Navigate, Select, Anchor, Module, dims."""
+    """Build the icon palette: Navigate, Select, Node, Module, dims."""
     bar = self.addToolBar('Tools')
     bar.setMovable(False)
     bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -159,13 +151,13 @@ class CADWindow(QMainWindow, MixinBase):
     specs = (
       ('navigate', 'Navigate (pan / zoom)', navigateIcon()),
       ('select', 'Select (pick an item)', selectIcon()),
-      ('Anchor', 'Anchor point (double-click to place)', anchorIcon()),
+      ('Node', 'Node point (double-click to place)', nodeIcon()),
       (
-        'support', 'Support (click an anchor to cycle its support)',
+        'support', 'Support (click a node to cycle its support)',
         supportIcon()
       ),
       (
-        'load', 'Load (drag a force out of an anchor; click it to clear)',
+        'load', 'Load (drag a force out of a node; click it to clear)',
         loadIcon()
       ),
       (
@@ -173,7 +165,7 @@ class CADWindow(QMainWindow, MixinBase):
         moduleIcon()
       ),
       (
-        'Member', 'Structural member (drag between two anchor nodes)',
+        'Member', 'Structural member (drag between two nodes)',
         memberIcon()
       ),
       ('Dimension', 'Dimension', dimensionIcon()),
@@ -194,56 +186,79 @@ class CADWindow(QMainWindow, MixinBase):
     group.triggered.connect(self._onToolSelected)
     self.__tool_group__ = group
 
+  def _useAppSettings(self, ) -> None:
+    """Point the canvas palette at the application's settings when the app
+    carries one (a 'CADApp'), so editing a colour there repaints the
+    canvas. Under a bare 'QApplication' (tests) the canvas keeps its own
+    default 'CADSettings'."""
+    appSettings = getattr(self.app, 'settings', None)
+    if appSettings is not None:
+      self.canvas.settings = appSettings
+
   def _buildCentral(self, ) -> None:
     """
-    Build a splitter with a left panel of grouped tools and the canvas on
-    the right. The 'New item' and 'Viewer' groups take exactly their natural
-    height; only the 'Selection' list absorbs spare space (and scrolls
-    internally if long) - the panel itself never scrolls.
+    Build a splitter with the tool panels on the left as a two-tab widget -
+    a 'Selection' tab holding the item lists above the item editor (both
+    visible at once, split by a draggable divider) and a 'Viewer' tab - and
+    the canvas on the right. The View menu switches tabs.
     """
     self.selectionTool.build()
     self.newItemTool.build()
     self.viewTool.build()
-    column = QWidget(self)
-    column.setMinimumWidth(270)
-    columnLayout = QVBoxLayout(column)
-    columnLayout.setContentsMargins(4, 4, 4, 4)
-    self.__tool_boxes__ = dict()
-    specs = (
-      ('selection', 'Selection', self.selectionTool, 1),
-      ('newItem', 'New item', self.newItemTool, 0),
-      ('view', 'Viewer', self.viewTool, 0),
-    )
-    for key, title, panel, stretch in specs:
-      box = QGroupBox(title, column)
-      boxLayout = QVBoxLayout(box)
-      boxLayout.setContentsMargins(6, 6, 6, 6)
-      boxLayout.addWidget(panel)
-      if not stretch:  # fix New-item / Viewer to their natural height
-        box.setSizePolicy(
-          QSizePolicy.Policy.Preferred,
-          QSizePolicy.Policy.Fixed
-          )
-      columnLayout.addWidget(box, stretch)
-      self.__tool_boxes__[key] = box
+    tabs = QTabWidget(self)
+    tabs.setMinimumWidth(290)
+    tabs.setDocumentMode(True)
+    #  Selection tab: the item lists above the editor. The lists absorb the
+    #  spare height; the editor takes 'Maximum' size policy so it stays at
+    #  its natural height instead of stretching to fill the column.
+    selectionTab = QWidget(tabs)
+    selectionLayout = QVBoxLayout(selectionTab)
+    selectionLayout.setContentsMargins(4, 4, 4, 4)
+    selectionLayout.addWidget(self.selectionTool, 1)  # lists take the slack
+    self.newItemTool.setSizePolicy(
+        QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+    selectionLayout.addWidget(self.newItemTool, 0)  # editor: natural height
+    self.__tab_index__ = dict()
+    self.__tab_index__['selection'] = tabs.addTab(selectionTab, 'Selection')
+    self.__tab_index__['view'] = tabs.addTab(self.viewTool, 'Viewer')
+    #  the editor shares the Selection tab; route 'newItem' there too
+    self.__tab_index__['newItem'] = self.__tab_index__['selection']
+    self.__tool_tabs__ = tabs
     self.canvas.setFocusPolicy(
       Qt.FocusPolicy.StrongFocus
       )  # for the Delete key
     splitter = QSplitter(Qt.Orientation.Horizontal, self)
-    splitter.addWidget(column)
+    splitter.addWidget(tabs)
     splitter.addWidget(self.canvas)
     splitter.setStretchFactor(0, 0)
     splitter.setStretchFactor(1, 1)
-    splitter.setSizes([280, 620])
+    splitter.setChildrenCollapsible(False)  # the tool panel never drops out
+    splitter.setSizes([320, 580])
     self.setCentralWidget(splitter)
     self.__splitter__ = splitter
+
+  def _showTab(self, key: str) -> None:
+    """Switch the tool panel to the tab named by 'key', if it exists."""
+    tabs = self.__tool_tabs__
+    index = (self.__tab_index__ or dict()).get(key)
+    if tabs is not None and index is not None:
+      tabs.setCurrentIndex(index)
 
   def _connectSignals(self, ) -> None:
     """Wire the tool controls and the canvas hover readout."""
     self.newItemTool.addButton.clicked.connect(self._onAdd)
     self.newItemTool.deleteButton.clicked.connect(self._deleteSelected)
     self.selectionTool.clearButton.clicked.connect(self._onClear)
-    self.selectionTool.itemList.currentRowChanged.connect(self._onSelectRow)
+    tool = self.selectionTool
+    tool.nodeList.currentRowChanged.connect(self._onSelectNodeRow)
+    tool.elementList.currentRowChanged.connect(self._onSelectElementRow)
+    tool.guideList.currentRowChanged.connect(self._onSelectGuideRow)
+    tool.dimensionList.currentRowChanged.connect(
+        self._onSelectDimensionRow)
+    tool.showNodesCheck.toggled.connect(self.canvas.setShowNodes)
+    tool.showElementsCheck.toggled.connect(self.canvas.setShowElements)
+    tool.showGuidesCheck.toggled.connect(self.canvas.setShowGuides)
+    tool.showDimensionsCheck.toggled.connect(self.canvas.setShowDimensions)
     self.canvas.setHoverCallback(self._onHover)
     self.canvas.setAddCallback(self._onCanvasAdd)
     self.canvas.setDragCallback(self._onDrag)
@@ -254,8 +269,8 @@ class CADWindow(QMainWindow, MixinBase):
     self.canvas.setDisplaceCallback(self._onSetDisplace)
     self.canvas.setMemberCallback(self._onAddMember)
     #  Default: navigate mode, but a kind is ready so the Add button works.
-    self.canvas.setActiveKind('Anchor')
-    self.newItemTool.configureFor('Anchor')
+    self.canvas.setActiveKind('Node')
+    self.newItemTool.configureFor('Node')
     self.canvas.setMode('navigate')
     self.viewTool.showGridCheck.toggled.connect(self.canvas.setShowGrid)
     self.viewTool.snapCheck.toggled.connect(self.canvas.setSnap)
@@ -270,13 +285,6 @@ class CADWindow(QMainWindow, MixinBase):
     action = QAction(text, self)
     action.setShortcut(QKeySequence(shortcut))
     action.triggered.connect(slot)
-    return action
-
-  def _toggle(self, text: str, slot) -> QAction:
-    """Build a checkable 'QAction' whose toggled state drives 'slot'."""
-    action = QAction(text, self)
-    action.setCheckable(True)
-    action.toggled.connect(slot)
     return action
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -295,21 +303,24 @@ class CADWindow(QMainWindow, MixinBase):
     self._refreshDirty()  # now differs from the saved baseline
     self.canvas.ensureContains(item)  # zoom out if the item is off-view
     self.canvas.update()
-    self.selectionTool.itemList.addItem(str(item))
+    self._addToLists(item)  # append to its list (nodes vs elements)
     self.statusBar().showMessage('Added %s' % (item,), 2000)
 
   def _onAdd(self, *_) -> None:
     """Add a new item, or update the selected item when in edit mode."""
     kind = self.canvas.activeKind()
-    #  Editing an anchor changes its coordinates IN PLACE, so members that
+    #  Editing a node changes its values IN PLACE, so members that
     #  reference it keep their connection (a new object would orphan them).
     if self.__edit_index__ is not None:
       items = self.canvas.scene.items
       if 0 <= self.__edit_index__ < len(items):
         target = items[self.__edit_index__]
-        if isinstance(target, AnchorPoint):
-          self._updateAnchor(target)
+        if isinstance(target, Node):
+          self._updateNode(target)
           return
+    if kind == 'Node':  # a new node: built from coords + boundary conds
+      self._addNodeFromPanel()
+      return
     try:
       vertices = self.newItemTool.vertexEditor.vertices()
       item = buildItem(kind, vertices)
@@ -323,39 +334,44 @@ class CADWindow(QMainWindow, MixinBase):
     #  Keep the just-used coordinates as the running default for this kind.
     self.newItemTool.rememberLast(kind, vertices)
 
-  def _updateAnchor(self, anchor: object) -> None:
-    """
-    Apply the edited coordinates, load components and (when supported)
-    settlement to 'anchor' in place, so members referencing it follow.
-    """
+  def _addNodeFromPanel(self, ) -> None:
+    """Add a new node from the panel's coordinate and BC state."""
     try:
-      x, y, loadX, loadY, dispX, dispY = self.newItemTool.anchorValues()
-    except (ValueError, IndexError):
+      x, y = self.newItemTool.coords()
+      node = Node(float(x), float(y))
+      self.newItemTool.applyTo(node)  # writes the SET state onto it
+    except ValueError:
       self.statusBar().showMessage('Each value must be a number', 4000)
       return
-    self._pushUndo()
-    anchor.x = float(x)
-    anchor.y = float(y)
-    anchor.loadX = loadX
-    anchor.loadY = loadY
-    if anchor.supportKind() == 'free':  # a settlement needs a support
-      dispX = dispY = 0.0
-    anchor.dispX = dispX
-    anchor.dispY = dispY
-    self._refreshDirty()
-    items = self.canvas.scene.items
-    row = self.selectionTool.itemList.item(items.index(anchor))
-    row.setText(str(anchor))
-    self.canvas.update()
-    self.statusBar().showMessage('Updated %s' % (anchor,), 2000)
+    self.addItem(node)
+    self.newItemTool.rememberLast('Node', [(x, y)])
 
-  def _onAddMember(self, anchorA: object, anchorB: object) -> None:
-    """Add a structural member between two anchor nodes (a canvas drag)."""
-    self.addItem(Member(anchorA, anchorB))
+  def _updateNode(self, node: object) -> None:
+    """
+    Apply the edited coordinates and boundary-condition state to 'node' in
+    place, so members referencing it follow.
+    """
+    try:
+      x, y = self.newItemTool.coords()
+      self._pushUndo()
+      node.x = float(x)
+      node.y = float(y)
+      self.newItemTool.applyTo(node)
+    except ValueError:
+      self.statusBar().showMessage('Each value must be a number', 4000)
+      return
+    self._refreshDirty()
+    self._refreshRow(self.canvas.scene.items.index(node))
+    self.canvas.update()
+    self.statusBar().showMessage('Updated %s' % (node,), 2000)
+
+  def _onAddMember(self, nodeA: object, nodeB: object) -> None:
+    """Add a structural member between two nodes (a canvas drag)."""
+    self.addItem(Member(nodeA, nodeB))
 
   def _deleteSelected(self, *_) -> None:
     """
-    Remove the edited item. Deleting an anchor cascades: every member that
+    Remove the edited item. Deleting a node cascades: every member that
     references it is removed too (a node and its members go together), as one
     undoable step.
     """
@@ -366,14 +382,14 @@ class CADWindow(QMainWindow, MixinBase):
     self._pushUndo()
     target = items[index]
     doomed = {id(target)}
-    if isinstance(target, AnchorPoint):
+    if isinstance(target, Node):
       for item in items:
         if isinstance(item, Member):
           if item.nodeA is target or item.nodeB is target:
             doomed.add(id(item))
     items[:] = [item for item in items if id(item) not in doomed]
     self._refreshDirty()
-    self._syncListToScene()  # indices shifted: rebuild the list to match
+    self._rebuildLists()  # indices shifted: rebuild the list to match
     self._enterNewMode()  # clears the selection and the row, back to New
     self.canvas.update()
     self.statusBar().showMessage('Deleted %d item(s)' % (len(doomed),), 2000)
@@ -389,7 +405,7 @@ class CADWindow(QMainWindow, MixinBase):
     self.canvas.setSelected(item)
     self.canvas.ensureContains(item)
     self.canvas.update()
-    self.selectionTool.itemList.item(index).setText(str(item))
+    self._refreshRow(index)
     self.statusBar().showMessage('Updated %s' % (item,), 2000)
 
   def clearScene(self, ) -> None:
@@ -399,7 +415,7 @@ class CADWindow(QMainWindow, MixinBase):
     self._refreshDirty()
     self.canvas.setSelected(None)
     self.canvas.update()
-    self.selectionTool.itemList.clear()
+    self._rebuildLists()  # both lists now empty
     self._enterNewMode()  # nothing left to edit
     self.statusBar().showMessage('Cleared', 2000)
 
@@ -422,23 +438,13 @@ class CADWindow(QMainWindow, MixinBase):
     self.canvas.resetView()
     self.statusBar().showMessage('View reset', 2000)
 
-  def _setBoxVisible(self, key: str, visible: bool) -> None:
-    """Show or hide one grouped tool section in the left panel."""
-    boxes = self.__tool_boxes__ or dict()
-    if key in boxes:
-      boxes[key].setVisible(visible)
+  def _onShowSelection(self, *_) -> None:
+    """Switch to the Selection tab (the item lists and the editor)."""
+    self._showTab('selection')
 
-  def _onShowSelection(self, visible: bool) -> None:
-    """Show or hide the selection group."""
-    self._setBoxVisible('selection', visible)
-
-  def _onShowNewItem(self, visible: bool) -> None:
-    """Show or hide the new-item group."""
-    self._setBoxVisible('newItem', visible)
-
-  def _onShowView(self, visible: bool) -> None:
-    """Show or hide the viewer group."""
-    self._setBoxVisible('view', visible)
+  def _onShowView(self, *_) -> None:
+    """Switch to the Viewer tab."""
+    self._showTab('view')
 
   def _applyGridSpacing(self, pixels: float) -> None:
     """Clamp 'pixels' to the allowed range, apply it, and sync the
@@ -489,26 +495,21 @@ class CADWindow(QMainWindow, MixinBase):
     self._applyTool(data)
 
   def _enterEditMode(self, index: int) -> None:
-    """Re-title the New-item tool to edit the selected item in place, and
-    reveal the Delete button so the edited item can be removed."""
+    """Edit the selected item in place: make sure the Selection tab (which
+    holds the editor) is showing, switch the button to 'Update item' and
+    reveal the Delete button."""
     self.__edit_index__ = index
-    if self.__tool_boxes__ is not None:
-      self.__tool_boxes__['newItem'].setTitle('Edit item')
+    self._showTab('newItem')  # the editor lives in the Selection tab
     self.newItemTool.addButton.setText('Update item')
     self.newItemTool.deleteButton.setVisible(True)
 
   def _enterNewMode(self, ) -> None:
-    """Return the New-item tool to creating new items, and deselect."""
+    """Return the editor to creating new items, and deselect."""
     self.__edit_index__ = None
-    if self.__tool_boxes__ is not None:
-      self.__tool_boxes__['newItem'].setTitle('New item')
     self.newItemTool.addButton.setText('Add item')
     self.newItemTool.deleteButton.setVisible(False)
     self.canvas.setSelected(None)
-    itemList = self.selectionTool.itemList
-    blocked = itemList.blockSignals(True)
-    itemList.setCurrentRow(-1)
-    itemList.blockSignals(blocked)
+    self._clearListSelection()
 
   def _selectItem(self, index: int) -> None:
     """Select scene item 'index' for editing in the bespoke Edit tool."""
@@ -519,9 +520,9 @@ class CADWindow(QMainWindow, MixinBase):
       return
     item = items[index]
     self.canvas.setSelected(item)
-    if isinstance(item, AnchorPoint):
-      self.newItemTool.editAnchor(item, self._membersOf(item))
-      self.canvas.setActiveKind('Anchor')
+    if isinstance(item, Node):
+      self.newItemTool.editNode(item, self._membersOf(item))
+      self.canvas.setActiveKind('Node')
     elif isinstance(item, Member):
       self.newItemTool.editMember(self._memberInfo(item))
       self.canvas.setActiveKind('Member')
@@ -532,11 +533,11 @@ class CADWindow(QMainWindow, MixinBase):
     self._selectTool('select')
     self._enterEditMode(index)
 
-  def _membersOf(self, anchor: object) -> list:
-    """The label of every member attached to 'anchor'."""
+  def _membersOf(self, node: object) -> list:
+    """The label of every member attached to 'node'."""
     return [str(item) for item in self.canvas.scene
             if isinstance(item, Member)
-            and (item.nodeA is anchor or item.nodeB is anchor)]
+            and (item.nodeA is node or item.nodeB is node)]
 
   @staticmethod
   def _memberInfo(member: object) -> str:
@@ -553,62 +554,86 @@ class CADWindow(QMainWindow, MixinBase):
     self.addItem(item)
     self.newItemTool.rememberLast(kind, vertices)
 
-  def _onSelectRow(self, row: int) -> None:
-    """Select the item for the chosen list row (for editing)."""
-    self._selectItem(row)
+  def _onSelectNodeRow(self, row: int) -> None:
+    """Highlight a node from the Nodes list: edit it and frame it in view."""
+    self._onSelectListRow(self.selectionTool.nodeList, row)
+
+  def _onSelectElementRow(self, row: int) -> None:
+    """Highlight an element from the Elements list: edit it and frame it."""
+    self._onSelectListRow(self.selectionTool.elementList, row)
+
+  def _onSelectGuideRow(self, row: int) -> None:
+    """Highlight a guide (module line) from the Guides list and frame it."""
+    self._onSelectListRow(self.selectionTool.guideList, row)
+
+  def _onSelectDimensionRow(self, row: int) -> None:
+    """Highlight a dimension from the Dimensions list and frame it."""
+    self._onSelectListRow(self.selectionTool.dimensionList, row)
+
+  def _onSelectListRow(self, listWidget: object, row: int) -> None:
+    """Select the scene item behind 'row' of 'listWidget', clearing the
+    highlight in every other list, then zoom the view to show it with
+    surroundings."""
+    if row < 0:
+      return
+    entry = listWidget.item(row)
+    if entry is None:
+      return
+    for other in self._selectionLists():  # one list highlighted at a time
+      if other is listWidget:
+        continue
+      blocked = other.blockSignals(True)
+      other.setCurrentRow(-1)
+      other.blockSignals(blocked)
+    index = entry.data(Qt.ItemDataRole.UserRole)
+    self._selectItem(index)
+    items = self.canvas.scene.items
+    if 0 <= index < len(items):
+      self.canvas.focusOn(items[index])
 
   def _pickItem(self, index: int) -> None:
     """Select an item clicked on the canvas with the Select tool."""
     self._selectItem(index)
-    itemList = self.selectionTool.itemList
-    blocked = itemList.blockSignals(True)  # reflect without re-entering
-    itemList.setCurrentRow(index)
-    itemList.blockSignals(blocked)
+    self._selectListRow(index)
 
-  def _onCycleSupport(self, anchor: object) -> None:
-    """Cycle the boundary condition on the anchor clicked in support mode."""
+  def _onCycleSupport(self, node: object) -> None:
+    """Cycle the boundary condition on the node clicked in support mode."""
     self._pushUndo()
-    kind = anchor.cycleSupport()
+    kind = node.cycleSupport()
     self._refreshDirty()
     items = self.canvas.scene.items
-    if anchor in items:  # refresh the list row to show the new support
-      self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor)
-      )
+    if node in items:  # refresh the list row to show the new support
+      self._refreshRow(items.index(node))
     self.canvas.update()
     self.statusBar().showMessage('Support: %s' % (kind,), 2000)
 
-  def _onSetLoad(self, anchor: object, fx: float, fy: float) -> None:
-    """Set the nodal load on an anchor dragged in load mode (a near-zero
+  def _onSetLoad(self, node: object, fx: float, fy: float) -> None:
+    """Set the nodal load on a node dragged in load mode (a near-zero
     drag clears it). Skips the edit when the load is unchanged."""
-    if (anchor.loadX, anchor.loadY) == (fx, fy):
+    if (node.loadX, node.loadY) == (fx, fy):
       return
     self._pushUndo()
-    anchor.loadX = fx
-    anchor.loadY = fy
+    node.loadX = fx
+    node.loadY = fy
     self._refreshDirty()
     items = self.canvas.scene.items
-    if anchor in items:  # refresh the list row to show the new load
-      self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor)
-      )
+    if node in items:  # refresh the list row to show the new load
+      self._refreshRow(items.index(node))
     self.canvas.update()
     self.statusBar().showMessage('Load: (%.2f, %.2f) N' % (fx, fy), 2000)
 
-  def _onSetDisplace(self, anchor: object, dx: float, dy: float) -> None:
-    """Set the prescribed support displacement on an anchor (a settlement
+  def _onSetDisplace(self, node: object, dx: float, dy: float) -> None:
+    """Set the prescribed support displacement on a node (a settlement
     that forces the node off equilibrium). Skips an unchanged edit."""
-    if (anchor.dispX, anchor.dispY) == (dx, dy):
+    if (node.dispX, node.dispY) == (dx, dy):
       return
     self._pushUndo()
-    anchor.dispX = dx
-    anchor.dispY = dy
+    node.dispX = dx
+    node.dispY = dy
     self._refreshDirty()
     items = self.canvas.scene.items
-    if anchor in items:  # refresh the list row to show the displacement
-      self.selectionTool.itemList.item(items.index(anchor)).setText(
-          str(anchor)
-      )
+    if node in items:  # refresh the list row to show the displacement
+      self._refreshRow(items.index(node))
     self.canvas.update()
     self.statusBar().showMessage(
         'Prescribed displacement: (%.2f, %.2f)' % (dx, dy), 2000
@@ -686,7 +711,7 @@ class CADWindow(QMainWindow, MixinBase):
   def _restoreSnapshot(self, snapshot: dict) -> None:
     """Replace the scene with 'snapshot' and refresh the dependent UI."""
     sceneFromData(snapshot, self.canvas.scene)
-    self._syncListToScene()
+    self._rebuildLists()
     self._enterNewMode()  # the restored scene starts with nothing selected
     self.canvas.update()
 
@@ -727,15 +752,82 @@ class CADWindow(QMainWindow, MixinBase):
   #  FILE PERSISTENCE   # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _syncListToScene(self, ) -> None:
-    """Rebuild the selection list so it mirrors the scene row-for-row."""
-    itemList = self.selectionTool.itemList
-    blocked = itemList.blockSignals(True)
-    itemList.clear()
-    for item in self.canvas.scene:
-      itemList.addItem(str(item))
-    itemList.setCurrentRow(-1)
-    itemList.blockSignals(blocked)
+  def _selectionLists(self, ) -> tuple:
+    """The four Selection lists: nodes, elements, guides, dimensions."""
+    tool = self.selectionTool
+    return (tool.nodeList, tool.elementList, tool.guideList,
+            tool.dimensionList)
+
+  def _listFor(self, item: object) -> object:
+    """The list an item belongs in: a node in Nodes, a member in Elements, a
+    module line in Guides, a (linear or angular) dimension in Dimensions."""
+    if isinstance(item, Node):
+      return self.selectionTool.nodeList
+    if isinstance(item, Member):
+      return self.selectionTool.elementList
+    if isinstance(item, ModuleLine):
+      return self.selectionTool.guideList
+    return self.selectionTool.dimensionList
+
+  def _rebuildLists(self, ) -> None:
+    """Rebuild the four lists from the scene, partitioning by item type.
+    Each row stores its scene index, so a row maps back to its item even
+    though the lists no longer run parallel to the scene order."""
+    lists = self._selectionLists()
+    blocked = [lst.blockSignals(True) for lst in lists]
+    for lst in lists:
+      lst.clear()
+    for index, item in enumerate(self.canvas.scene):
+      entry = QListWidgetItem(str(item))
+      entry.setData(Qt.ItemDataRole.UserRole, index)
+      self._listFor(item).addItem(entry)
+    for lst, block in zip(lists, blocked):
+      lst.setCurrentRow(-1)
+      lst.blockSignals(block)
+
+  def _addToLists(self, item: object) -> None:
+    """Append a just-added scene item to its list, tagged with its scene
+    index (an append never shifts the existing rows' indices)."""
+    index = len(self.canvas.scene.items) - 1
+    listWidget = self._listFor(item)
+    entry = QListWidgetItem(str(item))
+    entry.setData(Qt.ItemDataRole.UserRole, index)
+    blocked = listWidget.blockSignals(True)
+    listWidget.addItem(entry)
+    listWidget.blockSignals(blocked)
+
+  def _entryForIndex(self, index: int) -> tuple:
+    """The (listWidget, row) holding scene item 'index', or (None, None)."""
+    for listWidget in self._selectionLists():
+      for row in range(listWidget.count()):
+        if listWidget.item(row).data(Qt.ItemDataRole.UserRole) == index:
+          return (listWidget, row)
+    return (None, None)
+
+  def _refreshRow(self, index: int) -> None:
+    """Re-render the list row showing scene item 'index' (after an edit)."""
+    items = self.canvas.scene.items
+    if not (0 <= index < len(items)):
+      return
+    listWidget, row = self._entryForIndex(index)
+    if listWidget is not None:
+      listWidget.item(row).setText(str(items[index]))
+
+  def _selectListRow(self, index: int) -> None:
+    """Highlight the row for scene item 'index' in its list, clearing the
+    other, without re-triggering the selection handlers."""
+    listWidget, row = self._entryForIndex(index)
+    for candidate in self._selectionLists():
+      blocked = candidate.blockSignals(True)
+      candidate.setCurrentRow(row if candidate is listWidget else -1)
+      candidate.blockSignals(blocked)
+
+  def _clearListSelection(self, ) -> None:
+    """Drop the current-row highlight on both lists, silently."""
+    for listWidget in self._selectionLists():
+      blocked = listWidget.blockSignals(True)
+      listWidget.setCurrentRow(-1)
+      listWidget.blockSignals(blocked)
 
   def _sceneState(self, ) -> dict:
     """The current scene as plain data, for comparison with the baseline."""
@@ -755,6 +847,71 @@ class CADWindow(QMainWindow, MixinBase):
     changed = self._sceneState() != self.__saved_state__
     self.dirty = True if changed else False
     self._updateTitle()
+
+  def _viewState(self, ) -> dict:
+    """The canvas view/visibility flags as plain data, saved alongside the
+    scene so a reopened drawing restores its category toggles and grid."""
+    canvas = self.canvas
+    return {
+      'showNodes': True if canvas.showNodes else False,
+      'showElements': True if canvas.showElements else False,
+      'showGuides': True if canvas.showGuides else False,
+      'showDimensions': True if canvas.showDimensions else False,
+      'showGrid': True if canvas.showGrid else False,
+      'snapToGrid': True if canvas.snapToGrid else False,
+      'gridTargetPx': float(canvas.gridTargetPx),
+    }
+
+  def _applyViewState(self, view: dict) -> None:
+    """Restore the canvas view flags from a saved 'view' block (a missing or
+    empty block leaves the defaults), then sync the tool controls."""
+    if not view:
+      return
+    canvas = self.canvas
+    canvas.showNodes = True if view.get('showNodes', True) else False
+    canvas.showElements = True if view.get('showElements', True) else False
+    canvas.showGuides = True if view.get('showGuides', True) else False
+    canvas.showDimensions = (
+        True if view.get('showDimensions', True) else False)
+    canvas.showGrid = True if view.get('showGrid', True) else False
+    canvas.snapToGrid = True if view.get('snapToGrid', True) else False
+    canvas.gridTargetPx = float(
+        view.get('gridTargetPx', canvas.gridTargetPx))
+    self._syncViewControls()
+    canvas.update()
+
+  def _syncViewControls(self, ) -> None:
+    """Reflect the canvas view flags onto the tool checkboxes and the grid
+    spacing control, without re-triggering their handlers."""
+    tool = self.selectionTool
+    canvas = self.canvas
+    pairs = (
+      (tool.showNodesCheck, canvas.showNodes),
+      (tool.showElementsCheck, canvas.showElements),
+      (tool.showGuidesCheck, canvas.showGuides),
+      (tool.showDimensionsCheck, canvas.showDimensions),
+      (self.viewTool.showGridCheck, canvas.showGrid),
+      (self.viewTool.snapCheck, canvas.snapToGrid),
+    )
+    for check, value in pairs:
+      blocked = check.blockSignals(True)
+      check.setChecked(True if value else False)
+      check.blockSignals(blocked)
+    self.viewTool.setSpacing(int(canvas.gridTargetPx))
+
+  def _writeScene(self, path: str) -> None:
+    """Write the scene and the current view state to 'path' as JSON."""
+    data = sceneToData(self.canvas.scene)
+    data['view'] = self._viewState()
+    with open(path, 'w') as file:
+      json.dump(data, file)
+
+  def _readScene(self, path: str) -> None:
+    """Load the scene at 'path' into the canvas and apply its view state."""
+    with open(path, 'r') as file:
+      data = json.load(file)
+    sceneFromData(data, self.canvas.scene)
+    self._applyViewState(data.get('view'))
 
   def _updateTitle(self, ) -> None:
     """Reflect the model name and unsaved-changes state in the title bar.
@@ -794,7 +951,7 @@ class CADWindow(QMainWindow, MixinBase):
     if not self.__file_path__:  # untitled: name it before any save
       return self._onRename()
     try:
-      saveScene(self.canvas.scene, self.__file_path__)
+      self._writeScene(self.__file_path__)
     except OSError as error:
       self.statusBar().showMessage('Save failed: %s' % (error,), 4000)
       return False
@@ -824,7 +981,7 @@ class CADWindow(QMainWindow, MixinBase):
     if not path.endswith('.json'):
       path = '%s.json' % (path,)
     try:
-      saveScene(self.canvas.scene, path)
+      self._writeScene(path)
     except OSError as error:
       self.statusBar().showMessage('Save failed: %s' % (error,), 4000)
       return False
@@ -851,12 +1008,12 @@ class CADWindow(QMainWindow, MixinBase):
     if not path:
       return
     try:
-      loadScene(path, self.canvas.scene)
+      self._readScene(path)
     except (OSError, ValueError, KeyError) as error:
       self.statusBar().showMessage('Open failed: %s' % (error,), 4000)
       return
     self.__file_path__ = path  # Save now writes back to this file, no dialog
-    self._syncListToScene()
+    self._rebuildLists()
     self._enterNewMode()  # nothing is selected after a fresh load
     self.canvas.fitAll()  # zoom-to-extents on the loaded drawing
     self.canvas.update()
@@ -911,8 +1068,5 @@ class CADWindow(QMainWindow, MixinBase):
   def show(self, ) -> None:
     self.initUi()
     self._restoreGeometry()
-    #  All tool groups start visible (the View toggles can hide them).
-    self.__show_selection_action__.setChecked(True)
-    self.__show_new_item_action__.setChecked(True)
-    self.__show_view_action__.setChecked(True)
+    self._showTab('selection')  # open on the Selection tab
     super().show()
