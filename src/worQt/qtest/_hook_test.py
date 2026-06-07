@@ -39,7 +39,8 @@ class HookTest(AbstractSpaceHook):
     Returns
     -------
     bool
-        True if the item was handled by this hook, False otherwise.
+        Always False: the hook only observes and records test methods, it
+        never claims the name, so the namespace still stores it normally.
     """
 
     if str.startswith(key, 'run') or str.startswith(key, 'test'):

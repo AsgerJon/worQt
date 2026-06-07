@@ -14,17 +14,27 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from worktoy.mcls import BaseObject, BaseMeta
-from worktoy.desc import AttriBox
-from worktoy.waitaminute import TypeException
-
-from . import NotifyBox
+from worktoy.mcls import BaseObject
+from . import ItemMeta
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any, Optional
+  pass
 
 
-class AbstractItem(BaseObject):
+class AbstractItem(BaseObject, metaclass=ItemMeta):
   """
   Array items must subclass 'AbstractItem'
   """
+
+  #  Private Variables
+  __owning_field__ = None  # the 'ArrayField' holding this item, if any
+  __owning_document__ = None  # the document that field belongs to, if any
+
+  def notifyChange(self, ) -> None:
+    """Fired by a 'NotifyBox' attribute after every write. When the item is
+    held by an array it forwards to the owning field's change hook; an item
+    not yet added to any array has no owner, so this is a no-op."""
+    field = self.__owning_field__
+    document = self.__owning_document__
+    if field is not None and document is not None:
+      field.notifyChange(document)

@@ -13,7 +13,11 @@ from worktoy.waitaminute import TypeException
 from . import AbstractField
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any, Self
+  from typing import Any, Self, TypeAlias, Type
+
+  from . import AbstractDocument as Doc
+
+  DocType: TypeAlias = Type[Doc]
 
 T = TypeVar('T')
 
@@ -28,17 +32,15 @@ class SingleField(AbstractField, Generic[T]):
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  if TYPE_CHECKING:  # pragma: no cover
-    #  Runtime builds the field via the inherited '__class_getitem__'
-    #  factory plus '__call__'; this stub only teaches the type checker
-    #  that 'SingleField[T](value)' yields a 'SingleField[T]'.
-    def __init__(self, value: T) -> None: ...
-
   def __call__(self, value: T, **kwargs) -> Self:
     if not isinstance(value, self.valueType):
       raise TypeException('value', value, self.valueType)
     setattr(self, '__fallback_value__', value)
     return self
+
+  def __set_name__(self, docType: DocType, name: str, **kwargs) -> None:
+    super().__set_name__(docType, name)
+    docType.registerSingleField(name, self)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

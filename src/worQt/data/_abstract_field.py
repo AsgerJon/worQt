@@ -160,10 +160,6 @@ class AbstractField(BaseDescriptor[T], metaclass=BaseMeta):
     setattr(self, '__value_type__', valueType)
     return self
 
-  def __set_name__(self, docType: DocType, name: str, **kwargs) -> None:
-    docType.registerSingleField(name, self)
-    super().__set_name__(docType, name, **kwargs)
-
   def __get__(self, instance: Any, docType: DocType, **kwargs) -> Any:
     owner = self.getFieldOwner()
     if docType is not owner:
@@ -185,10 +181,14 @@ class AbstractField(BaseDescriptor[T], metaclass=BaseMeta):
   @classmethod
   def _clone(cls, other: Self) -> Self:
     self = cls()
-    setattr(self, '__value_type__', getattr(other, '__value_type__'))
-    setattr(self, '__fallback_value__', getattr(other, '__fallback_value__'))
-    setattr(self, '__encode_key__', getattr(other, '__encode_key__'))
-    setattr(self, '__decode_key__', getattr(other, '__decode_key__'))
+    keys = (
+      '__value_type__',
+      '__fallback_value__',
+      '__encode_key__',
+      '__decode_key__'
+    )
+    for key in keys:
+      setattr(self, key, getattr(other, key))
     return self
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

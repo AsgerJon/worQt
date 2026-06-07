@@ -20,7 +20,7 @@ from . import MainFile
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional, TypeAlias, IO
 
-  from . import AbstractField
+  from . import SingleField, ArrayField
 
   Bases: TypeAlias = tuple[type, ...]
 
@@ -36,8 +36,8 @@ class AbstractDocument(BaseObject):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Class Variables
-  __single_fields__: Optional[dict[str, AbstractField]] = None
-  __array_fields__: Optional[dict[str, tuple[AbstractField, ...]]] = None
+  __single_fields__: Optional[dict[str, SingleField]] = None
+  __array_fields__: Optional[dict[str, ArrayField]] = None
 
   #  Fallback Variables
 
@@ -56,7 +56,7 @@ class AbstractDocument(BaseObject):
     cls.__single_fields__ = {**maybe(cls.__single_fields__, dict()), }
 
   @classmethod
-  def _getSingleFields(cls, **kwargs) -> dict[str, AbstractField]:
+  def _getSingleFields(cls, **kwargs) -> dict[str, SingleField]:
     if cls.__dict__.get('__single_fields__') is None:
       if kwargs.get('_recursion', False):
         raise RecursionError
@@ -67,7 +67,7 @@ class AbstractDocument(BaseObject):
     raise TypeException('__single_fields__', cls.__single_fields__, dict)
 
   @classmethod
-  def registerSingleField(cls, name: str, field: AbstractField) -> None:
+  def registerSingleField(cls, name: str, field: SingleField) -> None:
     existing = cls._getSingleFields()
     existing[name] = field
     cls.__single_fields__ = existing
@@ -77,7 +77,7 @@ class AbstractDocument(BaseObject):
     cls.__array_fields__ = {**maybe(cls.__array_fields__, dict()), }
 
   @classmethod
-  def _getArrayFields(cls, **kwargs) -> dict[str, tuple[AbstractField, ...]]:
+  def _getArrayFields(cls, **kwargs) -> dict[str, ArrayField]:
     if cls.__dict__.get('__array_fields__') is None:
       if kwargs.get('_recursion', False):
         raise RecursionError
@@ -88,9 +88,9 @@ class AbstractDocument(BaseObject):
     raise TypeException('__array_fields__', cls.__array_fields__, dict)
 
   @classmethod
-  def registerArrayField(cls, name: str, *fields: AbstractField) -> None:
+  def registerArrayField(cls, name: str, field: ArrayField) -> None:
     existing = cls._getArrayFields()
-    existing[name] = fields
+    existing[name] = field
     cls.__array_fields__ = existing
 
   @mainDir.GET
@@ -144,6 +144,9 @@ class AbstractDocument(BaseObject):
       value = type(field).__get__(field, self, cls)
       encoded = type(field).encode(field, self, value)
       data[key] = encoded
+    for key, field in self._getArrayFields().items():
+      array = type(field).__get__(field, self, cls)
+      data[key] = type(field).encode(field, self, array)
     json.dump(data, io)
 
   def _decodeData(self, io: IO) -> None:
@@ -152,6 +155,12 @@ class AbstractDocument(BaseObject):
       encoded = encodedData.get(key, '')
       decoded = type(field).decode(field, self, encoded)
       type(field).__set__(field, self, decoded, )
+    for key, field in self._getArrayFields().items():
+      raw = encodedData.get(key, [])
+      decoded = type(field).decode(field, self, raw)
+      #  ArrayField blocks '__set__' ("Do not override!"), so write the
+      #  rebuilt 'ArrayLike' straight onto the field's private slot.
+      setattr(self, field.getPrivateName(), decoded)
 
   def save(self, ) -> None:
     self.mainFile.save(self._encodeData)

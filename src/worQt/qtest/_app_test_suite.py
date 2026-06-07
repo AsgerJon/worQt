@@ -31,11 +31,13 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class AppTestSuite(BaseObject):
   """
-  This private class is responsible for discovering the tests in the
-  'tests.test_app' that require unconventional testing. These are
-  characterized by way of naming. While 'unittest' rely on module and method
-  names beginning with 'test' and class names with 'Test', to recognize test
-  cases, this class relies on 'run' and 'Run' respectively.
+  Discovers and runs every test class under the project's 'tests' tree,
+  each through 'AppTestRun' (an 'AppTest' in its own child process, a plain
+  'BaseTest'/'TestCase' in-process), and reports the outcomes. Discovery is
+  by naming: a module file is a candidate when its name begins with 'run' or
+  'test', and the single test class it holds is recognised when its name
+  begins with 'Run' or 'Test'. Modules are located by filename without being
+  imported; each is imported only when it is about to run.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -196,7 +198,7 @@ class AppTestSuite(BaseObject):
   @staticmethod
   def _describe(code: int, timeout: float) -> tuple[str, str]:
     """
-    Maps a child exit code (as returned by 'AppTest.start') to a
+    Maps an exit code (as returned by 'AppTestRun.run') to a
     '(label, reason)' pair for reporting. A negative code is death by
     signal: -9 is the deadline kill, -11 a segfault.
     """
@@ -229,10 +231,11 @@ class AppTestSuite(BaseObject):
 
   def runAll(self, ) -> int:
     """
-    Runs every discovered test class, each in its own expendable child
-    process via 'AppTest.start', reporting each outcome at verbosity 2 and
-    a summary at verbosity 1. Returns the count of classes that did not
-    pass, suitable as a process exit code.
+    Runs every discovered test class through 'AppTestRun' - an 'AppTest' in
+    its own expendable child process, a plain 'TestCase' in-process -
+    reporting each outcome at verbosity 2 and a summary at verbosity 1.
+    Returns the count of classes that did not pass, suitable as a process
+    exit code.
     """
     rule = '-' * 60
     failures = 0
@@ -274,9 +277,9 @@ class AppTestSuite(BaseObject):
     here: str = os.path.dirname(os.path.abspath(__file__))
     while 'tests' not in os.listdir(here) and len(here) > 1:
       here = os.path.dirname(here)
-    if 'tests' not in os.listdir(here):
-      raise FileNotFoundError
-    return here
+    if 'tests' in os.listdir(here):
+      return here
+    return os.getcwd()  # no 'tests' above the package: fall back to the cwd
 
   @classmethod
   def __class_init__(cls, name, bases, space, **kwargs) -> None:

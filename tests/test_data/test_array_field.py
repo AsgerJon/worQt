@@ -36,7 +36,7 @@ class TestArrayField(DataTest):
   @classmethod
   def _field(cls) -> ArrayField:
     """The registered 'items' field descriptor."""
-    return ArrayDoc.__single_fields__['items']
+    return ArrayDoc.__array_fields__['items']
 
   def test_default_is_empty_arraylike(self) -> None:
     """An untouched field reads as an empty 'ArrayLike'."""

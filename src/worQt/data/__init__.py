@@ -9,8 +9,12 @@ and the open/close (and optional open-error) plumbing.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._array_like import ArrayLike
 from ._notify_box import NotifyBox
+from ._item_space_hook import ItemSpaceHook
+from ._item_space import ItemSpace
+from ._item_meta import ItemMeta
+
+from ._array_like import ArrayLike
 from ._abstract_item import AbstractItem
 from ._abstract_field import AbstractField
 from ._single_field import SingleField

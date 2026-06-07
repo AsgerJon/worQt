@@ -1,6 +1,7 @@
 """
-AppTestRun runs a single 'AppTest' subclass in a fresh, expendable
-interpreter and reports the outcome.
+AppTestRun runs a single test class and reports its outcome: an 'AppTest' in
+a fresh, expendable interpreter under a deadline, a plain 'TestCase'
+in-process with the standard unittest runner.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -31,7 +32,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class AppTestRun(BaseObject):
-  """Runs a single 'AppTest' subclass in its own child process."""
+  """Runs a single test class and returns '(exitCode, output)': an 'AppTest'
+  in its own child process under a deadline, a plain 'BaseTest'/'TestCase'
+  in-process with the standard unittest runner."""
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

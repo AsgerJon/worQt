@@ -43,7 +43,6 @@ class AppTest(BaseTest, metaclass=MetaTest):
   __time_out__: float = 30.0
 
   #  Private Variables
-  __application_instance__: Optional[QApplication] = None
   __preopen__ = None  # ids of top-level widgets open before this test ran
 
   #  Public Variables
@@ -53,27 +52,17 @@ class AppTest(BaseTest, metaclass=MetaTest):
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _createApp(self, ) -> None:
-    cls = type(self)
-    appType = cls.getApplicationType()
-    __application_instance__ = appType(*sys.argv)
-
   @app.GET
-  def _getApp(self, **kwargs) -> QCoreApplication:
+  def _getApp(self, ) -> QCoreApplication:
     """
-    Getter for 'app' field. Ensures that a QApplication document is available
-    and returns it.
+    The running 'QApplication'. 'runTest' creates it before any test method
+    runs, so it always exists by the time a test reads 'self.app'.
     """
-    running: Optional[QCoreApplication] = QApplication.instance()
-    if running is None:
-      if kwargs.get('_recursion', False):
-        raise RecursionError
-      self._createApp()
-      return self._getApp(_recursion=True)
+    running = QApplication.instance()
     if isinstance(running, QCoreApplication):
       return running
-    name, value = '__application_instance__', running
-    raise TypeException(name, value, QCoreApplication, QApplication)
+    raise TypeException(
+        'QApplication.instance()', running, QCoreApplication, QApplication)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #

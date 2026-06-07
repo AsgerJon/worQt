@@ -11,19 +11,16 @@ dependencies — do not vendor or reimplement their machinery.
 
 ## Commands
 
-The test config sets `pythonpath = src`, so run everything from the repo root.
-Always prefix Python invocations with `PYTHONDONTWRITEBYTECODE=1`.
+Tests run through the in-house `worQt.qtest` harness, NOT pytest. Put `src` on
+`PYTHONPATH` and run from the repo root. Always prefix Python invocations with
+`PYTHONDONTWRITEBYTECODE=1`.
 
 ```bash
-# Run the full test suite with coverage (term + html report, auto-opens browser)
-./coverage_test.sh
+# Run the whole test suite (each 'AppTest' class in its own child process)
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest
 
-# Run tests directly (config in pytest.ini: testpaths=tests, --cov=worQt)
-PYTHONDONTWRITEBYTECODE=1 pytest
-
-# Run a single test file / class / method
-PYTHONDONTWRITEBYTECODE=1 pytest tests/test_app/test_abstract_application.py
-PYTHONDONTWRITEBYTECODE=1 pytest tests/test_app/test_abstract_application.py::TestAbstractApplication::test_metaclass
+# Run a single test class by its dotted module name
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_app.test_abstract_application
 
 # Scratch runner: main.py drives yolo(), which runs a list of callables and
 # pretty-prints any traceback with source context. Edit the yolo(...) call at

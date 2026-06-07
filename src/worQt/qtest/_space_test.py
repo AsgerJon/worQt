@@ -64,8 +64,8 @@ class SpaceTest(BaseSpace):
 
     Returns
     -------
-    tuple[FunctionType, ...]
-      A tuple of test methods defined in the namespace.
+    dict[str, Callable]
+      The collected test methods, keyed by name, in definition order.
     """
     if self.__test_methods__ is None:
       return dict()

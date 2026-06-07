@@ -1,8 +1,13 @@
 """
-Entry point for the 'worQt.qtest' child process. Launched as
-'python -m worQt.qtest <name> ...', it resolves each dotted module name to
-its test class through 'AppTestSuite.getNamed' and runs it. Exactly one
-class runs per process; the exit code reports the outcome:
+Entry point for the 'worQt.qtest' runner.
+
+With no arguments ('python -m worQt.qtest') it runs the whole suite through
+'AppTestSuite.runAll' and exits with the number of failing classes.
+
+With one or more dotted module names ('python -m worQt.qtest <name> ...') it
+acts as the per-class child process: it resolves each name to its test class
+through 'AppTestSuite.getNamed' and runs it, exactly one class per process,
+the exit code reporting the outcome:
 
   0  a test class ran and returned normally
   1  none of the given names matched a discovered test module
@@ -30,7 +35,10 @@ def main(name: str) -> None:
 
 
 if __name__ == '__main__':
-  for arg in sys.argv[1:]:
+  names = sys.argv[1:]
+  if not names:  # no name given: run the whole suite
+    sys.exit(AppTestSuite().runAll())
+  for arg in names:
     try:
       main(arg)
     except ImportError:
