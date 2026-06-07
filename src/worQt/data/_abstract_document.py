@@ -37,6 +37,7 @@ class AbstractDocument(BaseObject):
 
   #  Class Variables
   __single_fields__: Optional[dict[str, AbstractField]] = None
+  __array_fields__: Optional[dict[str, tuple[AbstractField, ...]]] = None
 
   #  Fallback Variables
 
@@ -70,6 +71,27 @@ class AbstractDocument(BaseObject):
     existing = cls._getSingleFields()
     existing[name] = field
     cls.__single_fields__ = existing
+
+  @classmethod
+  def _createArrayFields(cls, ) -> None:
+    cls.__array_fields__ = {**maybe(cls.__array_fields__, dict()), }
+
+  @classmethod
+  def _getArrayFields(cls, **kwargs) -> dict[str, tuple[AbstractField, ...]]:
+    if cls.__dict__.get('__array_fields__') is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      cls._createArrayFields()
+      return cls._getArrayFields(_recursion=True)
+    if isinstance(cls.__array_fields__, dict):
+      return cls.__array_fields__
+    raise TypeException('__array_fields__', cls.__array_fields__, dict)
+
+  @classmethod
+  def registerArrayField(cls, name: str, *fields: AbstractField) -> None:
+    existing = cls._getArrayFields()
+    existing[name] = fields
+    cls.__array_fields__ = existing
 
   @mainDir.GET
   def _getMainDir(self, ) -> str:
