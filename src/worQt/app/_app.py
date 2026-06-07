@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from . import AbstractApplication
-from ..window import MainWindow
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional
@@ -20,23 +19,18 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class App(AbstractApplication):
   """
-  Concrete 'worQt' application. Supports use as a context manager:
+  Concrete 'worQt' application: 'AbstractApplication' plus the
+  context-manager protocol that runs the Qt event loop on a clean exit.
+  It fixes no window type of its own; a concrete app sets
+  '__window_class__' (and optionally '__settings_class__') and uses it as:
 
-      with App(*sys.argv) as app:
-        app.splash.show()
+      with MyApp(*sys.argv) as app:
         app.window.show()
 
   '__exit__' runs the Qt event loop and blocks until the application
   quits. If the with-body raises, the event loop is not started and
   the exception propagates.
   """
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  #  Fallback Variables
-  __window_class__ = MainWindow  # 'window' builds a MainWindow
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

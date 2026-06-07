@@ -5,8 +5,10 @@ The 'window' subpackage exposes the window classes for worQt.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._main_window import MainWindow
+from . import menus
+from ._abstract_window import AbstractWindow
 
 __all__ = (
-  'MainWindow',
+  'menus',
+  'AbstractWindow',
 )
