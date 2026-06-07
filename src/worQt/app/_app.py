@@ -2,8 +2,8 @@
 App is the concrete 'worQt' application class. It exposes a context
 manager protocol: '__enter__' returns the application document and
 '__exit__' runs the Qt event loop. The shared app handles ('returnCode',
-'splash', 'window', 'settings') live on 'AbstractApplication'; 'App' only
-fixes its window type.
+'splash', 'window') live on 'AbstractApplication'; 'App' only fixes its
+window type.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -22,7 +22,7 @@ class App(AbstractApplication):
   Concrete 'worQt' application: 'AbstractApplication' plus the
   context-manager protocol that runs the Qt event loop on a clean exit.
   It fixes no window type of its own; a concrete app sets
-  '__window_class__' (and optionally '__settings_class__') and uses it as:
+  '__window_class__' and uses it as:
 
       with MyApp(*sys.argv) as app:
         app.window.show()

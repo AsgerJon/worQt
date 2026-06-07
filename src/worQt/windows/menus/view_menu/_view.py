@@ -25,6 +25,9 @@ class View(AbstractMenu):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+  __menu_title__ = 'View'
+
   #  Actions
   fullScreen = ActionBox[FullScreenAction]()
   zoomIn = ActionBox[ZoomInAction]()

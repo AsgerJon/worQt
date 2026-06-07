@@ -10,12 +10,16 @@ from ._action_box import ActionBox
 from ._abstract_action import AbstractAction
 from ._menu_separator import MenuSeparator
 from ._abstract_menu import AbstractMenu
+from ._menu_box import MenuBox
 from ._abstract_menu_bar import AbstractMenuBar
+from ._main_menu_bar import MainMenuBar
 
 __all__ = (
   'MenuSeparator',
   'ActionBox',
   'AbstractAction',
   'AbstractMenu',
+  'MenuBox',
   'AbstractMenuBar',
+  'MainMenuBar',
 )

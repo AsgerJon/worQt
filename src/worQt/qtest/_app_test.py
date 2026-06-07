@@ -17,7 +17,7 @@ from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException
 from worktoy.work_test import BaseTest
 
-from worQt.qtest import MetaTest
+from . import MetaTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import TypeAlias, Optional, Type, Any
@@ -62,7 +62,8 @@ class AppTest(BaseTest, metaclass=MetaTest):
     if isinstance(running, QCoreApplication):
       return running
     raise TypeException(
-        'QApplication.instance()', running, QCoreApplication, QApplication)
+        'QApplication.instance()', running, QCoreApplication, QApplication
+    )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #

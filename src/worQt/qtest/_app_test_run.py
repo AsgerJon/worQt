@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 import unittest
 
 from worktoy.desc import Field
-from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
 from worktoy.waitaminute import MissingVariable, TypeException
 from worktoy.work_test import BaseTest

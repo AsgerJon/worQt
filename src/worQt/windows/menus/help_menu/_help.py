@@ -25,6 +25,9 @@ class Help(AbstractMenu):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+  __menu_title__ = 'Help'
+
   #  Actions
   about = ActionBox[AboutAction]()
   aboutQt = ActionBox[AboutQtAction]()

@@ -25,6 +25,9 @@ class File(AbstractMenu):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+  __menu_title__ = 'File'
+
   #  Actions
   newAction = ActionBox[NewAction]()
   openAction = ActionBox[OpenAction]()

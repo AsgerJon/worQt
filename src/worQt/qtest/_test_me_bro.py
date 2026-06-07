@@ -5,7 +5,7 @@ The 'testMeBro' function runs the full test suite!
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from worQt.qtest import AppTestSuite
+from . import AppTestSuite
 
 
 def testMeBro() -> int:

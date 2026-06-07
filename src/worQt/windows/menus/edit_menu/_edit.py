@@ -26,6 +26,9 @@ class Edit(AbstractMenu):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Class Variables
+  __menu_title__ = 'Edit'
+
   #  Actions
   undoAction = ActionBox[UndoAction]()
   redoAction = ActionBox[RedoAction]()

@@ -149,6 +149,7 @@ class AbstractMenu(QMenu, MixinBase):
     actions = dict()
     for name, actionType in self._classGetRegisteredActionTypes().items():
       action = actionType(self, )
+      setattr(action, '__field_name__', name)
       setattr(self, name, action)
       actions[name] = action
     self.__action_cache__ = {**actions, }
@@ -178,11 +179,13 @@ class AbstractMenu(QMenu, MixinBase):
 
   def initUI(self, ) -> None:
     """
-    This method initializes the menu visually and calls the 'initUI'
-    method of the owned actions. It should be called by the general
-    'initUI' chain beginning from the main window class responsible for
-    the menus.
+    This method initializes the menu visually - applying its own title and
+    icon - and calls the 'initUI' method of the owned actions. It should be
+    called by the general 'initUI' chain beginning from the main window
+    class responsible for the menus.
     """
+    self.setTitle(self.menuTitle)
+    self.setIcon(self.menuIcon)
     for name, action in self.getActions().items():
       self.addAction(action)
       action.initUI()

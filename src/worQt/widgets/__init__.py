@@ -1,28 +1,37 @@
 """
-The 'worQt.widgets' package provides the generic, reusable custom widgets:
-the fusion bases and the type-specific value editors with the VLC-style
-settings dialog.
+The 'worQt.widgets' package provides the widget components of the 'worQt'
+framework. It provides custom layout and widget implementations. The base
+widget class implements the box model for fine control of spacing and
+alignments.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._base_widget import BaseWidget
-from ._container import Container
-from ._value_edits import (
-  StringValueEdit,
-  BoolValueEdit,
-  NumberValueEdit,
-  valueEditor,
-)
-from ._settings_dialog import SettingsDialog
+from ._move_hook import MoveHook
+from ._widget_mixin import WidgetMixin
+from ._abstract_widget import AbstractWidget
+from ._painted_widget import PaintedWidget
+from ._label_widget import LabelWidget
+from ._text_widget import TextWidget
+from ._list_widget import ListWidget
+from ._paint_button import PaintButton
+from ._click_button import ClickButton
+from ._push_button import PushButton
+from ._fibonacci import FibonacciWidget
+from ._test_widget import TestWidget
 
-__all__ = (
-  'BaseWidget',
-  'Container',
-  'StringValueEdit',
-  'BoolValueEdit',
-  'NumberValueEdit',
-  'valueEditor',
-  'SettingsDialog',
-)
+__all__ = [
+  'MoveHook',
+  'WidgetMixin',
+  'AbstractWidget',
+  'PaintedWidget',
+  'LabelWidget',
+  'TextWidget',
+  'ListWidget',
+  'PaintButton',
+  'ClickButton',
+  'PushButton',
+  'FibonacciWidget',
+  'TestWidget',
+  ]

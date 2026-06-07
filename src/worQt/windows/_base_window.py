@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from worktoy.core.sentinels import THIS
+from worktoy.desc import AttriBox
+
 from . import AbstractWindow
+from .menus import MainMenuBar
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
@@ -21,16 +25,24 @@ class BaseWindow(AbstractWindow):
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  #  Public Variables
+  mainMenuBar = AttriBox[MainMenuBar](THIS)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def initMenus(self, ) -> None:
     """
-    This method builds the menubar, menus and statusbar. It is implemented
-    by the 'BaseWindow' class. Subclasses can extend or override as
-    appropriate.
+    This method builds the menubar and installs it on the main window. It is
+    implemented by the 'BaseWindow' class. Subclasses can extend or override
+    as appropriate.
     """
-    raise NotImplementedError
+    self.setMenuBar(self.mainMenuBar)
+    self.mainMenuBar.initUI()
 
   def initUI(self, ) -> None:
     """
