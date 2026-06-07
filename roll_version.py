@@ -1,20 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-#  AGPL-3.0 license
-#  Copyright (c) 2024-2025 Asger Jon Vistisen
+#  Apache-2.0 license
+#  Copyright (c) 2024-2026 Asger Jon Vistisen
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import json
 import os.path
 import sys
-
-try:
-  from typing import TYPE_CHECKING
-except ImportError:
-  try:
-    from typing import TYPE_CHECKING
-  except ImportError:
-    TYPE_CHECKING = False
 
 
 def _loadFile(file: str, **kwargs) -> str:

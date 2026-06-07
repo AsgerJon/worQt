@@ -1,8 +1,12 @@
-name: worktoy_env
+name: worqt_env
 channels:
   - conda-forge
 dependencies:
-  - python>=3.12.6
+  - python>=3.14.2
   - pip>=24.0
   - setuptools>=69.5.1
   - wheel>=0.43.0
+  - pyside6>=6.10.0
+  - worktoy>=0.99.119
+  - shiboken6
+  - icecream>=2.1.8
