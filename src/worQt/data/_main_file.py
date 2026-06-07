@@ -10,6 +10,7 @@ import os
 from typing import TYPE_CHECKING, TypeVar
 
 from worktoy.desc import AttriBox, Field
+from worktoy.dispatch import overload
 from worktoy.waitaminute import TypeException
 from worktoy.waitaminute.control_flow import SkipSet
 
@@ -158,3 +159,15 @@ class MainFile(AbstractFile):
     if os.path.exists(dirPath):
       if not os.path.isdir(dirPath):
         raise NotADirectoryError
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  @overload(str)
+  def __init__(self, dirPath: str) -> None:
+    self.dirPath = dirPath
+
+  @overload()
+  def __init__(self, ) -> None:
+    pass

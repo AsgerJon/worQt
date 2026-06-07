@@ -8,13 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import os
-from typing import TYPE_CHECKING, TypeVar, Generic
+from typing import TYPE_CHECKING, TypeVar
 
-from worktoy.desc import AttriBox, Field
+from worktoy.desc import Field
 from worktoy.mcls import BaseObject
 from worktoy.utilities import maybe
-from worktoy.waitaminute import TypeException
-from worktoy.waitaminute.control_flow import SkipSet
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Optional, IO
@@ -67,62 +65,26 @@ class AbstractFile(BaseObject):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def save(self, cb: Callable, e: Optional[Callable] = None) -> None:
-    """
-    Open 'self.filePath' for writing and call 'cb' with the open handle.
-
-    'self.dirPath' is created if it does not already exist. 'cb' is
-    responsible for what gets written; the handle is always closed
-    afterwards. Note that 'dirPath' must be supplied by the subclass.
-
-    Parameters
-    ----------
-    cb : Callable
-        Called with the open write handle. Its return value is ignored.
-    e : Callable, optional
-        Open-error handler, called with the exception raised while opening
-        the file. A truthy return swallows the error and 'save' returns;
-        otherwise the exception is re-raised. When omitted, open errors
-        always propagate.
-    """
-    os.makedirs(self.dirPath, exist_ok=True)
     e = maybe(e, lambda *_: False)
-    f: Optional[IO] = None
+    targetPath = self.filePath
+    os.makedirs(os.path.dirname(targetPath), exist_ok=True)
+    tmpPath = '%s.tmp' % (targetPath,)  # same dir = same fs = atomic
     try:
-      f = open(self.filePath, 'w')
+      f: IO = open(tmpPath, 'w')
     except Exception as exception:
       if e(exception):
         return
       raise exception
-    else:
-      cb(f)
-    finally:
-      if f is not None:
-        f.close()
+    try:
+      with f:
+        cb(f)
+      os.replace(tmpPath, targetPath)
+    except BaseException:
+      if os.path.exists(tmpPath):
+        os.remove(tmpPath)
+      raise
 
   def load(self, cb: Callable, e: Optional[Callable] = None) -> dict:
-    """
-    Open 'self.filePath' for reading and call 'cb' with the open handle.
-
-    'cb' decides how the bytes are parsed; the handle is always closed
-    afterwards.
-
-    Parameters
-    ----------
-    cb : Callable
-        Called with the open read handle. Its return value is returned by
-        'load'.
-    e : Callable, optional
-        Open-error handler, called with the exception raised while opening
-        the file. A truthy return swallows the error and 'load' returns an
-        empty 'dict'; otherwise the exception is re-raised. When omitted,
-        open errors always propagate.
-
-    Returns
-    -------
-    object
-        Whatever 'cb' returns, or an empty 'dict' if an open error was
-        swallowed by 'e'.
-    """
     e = maybe(e, lambda *_: False)
     f: Optional[IO] = None
     try:

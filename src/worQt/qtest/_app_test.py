@@ -61,7 +61,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
   @app.GET
   def _getApp(self, **kwargs) -> QCoreApplication:
     """
-    Getter for 'app' field. Ensures that a QApplication instance is available
+    Getter for 'app' field. Ensures that a QApplication document is available
     and returns it.
     """
     running: Optional[QCoreApplication] = QApplication.instance()
@@ -134,7 +134,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
   @classmethod
   def _runMethod(cls, name: str) -> bool:
     """
-    Runs a single collected test method on a fresh instance, with
+    Runs a single collected test method on a fresh document, with
     'setUp'/'tearDown' around it. Returns True on success; on failure it
     prints the traceback and returns False.
     """

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# AGPL-3.0 license
+# Apache-2.0 license
 # Copyright (c) 2026 Asger Jon Vistisen
 #
 
@@ -26,7 +26,7 @@ set -euo pipefail
 
 # Re-exec inside a fresh Alacritty window using a Claude-specific
 # config so plain Enter inserts a newline and Ctrl+Enter submits.
-# Skip if already inside the spawned instance.
+# Skip if already inside the spawned document.
 TOML="$HOME/.config/alacritty/claude.toml"
 if [ -z "${CLAUDE_SAFE_INNER:-}" ] && [ -f "$TOML" ]; then
   SELF="$(readlink -f "${BASH_SOURCE[0]}")"

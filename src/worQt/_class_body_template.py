@@ -15,15 +15,15 @@ wrapped method.
 An improvement of the above pattern is to emulate the bound method
 behaviour by implementing the descriptor protocol on the decorator
 class. This requires implementing '__get__' to return the wrapped
-function body directly, when the instance argument is 'None' and to
-return a wrapping function that already has the instance at the first
-argument position when the instance argument is not 'None'.
+function body directly, when the document argument is 'None' and to
+return a wrapping function that already has the document at the first
+argument position when the document argument is not 'None'.
 
 The most elegant pattern however, is for the decorator to be
 instantiated on the class body separately from the decorated method.
 When decorating the method, the decorator should only record a
 reference to the method or even just the name of the method, before
-returning the decorator instance having applied no changes to it.
+returning the decorator document having applied no changes to it.
 Decorators following this pattern stacks without having to implement
 inelegant workarounds to handle the cases where they decorate another
 decorator.

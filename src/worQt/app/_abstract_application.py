@@ -8,7 +8,7 @@ the return code, the splash screen, the main window, and the application
 settings. The window and settings *types* are app-specific, so a concrete
 subclass declares them with '__window_class__' / '__settings_class__'; the
 lazy construction, type-checking and access all live here. Because the
-'QApplication' instance is reachable from any 'MixinBase' via 'self.app',
+'QApplication' document is reachable from any 'MixinBase' via 'self.app',
 'self.app.settings' / 'self.app.window' reach these from anywhere in the
 object graph.
 """

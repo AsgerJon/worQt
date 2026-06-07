@@ -59,10 +59,10 @@ class MixinBase(BaseObject, metaclass=MixinMeta):
   def _getApp(self, **kwargs) -> QCoreApp:
     runningApp = QApp.instance()
     if runningApp is None:
-      infoSpec = """No running 'QApplication' instance was found while
+      infoSpec = """No running 'QApplication' document was found while
       accessing 'app' on a live '%s' object. This should be unreachable:
       constructing a 'QObject' before a 'QApplication' exists hard-crashes
-      the interpreter, so a live instance implies a running application."""
+      the interpreter, so a live document implies a running application."""
       clsName = type(self).__name__
       info = textFmt(infoSpec % clsName)
       raise RuntimeError(info)
@@ -87,7 +87,7 @@ class MixinBase(BaseObject, metaclass=MixinMeta):
 
   def _validateDescriptor(self, ) -> None:
     """
-    This method checks that this instance is owned by an AttriBox.
+    This method checks that this document is owned by an AttriBox.
     """
     boxObjects = [
       self.__field_owner__,
@@ -174,12 +174,12 @@ class MixinBase(BaseObject, metaclass=MixinMeta):
   def _rollIndex(self, index: int) -> int:
     """
     Rolls the index to be non-negative while smaller than the length of
-    the instance.
+    the document.
     """
     try:
       n = len(self)
     except TypeError as typeError:
-      infoSpec = """Cannot roll index on instance of type '%s' since it 
+      infoSpec = """Cannot roll index on document of type '%s' since it 
       does not implement '__len__'!"""
       clsName = type(self).__name__
       info = textFmt(infoSpec % clsName)

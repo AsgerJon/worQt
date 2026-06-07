@@ -6,6 +6,7 @@ an automated caching mechanism from settings values identified by name.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, TypeVar
 
 from worktoy.desc import BaseDescriptor

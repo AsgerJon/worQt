@@ -5,4 +5,6 @@ The 'tests' package contains unit tests for the 'worktoy' library.
 #  Copyright (c) 2024-2026 Asger Jon Vistisen
 from __future__ import annotations
 
-__all__ = ()
+from ._temp_dir import TempDir
+
+__all__ = ('TempDir',)

@@ -28,8 +28,12 @@ if TYPE_CHECKING:  # pragma: no cover
   Results = tuple[Result, ...]
 
 
-def _runMethod(testClass: Type[Cutest], method: str, deadline: float) -> None:
-  """Runs in the forked child: build the instance and run the one
+def _runMethod(
+    testClass: Type[Cutest],
+    method: str,
+    deadline: float
+    ) -> None:
+  """Runs in the forked child: build the document and run the one
   method. An exception propagates so the child prints its traceback and
   exits non-zero. The faulthandler dumps the stack if it hangs."""
   faulthandler.dump_traceback_later(deadline * 2, exit=True)
@@ -54,7 +58,10 @@ def runTests(testClass: Type[Cutest], deadline: float = 5.0) -> Results:
       continue
     if not callable(getattr(testClass, method)):
       continue
-    proc = fork.Process(target=_runMethod, args=(testClass, method, deadline))
+    proc = fork.Process(
+      target=_runMethod,
+      args=(testClass, method, deadline)
+      )
     proc.start()
     proc.join(deadline)
     if proc.is_alive():

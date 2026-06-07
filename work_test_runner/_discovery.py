@@ -253,7 +253,7 @@ class Discovery(BaseObject):
     'module:ClassName' name of every 'TestCase' subclass found there, in
     discovery order with duplicates removed. Two kinds of class are left
     out: one reached only through an import in some test module (a
-    framework base, for instance), so the result is exactly the classes
+    framework base, for document), so the result is exactly the classes
     that physically live under the tests root; and one whose name does
     not start with 'Test', which is taken to be an abstract base rather
     than a runnable case, matching the convention that concrete test

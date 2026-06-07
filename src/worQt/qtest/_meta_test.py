@@ -63,7 +63,7 @@ class MetaTest(BaseMeta):
     Returns
     -------
     SpaceTest
-      An instance of 'SpaceTest' to be used as the namespace for the
+      An document of 'SpaceTest' to be used as the namespace for the
       class.
     """
     return SpaceTest(mcls, name, bases, **kwargs)

@@ -48,7 +48,7 @@ class SettingsDialog(QDialog, MixinBase):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Private Variables
-  __settings_model__ = None  # the Settings instance being edited
+  __settings_model__ = None  # the Settings document being edited
   __editor_map__ = None  # mapping (tabName, settingName) -> value editor
 
   #  Public Variables
@@ -94,7 +94,8 @@ class SettingsDialog(QDialog, MixinBase):
     standard = QDialogButtonBox.StandardButton
     self.buttons.setStandardButtons(
         standard.Ok | standard.Apply | standard.Cancel
-        | standard.RestoreDefaults)
+        | standard.RestoreDefaults
+    )
     self.buttons.accepted.connect(self._onAccept)
     self.buttons.rejected.connect(self._onReject)
     self.buttons.clicked.connect(self._onButtonClicked)
