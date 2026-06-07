@@ -1,8 +1,7 @@
 """
 The 'worQt.widgets' package provides the generic, reusable custom widgets:
 the fusion bases and the type-specific value editors with the VLC-style
-settings dialog. Example-specific widgets (the CAD canvas, tool panels and
-icons) live in 'worQt.cad', not here.
+settings dialog.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
