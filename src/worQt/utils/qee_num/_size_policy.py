@@ -154,7 +154,9 @@ class SizePolicy(BaseObject):
 
   @horizontal.onSet
   def _onSetHorizontalMode(self, value: SizingMode) -> None:
-    if self.hasContext():
+    if self.hasContext():  # pragma: no cover
+      #  Only runs when 'SizePolicy' is used as a live widget descriptor,
+      #  which nothing currently does.
       self.widget.update()
 
   @vertical.preSet
@@ -169,7 +171,9 @@ class SizePolicy(BaseObject):
 
   @vertical.onSet
   def _onSetVerticalMode(self, value: SizingMode) -> None:
-    if self.hasContext():
+    if self.hasContext():  # pragma: no cover
+      #  Only runs when 'SizePolicy' is used as a live widget descriptor,
+      #  which nothing currently does.
       self.widget.update()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

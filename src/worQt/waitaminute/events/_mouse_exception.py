@@ -44,9 +44,7 @@ class MouseException(EventException):
       unusedArgs.append(arg)
     if _widget is not None:
       self.widget = _widget
-    if _event is not None:
-      self.event = _event
     if _msg is None:
-      EventException.__init__(self, *unusedArgs)
+      EventException.__init__(self, _event, *unusedArgs)
     else:
-      EventException.__init__(self, _msg, *unusedArgs)
+      EventException.__init__(self, _event, _msg, *unusedArgs)

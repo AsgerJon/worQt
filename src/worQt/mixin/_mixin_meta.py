@@ -38,18 +38,11 @@ class _Shiboken(_ObjectType, ):
     matching the __class*__ pattern to resolve to the METACALL sentinel
     rather than raise AttributeError. Shiboken does not honour that
     contract, so we intercept here and return METACALL for that
-    pattern. All other names fall through to ObjectType's __getattr__
-    if one is defined, otherwise raise AttributeError as normal.
+    pattern. Any other name raises AttributeError as normal:
+    'ObjectType' defines no '__getattr__' to fall through to.
     """
     if str.startswith(name, '__class') and str.endswith(name, '__'):
       return METACALL
-    if hasattr(_ObjectType, '__getattr__'):
-      try:
-        value = _ObjectType.__getattr__(self, name)
-      except AttributeError:
-        raise
-      else:
-        return value
     raise AttributeError(name)
 
 

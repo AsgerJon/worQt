@@ -86,10 +86,6 @@ class AbstractField(BaseDescriptor[T], metaclass=BaseMeta):
         return self.__value_type__
     raise TypeException('__value_type__', self.__value_type__, type)
 
-  def _clearCachedFunctions(self, ) -> None:
-    self.__cached_encoder__ = None
-    self.__cached_decoder__ = None
-
   def _cacheEncoderFunction(self, ) -> None:
     owner = self.getFieldOwner()
     key = self._getEncodeKey()

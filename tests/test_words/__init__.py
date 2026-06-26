@@ -5,8 +5,9 @@ The 'tests.test_words' package contains tests for the 'worQt.words' package.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._words_test import WordsTest
+from ._words_test import WordsTest, WordsAppTest
 
 __all__ = (
   'WordsTest',
+  'WordsAppTest',
 )

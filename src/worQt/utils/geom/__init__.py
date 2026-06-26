@@ -16,9 +16,6 @@ from ._rect import Rect
 from ._rounded_rect import RoundedRect
 from ._in_sets import InSets
 from .._color import Color
-from ._box_dims import BoxDims
-from ._box_model import BoxModel
-from ._box_color import BoxColor
 
 Point = Point2D
 
@@ -31,7 +28,4 @@ __all__ = [
   'RoundedRect',
   'InSets',
   'Color',
-  'BoxDims',
-  'BoxModel',
-  'BoxColor',
 ]

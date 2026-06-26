@@ -33,4 +33,4 @@ class ButtonStateFlags(KeeFlags):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __bool__(self, ) -> bool:
-    return True if 1 << self.DISABLED.value & self.value else False
+    return True if self.DISABLED.value & self.value else False

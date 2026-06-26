@@ -32,9 +32,9 @@ class EventException(Exception):
 
   __slots__ = ('event',)
 
-  def __init__(self, event_: QEvent = None, ) -> None:
+  def __init__(self, event_: QEvent = None, *args, ) -> None:
     self.event = event_
-    Exception.__init__(self, )
+    Exception.__init__(self, *args)
 
   def __str__(self, ) -> str:
     if self.event is None:

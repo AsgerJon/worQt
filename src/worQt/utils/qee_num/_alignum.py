@@ -80,14 +80,14 @@ class Alignum(KeeNum):
     for v in VAlignum:
       if self.value & v.value:
         return v
-    raise ValueError
+    raise ValueError  # pragma: no cover
 
   @horizontal.GET
   def _getHorizontal(self, ) -> HAlignum:
     for h in HAlignum:
       if self.value & h.value:
         return h
-    raise ValueError
+    raise ValueError  # pragma: no cover
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -121,7 +121,7 @@ class Alignum(KeeNum):
       left = int(round(staticRect.center.x - movingRect.width / 2))
     elif self.horizontal is HAlignum.RIGHT:
       left = staticRect.right - movingRect.width
-    else:
+    else:  # pragma: no cover
       raise ValueError
     return Rect(Point2D(left, top), movingRect.size)
 
@@ -133,7 +133,7 @@ class Alignum(KeeNum):
       top = int(round(staticRect.center.y - movingRect.height / 2))
     elif self.vertical is VAlignum.BOTTOM:
       top = staticRect.bottom - movingRect.height
-    else:
+    else:  # pragma: no cover
       raise ValueError
     return Rect(Point2D(left, top), movingRect.size)
 
@@ -150,4 +150,4 @@ class Alignum(KeeNum):
     for alignum in cls:
       if alignum.vertical is vertical and alignum.horizontal is horizontal:
         return alignum
-    raise ValueError
+    raise ValueError  # pragma: no cover

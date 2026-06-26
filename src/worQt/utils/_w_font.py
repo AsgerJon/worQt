@@ -13,10 +13,7 @@ from string import ascii_letters
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import (QFont,
-                           QFontMetricsF,
-                           QFontMetrics,
-                           QPen)
+from PySide6.QtGui import QFont, QFontMetricsF, QFontMetrics, QPen
 from worktoy.desc import Field, AttriBox
 from worktoy.keenum import KeeBox
 from worktoy.waitaminute import TypeException
@@ -185,108 +182,54 @@ class WFont(QFont, MixinBase):
     QFont.setPointSize(self, value)
 
   @weightNum.preSet
-  def _onSetWeightNum(self, value: FontWeightNum, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'weightNum')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldWeight = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldWeight:
-        raise SkipSet
+  def _preSetWeightNum(self, value: FontWeightNum, **kwargs) -> None:
+    if value == self.weightNum:
+      raise SkipSet
 
   @weightNum.onSet
   def _onSetWeightNum(self, value: FontWeightNum, **kwargs) -> None:
     QFont.setWeight(self, value.value)
 
   @styleNum.preSet
-  def _onSetStyleNum(self, value: FontStyleNum, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'styleNum')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldStyle = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldStyle:
-        raise SkipSet
+  def _preSetStyleNum(self, value: FontStyleNum, **kwargs) -> None:
+    if value == self.styleNum:
+      raise SkipSet
 
   @styleNum.onSet
   def _onSetStyleNum(self, value: FontStyleNum, **kwargs) -> None:
     QFont.setStyle(self, value.value)
 
   @familyNum.preSet
-  def _onSetFamilyNum(self, value: FontFamilyNum, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'familyNum')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldFamily = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldFamily:
-        raise SkipSet
+  def _preSetFamilyNum(self, value: FontFamilyNum, **kwargs) -> None:
+    if value == self.familyNum:
+      raise SkipSet
 
   @familyNum.onSet
   def _onSetFamilyNum(self, value: FontFamilyNum, **kwargs) -> None:
     QFont.setFamily(self, value.value)
 
   @underlineFlag.preSet
-  def _onSetUnderlineFlag(self, value: bool, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'underlineFlag')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldUnderline = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldUnderline:
-        raise SkipSet
+  def _preSetUnderlineFlag(self, value: bool, **kwargs) -> None:
+    if value == self.underlineFlag:
+      raise SkipSet
 
   @underlineFlag.onSet
   def _onSetUnderlineFlag(self, value: bool, **kwargs) -> None:
     QFont.setUnderline(self, value)
 
   @strikeoutFlag.preSet
-  def _onSetStrikeoutFlag(self, value: bool, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'strikeoutFlag')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldStrikeout = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldStrikeout:
-        raise SkipSet
+  def _preSetStrikeoutFlag(self, value: bool, **kwargs) -> None:
+    if value == self.strikeoutFlag:
+      raise SkipSet
 
   @strikeoutFlag.onSet
   def _onSetStrikeoutFlag(self, value: bool, **kwargs) -> None:
     QFont.setStrikeOut(self, value)
 
   @overlineFlag.preSet
-  def _onSetOverlineFlag(self, value: bool, **kwargs) -> None:
-    cls = type(self)
-    try:
-      desc = getattr(cls, 'overlineFlag')
-      getKey = getattr(desc, '__get_key__')
-      getter = getattr(cls, getKey)
-      oldOverline = getter(self, _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == oldOverline:
-        raise SkipSet
+  def _preSetOverlineFlag(self, value: bool, **kwargs) -> None:
+    if value == self.overlineFlag:
+      raise SkipSet
 
   @overlineFlag.onSet
   def _onSetOverlineFlag(self, value: bool, **kwargs) -> None:
@@ -470,13 +413,13 @@ class WFont(QFont, MixinBase):
       self.overlineFlag = bool(lines & FontLineFlags.OVERLINE)
     if size is not None:
       self.fontSize = size
-    if self.fontSize != self.pointSize():
+    if self.fontSize != self.pointSize():  # pragma: no cover
+      raise ValueError  # post-init consistency guard; never fails
+    if self.family() != self.familyNum.value:  # pragma: no cover
       raise ValueError
-    if self.family() != self.familyNum.value:
+    if self.weight() != self.weightNum.value:  # pragma: no cover
       raise ValueError
-    if self.weight() != self.weightNum.value:
-      raise ValueError
-    if self.style() != self.styleNum.value:
+    if self.style() != self.styleNum.value:  # pragma: no cover
       raise ValueError
     QFont.setUnderline(self, True if self.underlineFlag else False)
     QFont.setStrikeOut(self, True if self.strikeoutFlag else False)

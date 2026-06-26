@@ -156,7 +156,9 @@ class LayoutCell(BaseObject):
       resolved = cls(other)
     except (TypeError, ValueError):
       return NotImplemented
-    else:
+    else:  # pragma: no cover
+      #  'LayoutCell' has no single-argument constructor, so a non-cell
+      #  'other' never resolves here; the except above always fires.
       return resolved
 
   def __eq__(self, other: Any) -> bool:
@@ -191,7 +193,7 @@ class LayoutCell(BaseObject):
       type_ = self.__key_types__[name]
       desc = getattr(cls, name)
       getKey = getattr(desc, '__get_key__')
-      getter = getattr(desc, getKey)
+      getter = getattr(cls, getKey)
       try:
         oldValue = getter(self, _recursion=True)
       except RecursionError:

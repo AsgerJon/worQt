@@ -279,7 +279,7 @@ class AppTestSuite(BaseObject):
       here = os.path.dirname(here)
     if 'tests' in os.listdir(here):
       return here
-    return os.getcwd()  # no 'tests' above the package: fall back to the cwd
+    return os.getcwd()  # pragma: no cover  # no 'tests' above the running package
 
   @classmethod
   def __class_init__(cls, name, bases, space, **kwargs) -> None:

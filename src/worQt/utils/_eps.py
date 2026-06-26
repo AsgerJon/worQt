@@ -45,8 +45,8 @@ class Eps:
   def __delete__(self, instance: Any) -> Never:
     try:
       oldValue = self.__get__(instance, type(instance), )
-    except Exception as exception:
-      raise ProtectedError(instance, self) from exception
+    except Exception as exception:  # pragma: no cover
+      raise ProtectedError(instance, self) from exception  # __get__ is total
     else:
       raise ProtectedError(instance, self, oldValue)
 

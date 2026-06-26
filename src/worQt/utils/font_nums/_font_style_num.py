@@ -52,7 +52,12 @@ class FontStyleNum(FontMeta.keeNum):
 
   @classmethod
   def __class_resolve__(cls, style: Any) -> Self:
+    #  Compare against the raw identifier (like 'FontWeightNum'): the
+    #  resolver runs before name resolution, so 'style' may be a 'QFont.Style'
+    #  or any other value, not necessarily something with a '.value'. A
+    #  non-match raises 'KeeResolveError', which 'FontMeta' then turns into
+    #  name/value resolution.
     for member in cls:
-      if member.value == style.value:
+      if member.value == style:
         return member
     raise KeeResolveError(cls, style)

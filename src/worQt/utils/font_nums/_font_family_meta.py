@@ -188,10 +188,10 @@ class FontFamilyMeta(FontMeta):
     goodSerifs = [f.lower() for f in cls.__good_serif__]
     midSerifs = [f.lower() for f in cls.__serif_families__]
     for family in cls:
-      if family.name.lower() in goodSerifs:
+      if family.value.lower() in goodSerifs:
         return family
     for family in cls:
-      if family.name.lower() in midSerifs:
+      if family.value.lower() in midSerifs:
         return family
     return cls.FALLBACK_SERIF
 
@@ -200,10 +200,10 @@ class FontFamilyMeta(FontMeta):
     goodSans = [f.lower() for f in cls.__good_sans__]
     midSans = [f.lower() for f in cls.__sans_serif__]
     for family in cls:
-      if family.name.lower() in goodSans:
+      if family.value.lower() in goodSans:
         return family
     for family in cls:
-      if family.name.lower() in midSans:
+      if family.value.lower() in midSans:
         return family
     return cls.FALLBACK_SANS
 
@@ -212,10 +212,10 @@ class FontFamilyMeta(FontMeta):
     goodMonos = [f.lower() for f in cls.__good_mono__]
     midMonos = [f.lower() for f in cls.__mono_space__]
     for family in cls:
-      if family.name.lower() in goodMonos:
+      if family.value.lower() in goodMonos:
         return family
     for family in cls:
-      if family.name.lower() in midMonos:
+      if family.value.lower() in midMonos:
         return family
     return cls.FALLBACK_MONO
 
@@ -228,8 +228,17 @@ class FontFamilyMeta(FontMeta):
     return FontFamilySpace(mcls, name, bases, **kw)
 
   def __getattr__(cls, key: str, ) -> Any:
+    #  Dunder/internal names are never font families. Deferring here also
+    #  stops this hook recursing when worktoy probes private attributes.
+    if str.startswith(key, '__') and str.endswith(key, '__'):
+      return type.__getattribute__(cls, key)  # expected to raise
+    #  Dynamic creation needs a running app and a finished enumeration:
+    #  during class construction '_createMembers' probes member names by
+    #  'getattr', and the registry it appends to does not exist yet.
     if QApplication.instance() is None:
       return type.__getattribute__(cls, key)  # expected to raise again
+    if cls.__dict__.get('__registered_members__') is None:
+      return type.__getattribute__(cls, key)  # still building members
     fontFamilies = QFontDatabase.families()
     keyParts = str.split(str.lower(key), '_')
     for family in fontFamilies:
@@ -242,11 +251,13 @@ class FontFamilyMeta(FontMeta):
         if str.strip(familyName):
           continue  # Name has parts not in key, so skip.
         kee = Kee[str](family)
+        kee.name = str.upper(key)  # Kee requires an upper-case name
+        kee.index = len(cls.__registered_members__)
         cls.__allow_instantiation__ = True
         num = cls(kee, )
         cls.__allow_instantiation__ = False
         setattr(cls, key, num)
-        cls.__num_members__.append(num)
+        cls.__registered_members__ = (*cls.__registered_members__, num)
         break  # breaks out of else clause, restarting
     else:  # Found no match
       return type.__getattribute__(cls, key)  # expected to raise again

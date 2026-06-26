@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Slot, QTimer
 from PySide6.QtGui import QMouseEvent, QEventPoint
-from PySide6.QtWidgets import QWidget
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 from worktoy.waitaminute.control_flow import SkipSet
@@ -228,6 +227,6 @@ class PaintButton(LabelWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, *args, **kwargs) -> None:
-    LabelWidget.__init__(self, *args, **kwargs)
-    QWidget.setMouseTracking(self, True)
+  #  'PaintButton' needs no '__init__': the inherited 'LabelWidget'
+  #  constructor dispatcher already does everything, including the
+  #  finalizer that enables mouse tracking.

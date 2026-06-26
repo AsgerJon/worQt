@@ -53,7 +53,7 @@ class AppTestRun(BaseObject):
   def _getAppTestType(self, ) -> AppTestType:
     value = self.__app_test_type__
     if value is None:
-      raise MissingVariable(self, 'appTestType', AppTestType)
+      raise MissingVariable(self, 'appTestType', BaseTest)
     if isinstance(value, type) and issubclass(value, BaseTest):
       return value
     raise TypeException('__app_test_type__', value, BaseTest)
@@ -109,6 +109,14 @@ class AppTestRun(BaseObject):
   def _runPopen(self, ) -> tuple[int, str]:
     cls = self.appTestType
     argv = [sys.executable, '-m', 'worQt.qtest', cls.__module__]
+    if os.environ.get('WORQT_COVERAGE'):
+      #  Run the child under 'coverage' when measuring. Tracing starts
+      #  before 'worQt' is imported, so import-time lines (class bodies,
+      #  descriptor registration) are counted; 'parallel = True' in
+      #  '.coveragerc' makes each child write its own data file. A child
+      #  killed on timeout or segfault flushes nothing - coverage of a
+      #  failed run is neither produced nor needed.
+      argv[1:1] = ['-m', 'coverage', 'run']
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}
     child = Popen(
         argv, env=env, start_new_session=True,
@@ -116,7 +124,9 @@ class AppTestRun(BaseObject):
     )
     try:
       output, _ = child.communicate(timeout=cls.getTimeout())
-    except TimeoutExpired:
+    except TimeoutExpired:  # pragma: no cover
+      #  Exercising this requires a child that hangs past its deadline,
+      #  which is slow and would itself break the suite under test.
       os.killpg(os.getpgid(child.pid), SIGKILL)
       output, _ = child.communicate()
     return child.returncode, output

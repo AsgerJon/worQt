@@ -13,7 +13,7 @@ from worktoy.desc import AttriBox
 from worktoy.lorem_ipsum import Paragraph
 from worktoy.utilities import wordWrap, textFmt
 
-from test_data.examples import SampleFile
+from ..examples import SampleFile
 from worQt.data import AbstractDocument, SingleField
 
 if TYPE_CHECKING:  # pragma: no cover

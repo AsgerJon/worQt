@@ -247,8 +247,9 @@ class ClickButton(PaintButton):
       raise ValueError('Cannot register click of no button!')
     existing = self._getClickSequence()
     for existingButton in existing:
-      return self._invalidateClicks()
-    self.__click_sequence__ = (*existing, button)
+      if existingButton != button:
+        return self._invalidateClicks()  # a different button cancels
+    self.__click_sequence__ = (*existing, button)  # same button accumulates
     return None
 
   def _clearClickSequence(self, ) -> None:
@@ -399,7 +400,7 @@ class ClickButton(PaintButton):
     self._stopTimers()
     button = MouseButtonNum.fromEvent(e)
     self._registerClick(button)
-    self.__move_point__ = Point2D(e)
+    self.__move_point__ = Point2D(e.position())
     self.pressTimer.start()
     return self.holdTimer.start()
 

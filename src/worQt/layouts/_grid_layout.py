@@ -118,8 +118,8 @@ class GridLayout(BaseLayout):
       _ = QGridLayout.takeAt(self, 0)
       newCount = QGridLayout.count(self, )
       if newCount:
-        if newCount == oldCount:
-          raise RecursionError
+        if newCount == oldCount:  # pragma: no cover
+          raise RecursionError  # 'takeAt' always shrinks the layout
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

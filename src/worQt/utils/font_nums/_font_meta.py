@@ -32,15 +32,11 @@ class FontMeta(KeeMeta):
         return True
     return False
 
-  @classmethod
-  def _resolveMember(cls, identifier: Any) -> Any:
-    try:
-      classResolve = getattr(cls, '__class_resolve__')
-    except AttributeError:
-      pass
-    else:
+  def _resolveMember(cls, identifier: Any, **kwargs) -> Any:
+    classResolve = getattr(cls, '__class_resolve__', None)
+    if classResolve is not None:
       try:
         return classResolve(identifier)
       except KeeResolveError:
         pass
-    return super()._resolveMember(identifier)
+    return super()._resolveMember(identifier, **kwargs)

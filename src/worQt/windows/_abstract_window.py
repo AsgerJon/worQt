@@ -26,6 +26,53 @@ from ..mixin import MixinBase
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Callable
 
+  from PySide6.QtGui import QCloseEvent
+
 
 class AbstractWindow(QMainWindow, MixinBase):
   """Shared base for top-level application windows."""
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  #  Private Variables
+  __ui_built__ = None  # guards the build-once lifecycle in 'show'
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def initUi(self, ) -> None:
+    """Build the window contents. Invoked once, lazily, on the first
+    'show()'. The default does nothing; concrete windows override it."""
+
+  def _action(self, text: str, shortcut: str, slot: Callable) -> QAction:
+    """Build a 'QAction' parented on this window, wired to 'slot'. An empty
+    'shortcut' leaves the action unbound."""
+    action = QAction(text, self)
+    if shortcut:
+      action.setShortcut(QKeySequence(shortcut))
+    action.triggered.connect(slot)
+    return action
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def show(self, ) -> None:
+    """Build the UI once (via 'initUi') before the first show."""
+    if not self.__ui_built__:
+      self.initUi()
+      self.__ui_built__ = True
+    super().show()
+
+  def closeEvent(self, event: QCloseEvent) -> None:
+    """Consult the application's exit guard before closing. A 'worQt.app'
+    application implements 'confirmExit' (which checks 'hasUnsavedChanges');
+    under a plain 'QApplication' that method is absent and the window simply
+    closes."""
+    confirmExit = getattr(self.app, 'confirmExit', None)
+    if confirmExit is not None and not confirmExit():
+      return event.ignore()
+    return event.accept()

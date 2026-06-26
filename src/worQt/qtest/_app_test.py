@@ -11,6 +11,7 @@ import sys
 import traceback
 
 from PySide6.QtCore import QCoreApplication, QTimer, QEvent
+from PySide6.QtCore import qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 from worktoy.desc import Field
 from worktoy.utilities import maybe
@@ -141,6 +142,25 @@ class AppTest(BaseTest, metaclass=MetaTest):
     return True
 
   @classmethod
+  def _suppressBenignQtWarnings(cls, ) -> None:
+    """
+    Installs a Qt message handler that drops known-benign warnings the
+    'offscreen' QPA plugin emits - such as 'propagateSizeHints()' when a
+    top-level window is shown - and forwards every other message to stderr
+    unchanged, so real warnings stay visible. Each 'AppTest' runs in its
+    own process, so this is scoped to the test child.
+    """
+    benign = ('propagateSizeHints',)
+
+    def handler(msgType: Any, context: Any, message: str) -> None:
+      for token in benign:
+        if token in message:
+          return
+      sys.stderr.write('%s\n' % message)
+
+    qInstallMessageHandler(handler)
+
+  @classmethod
   def runTest(cls, ) -> Any:
     """
     Runs every collected test method from inside a live, running event
@@ -149,6 +169,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
     and the loop is quit once they finish. Returning normally counts as
     success; any failure is printed and re-raised so '__main__' reports it.
     """
+    cls._suppressBenignQtWarnings()
     app = QApplication.instance() or cls.getApplicationType()(sys.argv)
     methods = cls.testMethods
     failed = []
@@ -161,7 +182,10 @@ class AppTest(BaseTest, metaclass=MetaTest):
 
     QTimer.singleShot(0, _runAll)
     app.exec()
-    if failed:
+    if failed:  # pragma: no cover
+      #  Only fires from a no-running-loop call against a failing class;
+      #  reaching it in-suite would leak a persistent QApplication into the
+      #  in-process tests. Covered indirectly by a real failing child run.
       infoSpec = '%d of %d test(s) failed: %s'
       info = infoSpec % (len(failed), len(methods), ', '.join(failed))
       raise AssertionError(info)

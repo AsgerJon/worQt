@@ -74,7 +74,7 @@ class PaintLabel(AbstractPaintOp, ABC):  # ABC type-checking only
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def prepare(self, painter: Painter, ) -> Painter:
-    __old_font__ = painter.font()
+    self.__old_font__ = painter.font()
     self.__paint_device__ = painter.device()
     self.__device_type__ = type(self.__paint_device__)
     return painter

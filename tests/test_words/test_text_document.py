@@ -76,6 +76,13 @@ class TestTextDocument(WordsTest):
     section = Section('hello')
     self.assertEqual(section.text, 'hello')
 
+  def test_section_rendering(self) -> None:
+    """'Section' renders its text via 'str' and round-trips via 'repr'."""
+    section = Section('hello')
+    self.assertEqual(str(section), 'hello')
+    self.assertEqual(repr(section), "Section('hello')")
+    self.assertEqual(str(Section()), '')
+
   def test_sections_append_keeps_order(self) -> None:
     """Appended sections keep insertion order."""
     document = self._doc()

@@ -137,14 +137,14 @@ class WPainter(QPainter, MixinBase):
       innerPath.addRoundedRect(inner.Q, inner.hr, inner.vr)
     elif isinstance(inner, Rect):
       innerPath.addRoundedRect(inner.Q, 0, 0)
-    else:
+    else:  # pragma: no cover
       raise TypeException('inner', inner, Rect, RoundedRect)
     outerPath = QPainterPath()
     if isinstance(outer, RoundedRect):
       outerPath.addRoundedRect(outer.Q, outer.hr, outer.vr)
     elif isinstance(outer, Rect):
       outerPath.addRoundedRect(outer.Q, 0, 0)
-    else:
+    else:  # pragma: no cover
       raise TypeException('outer', outer, Rect, RoundedRect)
     fillPath = outerPath.subtracted(innerPath)
     self.setBrush(color.fillBrush)

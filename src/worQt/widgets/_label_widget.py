@@ -24,7 +24,7 @@ from worktoy.waitaminute.control_flow import SkipSet
 
 from . import PaintedWidget
 from . import AbstractWidget as Widget
-from ..paint_ops import PaintLabel, PaintBoxModel, PaintRect
+from ..paint_ops import PaintLabel, PaintBoxModel
 from ..utils import Color, WFont
 from ..utils.geom import Size
 from ..utils.qee_num import SizePolicy, SizingMode
@@ -107,7 +107,6 @@ class LabelWidget(PaintedWidget):
   cornerYRadius: IntField = Field()
   xr: IntAlias = Alias('cornerXRadius')
   yr: IntAlias = Alias('cornerYRadius')
-  backgroundColor: ColorAlias = Alias('paddingColor')
   font: WFontBox = AttriBox[WFont]()
 
   #  Virtual Variables
@@ -243,19 +242,13 @@ class LabelWidget(PaintedWidget):
   @overload(THIS, strict=True)
   def __init__(self, other: Self, ) -> None:
     parent = Widget.parent(other, )
-    try:
-      text = other._getText(_recursion=True)  # noqa
-    except RecursionError:
-      text = None
-    try:
-      xr = other._getCornerXRadius(_recursion=True)  # noqa
-    except RecursionError:
-      xr = None
-    try:
-      yr = other._getCornerYRadius(_recursion=True)  # noqa
-    except RecursionError:
-      yr = None
-    self.__init__(parent, text, xr, yr)
+    if parent is None:
+      PaintedWidget.__init__(self, )
+    else:
+      PaintedWidget.__init__(self, parent, )
+    self.text = other.text
+    self.cornerXRadius = other.cornerXRadius
+    self.cornerYRadius = other.cornerYRadius
 
   @overload.finalize
   def __init__(self, *args, **kwargs) -> None:

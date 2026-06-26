@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from worktoy.work_test import BaseTest
 
+from worQt.qtest import AppTest
 from tests import TempDir
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -32,3 +33,8 @@ class WordsTest(BaseTest):
   def tearDown(self, ) -> None:
     self.tempDir.clear()
     super().tearDown()
+
+
+class WordsAppTest(AppTest):
+  """Base for 'worQt.words' tests that build 'QObject's (the editor
+  window), so they need a running 'QApplication'."""

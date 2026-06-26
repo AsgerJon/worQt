@@ -38,6 +38,7 @@ class MixinBase(BaseObject, metaclass=MixinMeta):
   #  Fallback Variables
 
   #  Private Variables
+  __field_box__ = None  # set by 'AttriBox' when this object is a boxed value
 
   #  Public Variables
   app: Field[QCoreApp] = Field()

@@ -2,7 +2,7 @@
 PaintedWidget subclasses 'AbstractWidget' and provides a base for painted
 widgets. This means essentially all widgets except for container widgets.
 The base implements the box model for margins, borders, paddings, and
-content area, allowing customization of both sizes and colors. The base
+content area, allowing customization of both sizes and colours. The base
 applies this painting in the 'paintEvent' method, which should *not* be
 overridden in subclasses. Instead, the base provides the 'paintMeLike'
 method which it calls after painting the box model, but before calling
@@ -17,11 +17,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import (QPaintEvent,
-  QPainter,
-  QPen,
-  QPaintDevice,
-  QBrush,
-  QTextOption)
+                           QPainter,
+                           QPen,
+                           QPaintDevice,
+                           QBrush,
+                           QTextOption)
 from PySide6.QtWidgets import QSizePolicy
 from worktoy.desc import Field, AttriBox
 from worktoy.utilities import maybe
@@ -31,11 +31,11 @@ from worktoy.waitaminute.control_flow import SkipSet
 from ..waitaminute.events import EventException
 from ..utils import EmptyPen, EmptyBrush, WPainter
 from ..utils.qee_num import (Alignum,
-  HAlignum,
-  VAlignum,
-  SizePolicy,
-  SizingMode)
-from ..utils.geom import BoxModel, Size, Rect, Color, BoxDims
+                             HAlignum,
+                             VAlignum,
+                             SizePolicy,
+                             SizingMode)
+from ..utils.geom import Size, Rect, Color
 from ..utils.geom import InSets
 from . import AbstractWidget
 
@@ -49,13 +49,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
   PaintOps: TypeAlias = Iterator[AbstractPaintOp]
   PaintOpsField: TypeAlias = Union[PaintOps, Field]
-  BoxField: TypeAlias = Union[BoxModel, Field]
 
   MaybeAlign: TypeAlias = Optional[Alignum]
   AlignField: TypeAlias = Union[Alignum, Field]
   HAlignField: TypeAlias = Union[HAlignum, Field]
   VAlignField: TypeAlias = Union[VAlignum, Field]
-  DimField: TypeAlias = Union[BoxDims, Field]
   PolicyField: TypeAlias = Union[SizePolicy, Field]
   InSetsBox: TypeAlias = Union[InSets, AttriBox]
   ColorBox: TypeAlias = Union[Color, AttriBox]
@@ -130,8 +128,6 @@ class PaintedWidget(AbstractWidget):
   __fallback_text_align__ = Alignum.CENTER
 
   #  Private Variables
-  __box_model__ = None
-  __box_color__ = None
   __alignment_flag__: MaybeAlign = None
   __size_policy__: MaybeSizePolicy = None
   __horizontal_mode__: MaybeSizingMode = None
@@ -150,7 +146,7 @@ class PaintedWidget(AbstractWidget):
   __paddings_color__: MaybeColor = None
 
   #  Public Variables
-  paintOps: PaintOpsField = Field()
+  paintOps: Field[PaintOps] = Field()
   emptyPen: Union[QPen, EmptyPen] = EmptyPen()
   emptyBrush: Union[QBrush, EmptyBrush] = EmptyBrush()
   xr = AttriBox[int](0)  # horizontal corner radius for rounded rects

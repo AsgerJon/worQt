@@ -60,17 +60,24 @@ class GenericFamilyNum(KeeNum, ):
   @classmethod
   def __class_resolve__(cls, identifier: FontFamilyNum) -> Self:
     try:
-      name = getattr(identifier, 'name')
+      value = getattr(identifier, 'value')
     except AttributeError as attributeError:
-      name, value = 'identifier', identifier
-      raise TypeException(name, value, FontFamilyNum) from attributeError
+      name, badValue = 'identifier', identifier
+      raise TypeException(name, badValue, FontFamilyNum) from attributeError
     else:
-      if name in FontFamilyMeta.__mono_space__:
+      memberName = getattr(identifier, 'name', '')
+      if memberName == 'FALLBACK_MONO':
         return cls.MONO
-      if name in FontFamilyMeta.__sans_space__:
+      if memberName == 'FALLBACK_SANS':
         return cls.SANS
-      if name in FontFamilyMeta.__serif_space__:
+      if memberName == 'FALLBACK_SERIF':
+        return cls.SERIF
+      if value in FontFamilyMeta.__mono_space__:
+        return cls.MONO
+      if value in FontFamilyMeta.__sans_serif__:
+        return cls.SANS
+      if value in FontFamilyMeta.__serif_families__:
         return cls.SERIF
       infoSpec = """Received unrecognized font family name: '%s'!"""
-      info = textFmt(infoSpec % name)
+      info = textFmt(infoSpec % value)
       raise ValueError(info)

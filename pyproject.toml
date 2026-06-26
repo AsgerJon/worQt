@@ -38,3 +38,24 @@ classifiers = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Coverage config for the 'worQt.qtest' harness. 'worQt.qtest' isolates
+# each 'AppTest' in its own child process ('python -m worQt.qtest
+# <module>'); 'parallel = true' lets the parent and every child write a
+# separate data file ('.coverage.<host>.<pid>.<rand>') that 'coverage
+# combine' merges afterward. Set 'WORQT_COVERAGE=1' so the harness launches
+# each child under 'coverage run' (see AppTestRun and coverage_test.sh).
+[tool.coverage.run]
+parallel = true
+branch = true
+source = ["worQt"]
+
+[tool.coverage.report]
+skip_covered = false
+# Keep the default '# pragma: no cover' and also exclude the standard
+# '__main__' entry guards (their error branches are only reachable by
+# feeding the runner bad input, which cannot happen in a green suite).
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]

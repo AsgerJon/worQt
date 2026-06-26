@@ -12,15 +12,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QGridLayout
-from worktoy.desc import Field
 
 from . import LayoutMixin
-from ..utils.geom import Size
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any, Union, Optional, Type, TypeAlias
-
-  SizeField: TypeAlias = Union[Field, Size]
+  from typing import Any
 
 
 class BaseLayout(QGridLayout, LayoutMixin):
@@ -31,30 +27,3 @@ class BaseLayout(QGridLayout, LayoutMixin):
   recommendation is to subclass this class to remake those based on the
   provided 'QGridLayout' functionality.
   """
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  #  Class Variables
-
-  #  Fallback Variables
-
-  #  Private Variables
-
-  #  Public Variables
-
-  #  Virtual Variables
-  assignedSize: SizeField = Field()
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  @assignedSize.GET
-  def _getAssignedSize(self, ) -> Size:
-    return self.parent().viewRect.size
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

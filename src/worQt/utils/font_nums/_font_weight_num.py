@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QFont
-from worktoy.dispatch import overload
 from worktoy.keenum import Kee
 from worktoy.waitaminute.keenum import KeeResolveError
 
@@ -49,6 +48,8 @@ class FontWeightNum(FontMeta.keeNum):
         return member
     raise KeeResolveError(cls, weight)
 
-  @overload(QFont)
   def apply(self, font: QFont) -> None:
+    """Set this weight on 'font'. A plain method, not an '@overload':
+    the dispatcher caches a bound method on the instance via 'setattr',
+    which a frozen 'KeeNum' member rejects with 'KeeWriteOnceError'."""
     font.setWeight(self.value)
