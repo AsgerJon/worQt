@@ -1,9 +1,8 @@
 """
 Exercises the type-specific value editors against a live 'QApplication'.
-These editors are reused by 'SettingsDialog' (the JSON form that also used
-them is deprecated). Qt emits its widget signals synchronously, so the tests
-mutate the inner widgets and assert on the results without pumping the event
-loop or opening any modal dialog.
+Qt emits its widget signals synchronously, so the tests mutate the inner
+widgets and assert on the results without pumping the event loop or opening
+any modal dialog.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen

@@ -18,20 +18,10 @@ from worQt.qtest import testMeBro
 
 ic.configureOutput(includeContext=True)
 
-from worQt.app import AbstractApplication
-from yolo import yolo, runTests
+from yolo import yolo
 
 if TYPE_CHECKING:  # pragma: no cover
   pass
-
-
-def tester00(*args, ) -> int:
-  """Hello World!"""
-  stuff = ['hello world!', os, sys, frozenset, runTests, AbstractApplication]
-  for item in stuff:
-    print(item)
-  return 0
-
 
 if __name__ == '__main__':
   yolo(testMeBro, )
