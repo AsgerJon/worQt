@@ -26,6 +26,11 @@ from . import ApplicationMixin
 if TYPE_CHECKING:  # pragma: no cover
   from PySide6.QtCore import QObject, QEvent
   from PySide6.QtWidgets import QMainWindow
+  from typing import Optional, TypeAlias, Type
+
+  MaybeQObject: TypeAlias = Optional[QObject]
+  MaybeQEvent: TypeAlias = Optional[QEvent]
+  MaybeBool: TypeAlias = Optional[bool]
 
 
 class AbstractApplication(ApplicationMixin):
@@ -56,7 +61,7 @@ class AbstractApplication(ApplicationMixin):
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def getWindowClass(self, ) -> type:
+  def getWindowClass(self, ) -> Type[QMainWindow]:
     """The 'QMainWindow' subclass this app builds for 'window'. A concrete
     app sets '__window_class__'; reading 'window' without it raises."""
     if self.__window_class__ is None:
@@ -123,10 +128,10 @@ class AbstractApplication(ApplicationMixin):
 
   def handleException(
       self,
-      exc: Exception,
-      receiver: QObject = None,
-      event: QEvent = None,
-  ) -> bool | None:
+      exception: Exception,
+      receiver: MaybeQObject = None,
+      event: MaybeQEvent = None,
+  ) -> MaybeBool:
     """
     Hook for exceptions raised during event delivery. The default
     implementation is a no-op; concrete subclasses override to log,
