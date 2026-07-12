@@ -45,12 +45,12 @@ class AbstractApplication(ApplicationMixin):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Fallback Variables
-  __window_class__ = None  # the QMainWindow subclass built for 'window'
+  __window_class__: Optional[Type[QMainWindow]] = None
 
   #  Private Variables
-  __return_code__ = None  # the exec() exit code, set on a clean __exit__
-  __splash_screen__ = None  # the lazily-built splash screen
-  __main_window__ = None  # the lazily-built main window
+  __return_code__: Optional[int] = None  #
+  __splash_screen__: Optional[QSplashScreen] = None  #
+  __main_window__: Optional[QMainWindow] = None  #
 
   #  Public Variables
   returnCode: Field[int] = Field()
