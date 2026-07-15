@@ -6,9 +6,9 @@ special test class suitable for tests that require a running QApplication.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 import sys
-import traceback
 
 from PySide6.QtCore import QCoreApplication, QTimer, QEvent
 from PySide6.QtCore import qInstallMessageHandler
@@ -17,6 +17,8 @@ from worktoy.desc import Field
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException
 from worktoy.work_test import BaseTest
+
+from moreworktoy.utilities import errorFmt
 
 from . import MetaTest
 
@@ -36,6 +38,9 @@ class AppTest(BaseTest, metaclass=MetaTest):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  Annotations from metaclass
+  testMethods: Field[dict[str, Callable]]
+
   #  Fallback Variables
   __fallback_application__: AppType = QApplication
 
@@ -44,7 +49,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
   __time_out__: float = 30.0
 
   #  Private Variables
-  __preopen__ = None  # ids of top-level widgets open before this test ran
+  __persistent_widgets__: Optional[set[int]] = None
 
   #  Public Variables
   app: Field[QApplication] = Field()
@@ -65,6 +70,50 @@ class AppTest(BaseTest, metaclass=MetaTest):
     raise TypeException(
         'QApplication.instance()', running, QCoreApplication, QApplication
     )
+
+  def _getPersistentWidgets(self, ) -> set[int]:
+    """
+    The set of top-level widgets that were open before this test started.
+    'tearDown' uses it to dispose only the windows and dialogs THIS test
+    opened, never any others.
+    """
+    return maybe(self.__persistent_widgets__, set())
+
+  def _clearPersistentWidgets(self, ) -> None:
+    """
+    Clear the set of top-level widgets that were open before this test
+    started. 'tearDown' uses it to dispose only the windows and dialogs THIS
+    test opened, never any others.
+    """
+    self.__persistent_widgets__ = None
+
+  def _freezePersistentWidgets(self, ) -> None:
+    """
+    Snapshot the top-level widgets that are open right now, so 'tearDown'
+    disposes only the windows and dialogs THIS test opens, never any others.
+    """
+    self._clearPersistentWidgets()
+    widgets = QApplication.topLevelWidgets()
+    self.__persistent_widgets__ = {id(w) for w in widgets}
+
+  def _disposeOpenedWidgets(self, ) -> None:
+    """
+    Dispose every top-level widget THIS test opened - those absent from the
+    'setUp' snapshot - without firing 'closeEvent'; 'deleteLater' avoids any
+    unsaved-changes prompt or geometry write that 'close' would trigger.
+    Widgets already open before the test started are left alone.
+    """
+    preopenWidgets = self._getPersistentWidgets()
+    for widget in QApplication.topLevelWidgets():
+      if id(widget) not in preopenWidgets:
+        widget.hide()
+        widget.deleteLater()
+    #  'deleteLater' only acts once a 'DeferredDelete' event is delivered,
+    #  and the run loop is not re-entered between tests, so flush them now -
+    #  the widgets are actually freed before the next test instead of piling
+    #  up.
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QApplication.processEvents()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -95,7 +144,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
     what it opens; the shared 'QApplication' lives for the whole class.
     """
     super().setUp()
-    self.__preopen__ = {id(w) for w in QApplication.topLevelWidgets()}
+    self._freezePersistentWidgets()
 
   def tearDown(self, ) -> None:
     """
@@ -104,19 +153,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
     geometry write that 'close' would trigger - then let the base tear down.
     """
     super().tearDown()
-    preopen = self.__preopen__
-    if preopen is None:
-      preopen = set()
-    for widget in QApplication.topLevelWidgets():
-      if id(widget) not in preopen:
-        widget.hide()
-        widget.deleteLater()
-    #  'deleteLater' only acts once a 'DeferredDelete' event is delivered,
-    #  and the run loop is not re-entered between tests, so flush them now -
-    #  the widgets are actually freed before the next test instead of piling
-    #  up.
-    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    QApplication.processEvents()
+    self._disposeOpenedWidgets()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -127,15 +164,16 @@ class AppTest(BaseTest, metaclass=MetaTest):
     """
     Runs a single collected test method on a fresh document, with
     'setUp'/'tearDown' around it. Returns True on success; on failure it
-    prints the traceback and returns False.
+    prints the formatted exception and returns False. Only 'Exception' is
+    caught, so 'KeyboardInterrupt'/'SystemExit' still abort the run.
     """
     instance = cls(name)
     try:
       instance.setUp()
       getattr(instance, name)()
-    except Exception:
-      print('FAIL: %s.%s' % (cls.__name__, name))
-      traceback.print_exc()
+    except Exception as exception:
+      print('FAILED: %s.%s' % (cls.__name__, name))
+      print(errorFmt(exception))
       return False
     finally:
       instance.tearDown()
@@ -144,13 +182,18 @@ class AppTest(BaseTest, metaclass=MetaTest):
   @classmethod
   def _suppressBenignQtWarnings(cls, ) -> None:
     """
-    Installs a Qt message handler that drops known-benign warnings the
-    'offscreen' QPA plugin emits - such as 'propagateSizeHints()' when a
-    top-level window is shown - and forwards every other message to stderr
-    unchanged, so real warnings stay visible. Each 'AppTest' runs in its
-    own process, so this is scoped to the test child.
+    Installs a Qt message handler that drops known-benign warnings and
+    forwards every other message to stderr unchanged, so real warnings stay
+    visible. Each 'AppTest' runs in its own process, so this is scoped to
+    the test child. The dropped tokens are:
+
+    - 'propagateSizeHints' - emitted by the 'offscreen' QPA plugin when a
+      top-level window is shown.
+    - 'event loop is already running' - emitted when a test drives an
+      exec-based path (such as 'App.__exit__') while the harness already
+      owns the running loop; the nested 'exec' returns at once by design.
     """
-    benign = ('propagateSizeHints',)
+    benign = ('propagateSizeHints', 'event loop is already running',)
 
     def handler(msgType: Any, context: Any, message: str) -> None:
       for token in benign:
@@ -171,7 +214,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
     """
     cls._suppressBenignQtWarnings()
     app = QApplication.instance() or cls.getApplicationType()(sys.argv)
-    methods = cls.testMethods
+    methods: dict[str, Callable[[], None]] = cls.testMethods
     failed = []
 
     def _runAll() -> None:

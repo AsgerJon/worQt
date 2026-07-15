@@ -6,8 +6,8 @@ MetaTest subclasses 'BaseMeta' and provides the metaclass from which the
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from worktoy.desc import Field
 from worktoy.mcls import BaseMeta
@@ -15,7 +15,7 @@ from worktoy.mcls import BaseMeta
 from . import SpaceTest
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias
+  from typing import TypeAlias, Optional
 
   Bases: TypeAlias = tuple[type, ...]
 
@@ -31,7 +31,7 @@ class MetaTest(BaseMeta):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Private Variables
-  __test_methods__: dict[str, Callable]
+  __test_methods__: Optional[dict[str, Callable]] = None
 
   #  Public Variables
   testMethods: Field[dict[str, Callable]] = Field()

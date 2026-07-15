@@ -17,7 +17,7 @@ from worktoy.waitaminute import TypeException
 from worQt.widgets import LabelWidget
 from worQt.utils.geom import Size
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any

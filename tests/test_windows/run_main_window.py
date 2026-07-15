@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtTest import QTest
-
 from worQt.windows import MainWindow
 from worQt.windows.menus import MainMenuBar
 
@@ -26,22 +24,21 @@ class RunMainWindow(WindowsAppTest):
   """Tests for the assembled main-window lifecycle."""
 
   def run_show_installs_menu_bar(self) -> None:
-    """Showing the window builds the menu bar with its four menus."""
+    """Showing the window builds the menu bar with its four menus. 'showLive'
+    renders it as an exposed, painted window - the build-once lifecycle runs
+    through the worQt 'show' override - and the harness disposes it on
+    'tearDown', so no explicit close is needed."""
     window = MainWindow()
     window.resize(400, 300)
-    window.show()
-    QTest.qWait(150)
+    self.showLive(window)
     self.assertTrue(window.isVisible())
     self.assertIsInstance(window.menuBar(), MainMenuBar)
     self.assertEqual(len(window.menuBar().actions()), 4)
-    window.close()
 
   def run_show_sets_central_widget(self) -> None:
     """'initUI' installs a central widget carrying the base layout."""
     window = MainWindow()
     window.resize(400, 300)
-    window.show()
-    QTest.qWait(150)
+    self.showLive(window)
     self.assertIsNotNone(window.centralWidget())
     self.assertIsNotNone(window.centralWidget().layout())
-    window.close()

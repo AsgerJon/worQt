@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QTimer, Signal, SignalInstance
+from PySide6.QtCore import QTimer, Signal, SignalInstance, QEvent
 from PySide6.QtGui import QMouseEvent
 from icecream import ic
 from worktoy.desc import Field
@@ -82,6 +82,7 @@ class ClickButton(PaintButton):
   singleHoldDict: ClickDictField = Field()
   doubleClickDict: ClickDictField = Field()
   doubleHoldDict: ClickDictField = Field()
+  tripleClickDict: ClickDictField = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -113,6 +114,12 @@ class ClickButton(PaintButton):
   middleDoubleHold = Signal()
   forwardDoubleHold = Signal()
   backDoubleHold = Signal()
+
+  leftTripleClick = Signal()
+  rightTripleClick = Signal()
+  middleTripleClick = Signal()
+  forwardTripleClick = Signal()
+  backTripleClick = Signal()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -233,6 +240,16 @@ class ClickButton(PaintButton):
       MouseButtonNum.BACK   : self.backDoubleHold,
       }
 
+  @tripleClickDict.GET
+  def _getTripleClickDict(self, ) -> ClickDict:
+    return {
+      MouseButtonNum.LEFT   : self.leftTripleClick,
+      MouseButtonNum.RIGHT  : self.rightTripleClick,
+      MouseButtonNum.MIDDLE : self.middleTripleClick,
+      MouseButtonNum.FORWARD: self.forwardTripleClick,
+      MouseButtonNum.BACK   : self.backTripleClick,
+      }
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -324,22 +341,27 @@ class ClickButton(PaintButton):
 
   def _emitClicks(self, ) -> None:
     """
-    This method emits the stored sequence of clicks. These may be single,
-    double or any number of clicks. Further, these need not be the same
-    button (defined by the 'MouseButtonNum') but must *not* be 'no button'.
+    This method emits the stored sequence of clicks. Every sequence is
+    reported through the generalized 'multiClick' signal; in addition, a
+    same-button run of one, two or three clicks emits the matching
+    'singleClickDict'/'doubleClickDict'/'tripleClickDict' signal. A run
+    longer than three, or of mixed buttons, is reported through
+    'multiClick' alone.
     """
     if not self.hasClicks:
       raise NotImplementedError
     self.multiClick.emit(self.clickSequence)
-    if len(self.clickSequence) > 2:
+    if len(self.clickSequence) > 3:
       return self._invalidateClicks()
     firstButton, lastButton = self.clickSequence[0], self.clickSequence[-1]
     if firstButton != lastButton:
       return self._invalidateClicks()
-    if len(self.clickSequence) == 2:
-      clickDict = self.doubleClickDict
-    else:
-      clickDict = self.singleClickDict
+    clickDicts = {
+      1: self.singleClickDict,
+      2: self.doubleClickDict,
+      3: self.tripleClickDict,
+      }
+    clickDict = clickDicts[len(self.clickSequence)]
     clickDict[firstButton].emit()
     return self._invalidateClicks()
 
@@ -377,7 +399,7 @@ class ClickButton(PaintButton):
   def mouseMoveEvent(self, e: QMouseEvent) -> None:
     super().mouseMoveEvent(e)
     if self.moving:
-      move = Vector2D(self.movePoint, self.contentRectPosition)
+      move = Vector2D(self.movePoint, self.assignedRectPosition)
       if QTimer.isActive(self.pressTimer):
         if move.magSqr > self.__press_move_limit__:
           return self._onPressMoved()
@@ -389,9 +411,17 @@ class ClickButton(PaintButton):
           return self._onSequentialMoved()
     return None
 
-  def mouseDoubleClickEvent(self, e: QMouseEvent, ) -> None:
-    super().mouseDoubleClickEvent(e)
-    return self.mousePressEvent(e)
+  def event(self, e: QEvent) -> bool:
+    #  Qt's double-click machinery is deliberately not used: a double click
+    #  is recognised from the press/release sequence this widget monitors
+    #  in 'mousePressEvent'/'mouseReleaseEvent'. Qt delivers the second
+    #  press of a double click as a 'MouseButtonDblClick' event, so it is
+    #  fed to 'mousePressEvent' as an ordinary press here rather than
+    #  dispatched to the unused 'mouseDoubleClickEvent'.
+    if e.type() == QEvent.Type.MouseButtonDblClick:
+      self.mousePressEvent(e)
+      return True
+    return super().event(e)
 
   def mousePressEvent(self, e: QMouseEvent) -> None:
     super().mousePressEvent(e)

@@ -43,7 +43,7 @@ class AbstractWindow(QMainWindow, MixinBase):
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def initUi(self, ) -> None:
+  def initUI(self, ) -> None:
     """Build the window contents. Invoked once, lazily, on the first
     'show()'. The default does nothing; concrete windows override it."""
 
@@ -61,9 +61,9 @@ class AbstractWindow(QMainWindow, MixinBase):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def show(self, ) -> None:
-    """Build the UI once (via 'initUi') before the first show."""
+    """Build the UI once (via 'initUI') before the first show."""
     if not self.__ui_built__:
-      self.initUi()
+      self.initUI()
       self.__ui_built__ = True
     super().show()
 

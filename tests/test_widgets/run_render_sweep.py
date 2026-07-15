@@ -1,17 +1,15 @@
 """
 RunRenderSweep subclasses 'WidgetTest' and exercises the painting stack by
-constructing every concrete 'worQt.widgets' class, sizing it, and rendering
-it to a 'QPixmap'. Rendering drives the inherited 'paintEvent' (and through
-it the registered paint operations and the box model) without needing the
-widget on screen, so the sweep runs the same headless or windowed.
+constructing every concrete 'worQt.widgets' class and showing it in an
+actual window with 'showLive'. The show drives the inherited 'paintEvent'
+(and through it the registered paint operations and the box model) on
+screen, so 'paintView' is populated and the widget is visibly rendered.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-
-from PySide6.QtGui import QPixmap
 
 from worQt.widgets import (PaintedWidget,
   LabelWidget,
@@ -20,15 +18,16 @@ from worQt.widgets import (PaintedWidget,
   ClickButton,
   PushButton)
 from worQt.widgets import ScratchWidget
+from worQt.utils.geom import Rect
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
 
 
 class RunRenderSweep(WidgetTest):
-  """Renders every concrete widget to a pixmap and asserts it painted."""
+  """Shows every concrete widget in a live window and asserts it painted."""
 
   @classmethod
   def getWidgetTypes(cls) -> tuple[type, ...]:
@@ -44,22 +43,21 @@ class RunRenderSweep(WidgetTest):
     )
 
   def run_render_each(self) -> None:
-    """Each widget renders to a non-null pixmap of the requested size."""
+    """Each widget shows visibly and captures its paint view on screen."""
     for widgetType in self.getWidgetTypes():
       name = widgetType.__name__
       widget = widgetType()
       widget.resize(240, 160)
-      pixmap = QPixmap(widget.size())
-      widget.render(pixmap)
-      self.assertFalse(pixmap.isNull(), name)
-      self.assertEqual(pixmap.width(), 240, name)
-      self.assertEqual(pixmap.height(), 160, name)
+      self.showLive(widget)
+      self.assertTrue(widget.isVisible(), name)
+      self.assertIsInstance(widget.paintView, Rect, name)
 
   def run_render_is_repeatable(self) -> None:
-    """Rendering the same widget twice stays stable (paint ops reset)."""
+    """Repainting a shown widget stays stable (the paint ops reset)."""
     widget = ScratchWidget()
     widget.resize(200, 200)
+    self.showLive(widget)
     for _ in range(3):
-      pixmap = QPixmap(widget.size())
-      widget.render(pixmap)
-      self.assertFalse(pixmap.isNull())
+      widget.update()
+      self.wait(20)
+      self.assertIsInstance(widget.paintView, Rect)

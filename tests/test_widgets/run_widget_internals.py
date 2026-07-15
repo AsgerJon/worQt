@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QPixmap
 from worktoy.waitaminute import TypeException
 
 from worQt.widgets import (PaintedWidget, LabelWidget, TextWidget,
@@ -19,7 +18,7 @@ from worQt.widgets import (PaintedWidget, LabelWidget, TextWidget,
 from worQt.utils.geom import Color, Size
 from worQt.utils.qee_num import SizingMode, HAlignum, VAlignum
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
@@ -74,7 +73,7 @@ class RunWidgetInternals(WidgetTest):
     """'initUI' sets the box model and the derived text sizes resolve."""
     widget = TextWidget()
     widget.resize(200, 200)
-    widget.render(QPixmap(widget.size()))
+    self.showLive(widget)
     widget.initUI()
     self.assertIsInstance(widget.text, str)
     self.assertGreaterEqual(widget.reqHeight, 0)

@@ -20,7 +20,7 @@ from worQt.waitaminute.events import EventException
 from worQt.widgets import LabelWidget, PaintedWidget
 from worQt.utils.geom import Rect
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
@@ -156,12 +156,13 @@ class RunPaintOps(WidgetTest):
   #  INTEGRATION  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def run_label_widget_renders(self) -> None:
-    """Rendering a 'LabelWidget' drives its box-model and label ops under a
-    real paint device."""
+  def run_label_widget_shows(self) -> None:
+    """Showing a 'LabelWidget' drives its box-model and label ops under a
+    real paint device on screen."""
     widget = LabelWidget()
     widget.resize(120, 60)
-    widget.render(QPixmap(widget.size()))
+    self.showLive(widget)
+    self.assertIsInstance(widget.paintView, Rect)
 
   def run_paint_event_routes_exception(self) -> None:
     """A paint op that raises surfaces as an 'EventException'."""

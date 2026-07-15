@@ -6,9 +6,11 @@ The 'run' function provides the main entry point for running the tests.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import inspect
 import unittest
+from contextlib import redirect_stdout
 from typing import TYPE_CHECKING
 from types import ModuleType
 from importlib import import_module
@@ -20,6 +22,7 @@ from worktoy.waitaminute import TypeException, SubclassException
 from worktoy.work_test import BaseTest
 from worktoy.utilities import wordWrap
 
+from moreworktoy.utilities import errorFmt
 from . import MetaTest, AppTestRun
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -27,6 +30,32 @@ if TYPE_CHECKING:  # pragma: no cover
 
   MaybeStr: TypeAlias = Optional[str]
   Test: TypeAlias = Type[BaseTest]
+
+#  Matches the ANSI colour escapes 'errorFmt' emits, stripped from the log
+#  file so 'latest.log' stays plain text.
+_ANSI = re.compile(r'\x1b\[[0-9;]*m')
+
+
+class _LogTee:
+  """
+  Forwards every write to the console stream unchanged and, with the ANSI
+  colour escapes stripped, to the log file, so the run is shown in colour
+  yet recorded as plain text.
+  """
+
+  __slots__ = ('__console__', '__log_file__')
+
+  def __init__(self, console, logFile) -> None:
+    self.__console__ = console
+    self.__log_file__ = logFile
+
+  def write(self, text: str) -> int:
+    self.__log_file__.write(_ANSI.sub('', text))
+    return self.__console__.write(text)
+
+  def flush(self) -> None:
+    self.__console__.flush()
+    self.__log_file__.flush()
 
 
 class AppTestSuite(BaseObject):
@@ -229,30 +258,78 @@ class AppTestSuite(BaseObject):
       return
     print(wordWrap(77, *parts))
 
+  @classmethod
+  def _classNameFor(cls, name: str) -> str:
+    """
+    The best-effort test-class name for a module, read from its source
+    without importing it, so a module that fails to load is still reported
+    by its class name rather than its dotted path. Returns the first
+    'Run*'/'Test*' class declared in the file, or the dotted name when the
+    source cannot be read or holds no such class.
+    """
+    path = '%s.py' % os.path.join(cls.__root_dir__, *str.split(name, '.'))
+    try:
+      handle = open(path, 'r', encoding='utf-8')
+      try:
+        lines = handle.readlines()
+      finally:
+        handle.close()
+    except OSError:
+      return name
+    for line in lines:
+      stripped = str.strip(line)
+      if not str.startswith(stripped, 'class '):
+        continue
+      ident = str.strip(str.split(str.split(stripped[6:], '(')[0], ':')[0])
+      if str.startswith(ident, 'Run') or str.startswith(ident, 'Test'):
+        return ident
+    return name
+
   def runAll(self, ) -> int:
     """
     Runs every discovered test class through 'AppTestRun' - an 'AppTest' in
     its own expendable child process, a plain 'TestCase' in-process -
     reporting each outcome at verbosity 2 and a summary at verbosity 1.
     Returns the count of classes that did not pass, suitable as a process
-    exit code.
+    exit code. The whole report is also saved, with the ANSI colour
+    stripped, to 'latest.log' at the project root.
+    """
+    logPath = os.path.join(self.__root_dir__, 'latest.log')
+    logFile = open(logPath, 'w', encoding='utf-8')
+    try:
+      with redirect_stdout(_LogTee(sys.stdout, logFile)):
+        return self._runReport()
+    finally:
+      logFile.close()
+
+  def _runReport(self, ) -> int:
+    """
+    The 'runAll' body: runs every discovered class and prints the report to
+    stdout, which 'runAll' tees to 'latest.log'.
     """
     rule = '-' * 60
-    failures = 0
+    failedNames = []
     names = [*self]
     for name in names:
       try:
         cls = self.getNamed(name)
       except Exception as error:
-        self._log(2, 'ERROR: %s (%s: %s)' % (
-            name, type(error).__name__, error))
+        #  'errorFmt' is pre-formatted; reflowing it through '_log'/
+        #  'wordWrap' would collapse its newlines, so print it verbatim.
+        if self.verbosity >= 2:
+          print(errorFmt(error))
         self._log(2, rule)
-        failures += 1
+        #  The class object is unavailable (the module failed to load), so
+        #  its name is recovered from the source for the summary.
+        failedNames.append(self._classNameFor(name))
         continue
       self._log(2, 'RUN: %s' % (cls.__name__,))
       code, output = AppTestRun(cls).run()
-      if output.strip():
-        self._log(2, output)
+      #  'output' is already formatted (e.g. 'errorFmt' boxes); reflowing
+      #  it through 'wordWrap' would collapse its newlines and spacing, so
+      #  it is printed verbatim rather than through '_log'.
+      if output.strip() and self.verbosity >= 2:
+        print(output)
       #  Plain (non-AppTest) classes run in-process and have no deadline.
       timeout = cls.getTimeout() if hasattr(cls, 'getTimeout') else 0.0
       label, reason = self._describe(code, timeout)
@@ -262,10 +339,19 @@ class AppTestSuite(BaseObject):
         self._log(2, '%s: %s' % (label, cls.__name__))
       self._log(2, rule)
       if label != 'PASS':
-        failures += 1
+        failedNames.append(cls.__name__)
+    failures = len(failedNames)
     passed = len(names) - failures
-    self._log(1, '%d passed, %d failed of %d tests' % (
-        passed, failures, len(names)))
+    self._log(
+        1, '%d passed, %d failed of %d tests' % (
+          passed, failures, len(names)
+        )
+    )
+    #  Printed verbatim rather than through '_log'/'wordWrap', which would
+    #  collapse the newlines and indentation back onto one reflowed line.
+    if failedNames and self.verbosity >= 1:
+      failedList = ',\n'.join('  %s' % n for n in failedNames)
+      print('Failed:\n%s' % failedList)
     return failures
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -279,7 +365,8 @@ class AppTestSuite(BaseObject):
       here = os.path.dirname(here)
     if 'tests' in os.listdir(here):
       return here
-    return os.getcwd()  # pragma: no cover  # no 'tests' above the running package
+    return os.getcwd()  # pragma: no cover  # no 'tests' above the running
+    # package
 
   @classmethod
   def __class_init__(cls, name, bases, space, **kwargs) -> None:

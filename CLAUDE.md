@@ -67,22 +67,38 @@ lazily constructing its splash screen and main window on first access.
 
 ### Application classes (`src/worQt/app`)
 
-Linear inheritance chain, each layer adding one concern:
+Two layers, not three — the earlier `AbstractApplication` middle layer was
+folded into `App`:
 
 - `ApplicationMixin(QApplication, MixinBase)` — the actual fusion point where a
-  concrete Qt type meets worktoy machinery.
-- `AbstractApplication(ApplicationMixin)` — overrides Qt's `notify()` to funnel
-  exceptions raised inside slots/event filters into `handleException()` (a no-op
-  hook for subclasses to override). Only `Exception` is intercepted;
-  `KeyboardInterrupt`/`SystemExit` propagate.
-- `App(AbstractApplication)` — concrete app used as a context manager. `__enter__`
-  returns the app; `__exit__` runs the Qt event loop (`self.exec()`) only on a
-  clean exit (no exception in the with-body). `splash` and `window` are worktoy
-  `Field` descriptors backed by lazily-constructed private slots. Usage:
+  concrete Qt type meets worktoy machinery. Empty body; it exists only to be the
+  place the two metaclasses meet.
+- `App(ApplicationMixin)` — the concrete application, carrying every app-scoped
+  concern directly:
+  - `notify()` funnels exceptions raised inside slots/event filters into
+    `handleException()` (a no-op hook for subclasses to override). Only
+    `Exception` is intercepted; `KeyboardInterrupt`/`SystemExit` propagate.
+  - `returnCode`, `splash` (a `QSplashScreen`) and `window` (a `QMainWindow`
+    subclass) are worktoy `Field` descriptors backed by lazily-constructed
+    private slots. The window *type* is app-specific: a concrete subclass sets
+    `__window_class__`, and `getWindowClass()` raises `MissingVariable` if it is
+    unset. Because any `MixinBase` can reach the running application through
+    `self.app`, `self.app.window` reaches these from anywhere in the graph.
+  - Exit guard: `hasUnsavedChanges()`/`saveChanges()` are hooks a concrete app
+    overrides; `confirmExit()` is the single place the Save/Discard/Cancel prompt
+    lives, consulted by `AbstractWindow.closeEvent`.
+  - Title star: `_startTitleWatch()` polls `hasUnsavedChanges()` on a `QTimer`
+    (there is no generic "dirty changed" signal) and `_refreshTitle()` keeps the
+    `__unsaved_marker__` (` *`) on the window title current.
+  - Context manager: `__enter__` returns the app; `__exit__` runs the Qt event
+    loop (`self.exec()`) and records `returnCode` only on a clean exit (no
+    exception in the with-body). Usage:
 
   ```python
-  with App(*sys.argv) as app:
-      app.splash.show()
+  class MyApp(App):
+    __window_class__ = MyWindow
+
+  with MyApp(*sys.argv) as app:
       app.window.show()
   ```
 

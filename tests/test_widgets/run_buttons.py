@@ -19,7 +19,7 @@ from worQt.widgets import PaintButton, ClickButton
 from worQt.utils import ButtonStateFlags, MouseButtonNum
 from worQt.utils.geom import Point2D
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
@@ -124,21 +124,19 @@ class RunButtons(WidgetTest):
   def run_emit_single_click_fires_signal(self) -> None:
     """Emitting a single registered click fires its per-button signal."""
     button = ClickButton()
-    fired = []
-    button.leftClick.connect(lambda: fired.append(True))
+    clickSpy = self.spy(button.leftClick)
     button._registerClick(MouseButtonNum.LEFT)
     button._emitClicks()
-    self.assertEqual(fired, [True])
+    self.assertEqual(clickSpy.count, 1)
     self.assertEqual(button.clickSequence, ())
 
   def run_emit_single_hold_fires_signal(self) -> None:
     """Emitting a single registered hold fires its per-button signal."""
     button = ClickButton()
-    fired = []
-    button.rightHold.connect(lambda: fired.append(True))
+    holdSpy = self.spy(button.rightHold)
     button._registerClick(MouseButtonNum.RIGHT)
     button._emitHolds()
-    self.assertEqual(fired, [True])
+    self.assertEqual(holdSpy.count, 1)
 
   def run_emit_without_clicks_raises(self) -> None:
     """Emitting with no registered clicks is a programming error."""

@@ -11,20 +11,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
 from worktoy.waitaminute import TypeException, MissingVariable
 
 from worQt.widgets import ClickButton
 from worQt.utils import MouseButtonNum
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
 
-_NOMOD = Qt.KeyboardModifier.NoModifier
-_NONE = Qt.MouseButton.NoButton
 _L = MouseButtonNum.LEFT
 _R = MouseButtonNum.RIGHT
 
@@ -81,11 +77,10 @@ class RunClickButtonInternals(WidgetTest):
   def run_emit_clicks_double(self) -> None:
     """Two clicks of the same button emit the double-click signal."""
     button = ClickButton()
-    fired = []
-    button.leftDoubleClick.connect(lambda: fired.append(True))
+    doubleSpy = self.spy(button.leftDoubleClick)
     button.__click_sequence__ = (_L, _L)
     button._emitClicks()
-    self.assertEqual(fired, [True])
+    self.assertEqual(doubleSpy.count, 1)
 
   def run_emit_holds_branches(self) -> None:
     """The hold emitter mirrors the click emitter's three branches."""
@@ -98,11 +93,10 @@ class RunClickButtonInternals(WidgetTest):
     mismatched._emitHolds()
     self.assertFalse(mismatched.hasClicks)
     double = ClickButton()
-    fired = []
-    double.leftDoubleHold.connect(lambda: fired.append(True))
+    doubleSpy = self.spy(double.leftDoubleHold)
     double.__click_sequence__ = (_L, _L)
     double._emitHolds()
-    self.assertEqual(fired, [True])
+    self.assertEqual(doubleSpy.count, 1)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  MOVE CANCEL HANDLERS  # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -122,11 +116,10 @@ class RunClickButtonInternals(WidgetTest):
   def run_sequential_moved_emits(self) -> None:
     """A move during the sequential window emits the accumulated click."""
     button = ClickButton()
-    fired = []
-    button.leftClick.connect(lambda: fired.append(True))
+    clickSpy = self.spy(button.leftClick)
     button._registerClick(_L)
     button._onSequentialMoved()
-    self.assertEqual(fired, [True])
+    self.assertEqual(clickSpy.count, 1)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  RELEASE / STATE EDGES  # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -135,9 +128,9 @@ class RunClickButtonInternals(WidgetTest):
   def run_release_when_not_hovered(self) -> None:
     """A release while not hovered is ignored."""
     button = ClickButton()
-    event = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(5, 5),
-                        _NONE, _NONE, _NOMOD)
-    button.mouseReleaseEvent(event)
+    button.resize(200, 200)
+    self.showLive(button)
+    self.release(button, button.paintView.center)  # no prior hover
     self.assertFalse(button.hasClicks)
 
   def run_state_toggles(self) -> None:

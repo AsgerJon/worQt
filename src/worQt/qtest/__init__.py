@@ -14,18 +14,24 @@ from __future__ import annotations
 from ._hook_test import HookTest
 from ._space_test import SpaceTest
 from ._meta_test import MetaTest
+from ._render_mode import RenderMode
+from . import primitives
 
 from ._app_test import AppTest
 from ._app_test_run import AppTestRun
 from ._app_test_suite import AppTestSuite
+from ._widget_test import WidgetTest
 from ._test_me_bro import testMeBro
 
 __all__ = (
   'HookTest',
   'SpaceTest',
   'MetaTest',
+  'RenderMode',
+  'primitives',
   'AppTest',
   'AppTestRun',
   'AppTestSuite',
+  'WidgetTest',
   'testMeBro',
 )

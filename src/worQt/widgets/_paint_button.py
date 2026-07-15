@@ -100,11 +100,10 @@ class PaintButton(LabelWidget):
     """
     if self.__event_point__ is None:
       return Point2D(-1, -1)
-    paintX = self.assignedRectPosition.x - self.paintView.left
-    paintY = self.assignedRectPosition.y - self.paintView.top
-    paintPoint = Point2D(paintX, paintY)
-    if paintPoint in self.paintView:
-      return paintPoint
+    cursor = self.assignedRectPosition
+    if cursor in self.paintView:
+      return Point2D(cursor.x - self.paintView.left,
+                     cursor.y - self.paintView.top)
     return Point2D(-1, -1)
 
   @hovered.GET

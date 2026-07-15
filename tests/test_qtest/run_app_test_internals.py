@@ -36,7 +36,7 @@ class RunAppTestInternals(AppTest):
     """'tearDown' with no prior 'setUp' treats the open set as empty and
     does not raise."""
     probe = _Probe('test_pass')
-    probe.tearDown()  # __preopen__ is None -> set()
+    probe.tearDown()  # __persistent_widgets__ is None -> set()
 
   def run_teardown_disposes_new_widget(self) -> None:
     """A top-level widget opened after 'setUp' is disposed by 'tearDown'
@@ -54,7 +54,7 @@ class RunAppTestInternals(AppTest):
     widget = QWidget()
     widget.show()
     probe = _Probe('test_pass')
-    probe.setUp()  # snapshots 'widget' into __preopen__
+    probe.setUp()  # snapshots 'widget' into __persistent_widgets__
     probe.tearDown()  # 'widget' is in preopen -> skipped, not disposed
     self.assertTrue(widget.isVisible())
     widget.hide()
@@ -68,6 +68,8 @@ class RunAppTestInternals(AppTest):
     """'_runMethod' returns False for a raising method and prints its
     traceback (captured here so it does not clutter the report)."""
     buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(
+        buffer
+        ):
       result = _Probe._runMethod('test_raise')
     self.assertFalse(result)

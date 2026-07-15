@@ -86,8 +86,8 @@ class PaintLabel(AbstractPaintOp, ABC):  # ABC type-checking only
       painter.setFont(QFont())
     else:
       raise TypeException('__old_font__', self.__old_font__, QFont, WFont)
-    painter.__paint_device__ = None
-    painter.__device_type__ = None
+    self.__paint_device__ = None
+    self.__device_type__ = None
     return painter
 
   def paint(self, painter: Painter, rect: Rect, event: QPaintEvent) -> Rect:

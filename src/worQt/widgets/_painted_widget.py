@@ -597,13 +597,18 @@ class PaintedWidget(AbstractWidget):
     try:
       self.__paint_view__ = Rect(painter.viewport())
       for paintOp in self.paintOps:
+        #  Balance every 'save' with a 'restore' even when the operation
+        #  raises, so the painter reaches 'end' with no dangling saved
+        #  state (Qt warns 'Painter ended with N saved states' otherwise).
         painter.save()
-        paintOp.prepare(painter)
-        self.__paint_view__ = paintOp.paint(painter, self.paintView, paintE)
-        if not isinstance(self.__paint_view__, Rect):
-          raise TypeException('__paint_view__', self.__paint_view__, Rect)
-        paintOp.reset(painter)
-        painter.restore()
+        try:
+          paintOp.prepare(painter)
+          self.__paint_view__ = paintOp.paint(painter, self.paintView, paintE)
+          if not isinstance(self.__paint_view__, Rect):
+            raise TypeException('__paint_view__', self.__paint_view__, Rect)
+          paintOp.reset(painter)
+        finally:
+          painter.restore()
     except Exception as exception:
       raise EventException(paintE) from exception
     finally:

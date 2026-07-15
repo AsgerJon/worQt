@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QPixmap, QTextOption
-from PySide6.QtTest import QTest
+from PySide6.QtGui import QTextOption
 
 from worktoy.waitaminute import TypeException
 
@@ -20,7 +19,7 @@ from worQt.paint_ops import PaintBoxModel
 from worQt.utils.qee_num import Alignum, HAlignum, VAlignum, SizingMode
 from worQt.utils.geom import Rect, Size, InSets, Color
 
-from . import WidgetTest
+from worQt.qtest import WidgetTest
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
@@ -78,12 +77,11 @@ class RunPaintedWidget(WidgetTest):
     widget = PaintedWidget()
     self.assertEqual([*widget.paintOps], [])
 
-  def run_paint_view_after_render(self) -> None:
-    """Rendering captures the painter viewport as the paint view 'Rect'."""
+  def run_paint_view_after_show(self) -> None:
+    """A live show captures the painter viewport as the paint view 'Rect'."""
     widget = ScratchWidget()
     widget.resize(200, 200)
-    pixmap = QPixmap(widget.size())
-    widget.render(pixmap)
+    self.showLive(widget)
     self.assertIsInstance(widget.paintView, Rect)
 
   def run_alignment_is_settable(self) -> None:
@@ -178,22 +176,19 @@ class RunPaintedWidget(WidgetTest):
     with self.assertRaises(NotImplementedError):
       widget.vAlign = VAlignum.TOP
 
-  def run_extrinsic_render(self) -> None:
-    """Rendering under the extrinsic sizing mode shrinks to the view."""
+  def run_extrinsic_show(self) -> None:
+    """Showing under the extrinsic sizing mode shrinks to the view."""
     widget = ScratchWidget()
     widget.hMode = SizingMode.EXTRINSIC
     widget.vMode = SizingMode.EXTRINSIC
     widget.resize(200, 200)
-    pixmap = QPixmap(widget.size())
-    widget.render(pixmap)
+    self.showLive(widget)
     self.assertIsInstance(widget.paintView, Rect)
 
   def run_show_visible(self) -> None:
-    """A shown widget becomes visible while the event loop pumps."""
+    """A widget shown through 'showLive' becomes visible on screen."""
     widget = ScratchWidget()
     widget.setWindowTitle('worQt painted widget')
     widget.resize(200, 200)
-    widget.show()
-    QTest.qWait(200)
+    self.showLive(widget)
     self.assertTrue(widget.isVisible())
-    widget.close()

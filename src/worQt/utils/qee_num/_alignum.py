@@ -143,10 +143,8 @@ class Alignum(KeeNum):
 
   @classmethod
   def combine(cls, vertical: VAlignum, horizontal: HAlignum) -> Alignum:
-    alignum = None
     if isinstance(vertical, HAlignum) and isinstance(horizontal, VAlignum):
       return cls.combine(horizontal, vertical)
-    hName, vName = horizontal.name, vertical.name
     for alignum in cls:
       if alignum.vertical is vertical and alignum.horizontal is horizontal:
         return alignum

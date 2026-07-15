@@ -1,6 +1,7 @@
 """
 TestAbstractApplication subclasses 'AppTest' and provides testing for the
-'AbstractApplication' class in 'worQt.app' package.
+application-layer behaviour of the 'App' class in the 'worQt.app' package
+(the exception hook, and the lazy splash/window guards).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from worktoy.waitaminute import TypeException
 
-from worQt.app import AbstractApplication, App
+from worQt.app import App
 from worQt.mixin import MixinMeta
 from worQt.qtest import AppTest
 from worQt.windows import AbstractWindow
@@ -33,7 +34,7 @@ class _App(App):
 
 class TestAbstractApplication(AppTest):
   """
-  Test class for 'AbstractApplication' in 'worQt.app' package.
+  Test class for the application layer of 'App' in the 'worQt.app' package.
   """
 
   @classmethod
@@ -44,7 +45,7 @@ class TestAbstractApplication(AppTest):
     """
     Test that 'AbstractApplication' has the correct metaclass.
     """
-    self.assertIsInstance(AbstractApplication, MixinMeta)
+    self.assertIsInstance(App, MixinMeta)
 
   def test_normalize_argv(self, ) -> None:
     """'_normalizeArgv' unpacks a lone non-string iterable but passes the
@@ -60,11 +61,11 @@ class TestAbstractApplication(AppTest):
     """
     with self.assertRaises(RecursionError):
       app = QApplication.instance()
-      AbstractApplication._getSplash(app, _recursion=True)
+      App._getSplash(app, _recursion=True)
 
     with self.assertRaises(RecursionError):
       app = QApplication.instance()
-      AbstractApplication._getWindow(app, _recursion=True)
+      App._getWindow(app, _recursion=True)
 
   def test_bad_type(self, ) -> None:
     """

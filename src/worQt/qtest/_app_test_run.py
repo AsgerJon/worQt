@@ -20,7 +20,7 @@ from worktoy.mcls import BaseObject
 from worktoy.waitaminute import MissingVariable, TypeException
 from worktoy.work_test import BaseTest
 
-from . import MetaTest
+from . import MetaTest, RenderMode
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import TypeAlias, Optional, Type
@@ -28,6 +28,14 @@ if TYPE_CHECKING:  # pragma: no cover
   from . import AppTest
 
   AppTestType: TypeAlias = Type[AppTest]
+
+#  Stderr fragments the Qt platform plugin prints when it cannot start,
+#  the signal the runner uses to fall back from authentic to headless.
+_DISPLAY_FAILURE_TOKENS: tuple[str, ...] = (
+  'no Qt platform plugin could be initialized',
+  'could not connect to display',
+  'Could not load the Qt platform plugin',
+)
 
 
 class AppTestRun(BaseObject):
@@ -107,6 +115,29 @@ class AppTestRun(BaseObject):
     return 3, stream.getvalue()
 
   def _runPopen(self, ) -> tuple[int, str]:
+    """
+    Runs the class in a child process, authentic first. When the child
+    dies because no windowing platform could be initialised - which Qt
+    reports by aborting, uncatchable in-process, so the fallback lives
+    here at the process layer - it is relaunched once in the headless
+    'offscreen' mode, and the note is prepended to the captured output.
+    A genuine test failure never triggers the relaunch: it is gated on
+    the display-init signature and a non-zero exit.
+    """
+    code, output = self._launch(RenderMode.AUTHENTIC)
+    if self._isDisplayFailure(code, output):
+      code, output = self._launch(RenderMode.HEADLESS)
+      note = 'authentic display unavailable; ran headless (offscreen)'
+      output = '%s\n%s' % (note, output) if output.strip() else note
+    return code, output
+
+  def _launch(self, mode: RenderMode) -> tuple[int, str]:
+    """
+    Launches the class in a fresh interpreter under the given 'RenderMode'
+    and returns '(exitCode, combinedOutput)'. The mode sets the child's
+    'QT_QPA_PLATFORM': authentic inherits the environment's real platform,
+    headless forces 'offscreen'.
+    """
     cls = self.appTestType
     argv = [sys.executable, '-m', 'worQt.qtest', cls.__module__]
     if os.environ.get('WORQT_COVERAGE'):
@@ -117,7 +148,8 @@ class AppTestRun(BaseObject):
       #  killed on timeout or segfault flushes nothing - coverage of a
       #  failed run is neither produced nor needed.
       argv[1:1] = ['-m', 'coverage', 'run']
-    env = {**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}
+    baseEnv = {**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}
+    env = mode.applyEnv(baseEnv)
     child = Popen(
         argv, env=env, start_new_session=True,
         stdout=PIPE, stderr=STDOUT, text=True
@@ -130,3 +162,17 @@ class AppTestRun(BaseObject):
       os.killpg(os.getpgid(child.pid), SIGKILL)
       output, _ = child.communicate()
     return child.returncode, output
+
+  @staticmethod
+  def _isDisplayFailure(code: int, output: str) -> bool:
+    """
+    Reports whether the child died because no windowing platform could be
+    initialised, the signal to fall back to headless. It is gated on a
+    non-zero exit so a passing authentic run is never second-guessed.
+    """
+    if not code:
+      return False
+    for token in _DISPLAY_FAILURE_TOKENS:
+      if token in output:
+        return True
+    return False

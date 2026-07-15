@@ -62,11 +62,15 @@ class BaseWindow(AbstractWindow):
 
   def show(self) -> None:
     """
-    This method runs the three initializing methods before the super call.
+    This method runs the three initializing methods before the super call,
+    once, guarded by the shared '__ui_built__' flag so the build-once
+    lifecycle in 'AbstractWindow.show' does not run 'initUI' a second time.
     Subclasses should generally not need to override this method
     specifically.
     """
-    self.initMenus()
-    self.initUI()
-    self.initLogic()
+    if not self.__ui_built__:
+      self.initMenus()
+      self.initUI()
+      self.initLogic()
+      self.__ui_built__ = True
     super().show()
