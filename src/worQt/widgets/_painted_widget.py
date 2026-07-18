@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QSize
 from PySide6.QtGui import (QPaintEvent,
                            QPainter,
                            QPen,
@@ -613,3 +614,21 @@ class PaintedWidget(AbstractWidget):
       raise EventException(paintE) from exception
     finally:
       painter.end()
+
+  def _naturalSize(self, ) -> Size:
+    """The outer size the box model needs to house the content: the
+    required content size grown by the paddings, borders and margins."""
+    content = self.reqSize
+    return content + self.paddingsDims + self.bordersDims + self.marginsDims
+
+  def sizeHint(self, ) -> QSize:
+    """Report the box-model size to Qt's layout system so a worQt widget
+    lays out at its natural size instead of collapsing to zero - a zero
+    size also stops it painting, and a widget that never paints never
+    reports a paint view, so it never registers hover either."""
+    return self._naturalSize().Q
+
+  def minimumSizeHint(self, ) -> QSize:
+    """The box model cannot shrink below its natural size without clipping
+    the content, so the minimum matches the hint."""
+    return self._naturalSize().Q

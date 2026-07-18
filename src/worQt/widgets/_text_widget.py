@@ -82,7 +82,11 @@ class TextWidget(LabelWidget):
 
   def _getRequiredSize(self, ) -> Size:
     """The content size for the box model: the available paint width less
-    the box-model insets, and the wrapped-text height at that width."""
+    the box-model insets, and the wrapped-text height at that width. Before
+    the first paint there is no width yet, so fall back to the single-line
+    label size (used by 'sizeHint')."""
+    if self.paintView is None:
+      return LabelWidget._getRequiredSize(self)
     newWidth = self.paintView.width
     newWidth -= self.marginsDims.left + self.marginsDims.right
     newWidth -= self.bordersDims.left + self.bordersDims.right

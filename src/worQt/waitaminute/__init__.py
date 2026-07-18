@@ -7,7 +7,9 @@ worQt framework.
 from __future__ import annotations
 
 from . import events
+from ._duplicate_registration import DuplicateRegistration
 
 __all__ = [
   'events',
+  'DuplicateRegistration',
 ]

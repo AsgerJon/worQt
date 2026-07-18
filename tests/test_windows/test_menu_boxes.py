@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QMenu
 from worktoy.waitaminute import TypeException, SubclassException
 
+from worQt.waitaminute import DuplicateRegistration
 from worQt.windows.menus import (AbstractMenu, AbstractMenuBar, ActionBox,
                                 MenuBox, MenuSeparator)
 
@@ -81,7 +82,7 @@ class TestMenuBoxes(WindowsTest):
       pass
 
     _Menu.registerActionType('a', MenuSeparator)
-    with self.assertRaises(NotImplementedError):
+    with self.assertRaises(DuplicateRegistration):
       _Menu.registerActionType('a', MenuSeparator)
     with self.assertRaises(TypeException):
       _Menu.registerActionType('b', 123)
@@ -135,7 +136,7 @@ class TestMenuBoxes(WindowsTest):
       pass
 
     _Bar.registerMenuType('m', _Menu)
-    with self.assertRaises(NotImplementedError):
+    with self.assertRaises(DuplicateRegistration):
       _Bar.registerMenuType('m', _Menu)
     with self.assertRaises(TypeException):
       _Bar.registerMenuType('n', 123)

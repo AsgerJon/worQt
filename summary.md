@@ -1,265 +1,178 @@
 # worQt Session Handoff
 
-A detailed record of the last working session so a successor can pick up
-cleanly. Covers what changed, why, how it was verified, open items, and a
-worktoy reference relevant to worQt development.
+Record of the current session so a successor can pick up cleanly. Covers what
+changed, why, verification status, open items, and the working agreement reached
+about worktoy.
+
+> **Read this first — verification status.** Suite is **green: 49 passed / 0
+> failed** (`latest.log`, 2026-07-15 14:42), covering *all* changes below —
+> including the ClickButton cleanup, triple-hold, and the duplicate-registration
+> exception. Both warnings from the prior `latest.log` are **gone**: the
+> QPainter "Painter ended with 1 saved states" (fixed, section E) and the
+> "event loop is already running" line (now filtered). Coverage was ~97% before
+> these changes and was **not re-measured** on this run — regenerate it if you
+> want the fresh number.
+
+Run + coverage:
+```bash
+ENV=/home/AsgerJon/miniforge3/envs/worqt_env/bin/python
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src "$ENV" -m worQt.qtest
+rm -f .coverage .coverage.*
+WORQT_COVERAGE=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src "$ENV" -m coverage run -m worQt.qtest
+"$ENV" -m coverage combine && "$ENV" -m coverage report --sort=cover
+```
 
 ---
 
-## Overview
+## A. Git: `main_update` promoted to `main`
 
-This session built an **event-based GUI testing system**
-(`worQt.qtest.WidgetTest` + a `qtest/primitives/` subpackage), converted the
-widget test suite to it, added a run log (`latest.log`), fixed the error
-formatter, fixed three real widget bugs the new tests exposed, and extended
-`ClickButton` with triple-click. Everything was verified by `py_compile` +
-offscreen diagnostics; **the user runs the actual suite** (do not run it).
+The whole branch became `main`. `main` was a strict ancestor of `main_update`,
+so this was a fast-forward (nothing discarded), done via PyCharm:
+`main_update` fast-forwarded onto `main`, `main_update` deleted (local + remote),
+`origin/main` pushed. Confirmed `origin/main == 478b34b` (`harden base
+functionality`). **The active branch is now `main`.**
 
----
+## B. CLAUDE.md fixed (stale application docs)
 
-## A. New testing infrastructure (`src/worQt/qtest/`)
+The "Application classes" section described a three-layer chain
+(`ApplicationMixin → AbstractApplication → App`) that no longer exists.
+Rewritten to the real two layers: `ApplicationMixin(QApplication, MixinBase)` →
+`App(ApplicationMixin)`, with `App` carrying `notify`/`handleException`, the lazy
+`returnCode`/`splash`/`window` Fields + `__window_class__`, the exit guard
+(`hasUnsavedChanges`/`saveChanges`/`confirmExit`), the title star, and the
+context-manager loop. (`AbstractApplication` was folded into `App` in an earlier
+session.)
 
-### `primitives/` (new subpackage)
-Reusable classes, all `BaseObject`, holding their Qt internals and building
-them at runtime, so they behave identically in authentic and headless modes.
+## C. Button tests: triple-click + double-press-hold (pre-existing features)
 
-- **`SignalSpy(signal)`** — connects on construction, records emissions.
-  `emissions`, `count`, `args` (last emission), `clear()`,
-  `__len__/__bool__/__iter__`; `_record(*args)` slot.
-- **`SignalWaiter(signal, timeout=1000)`** — context manager. `__enter__`
-  connects; `__exit__(self, _, exception, __)` spins a nested `QEventLoop`
-  until the signal fires or a timeout `QTimer` quits (skips the wait and
-  propagates if the body raised). `caught`, `timedOut`, `args`.
-- **`ConditionWaiter(predicate, timeout=1000)`** — `wait() -> bool`; polls
-  the predicate every 10 ms in a nested loop until true/deadline.
-- **`LiveWindow(widget, timeout=5000)`** — `show()` → `raise_()` /
-  `activateWindow()` → `QTest.qWaitForWindowExposed` → returns the widget
-  (populates `paintView`). Works in authentic and offscreen.
+Triple-click and double-press-hold emit logic already existed; they lacked
+event-driven proof. Added to `tests/test_widgets/run_button_events.py`:
+`run_triple_click_emits_triple_click`, `run_triple_click_emits_multi_click`,
+`run_double_press_hold_emits_double_hold`.
 
-### `_render_mode.py` (was `_test_mode.py`)
-Renamed because `TestMode` collides with the `Test*` discovery prefix.
-- `RenderMode(KeeNum)`: `AUTHENTIC = Kee[str]('')`,
-  `HEADLESS = Kee[str]('offscreen')`; `applyEnv(env)` returns a copy with
-  `QT_QPA_PLATFORM` set (authentic leaves env unchanged).
+## D. Windows GUI tests migrated to the WidgetTest pattern
 
-### `_widget_test.py` (new) — `WidgetTest(AppTest)`, the gesture surface
-- Conveniences: `showLive(widget)`, `spy(signal)`,
-  `waitSignal(signal, timeout=1000)`, `waitUntil(pred, timeout=1000)`,
-  `wait(ms)`.
-- Mouse gestures via `QApplication.sendEvent` (routes through `App.notify`;
-  **identical in both render modes** — the reason sendEvent was chosen over
-  `QTest.mouseClick`, whose global coords are meaningless offscreen):
-  `move`, `press`, `release`, `click`, `doubleClick`, `hold(widget, ms, …)`.
-- Keyboard: `key`, `typeText`.
-- Helpers: `_resolveButton` (accepts `MouseButtonNum` or `Qt.MouseButton`),
-  `_localPoint` (`Point2D`/`QPoint`/`QPointF`, default widget centre),
-  `_sendMouse`.
+`tests/test_windows/_windows_test.py`: `WindowsAppTest` now subclasses
+`WidgetTest` (was `AppTest`), so the whole windows suite has the live-window /
+gesture surface. `run_main_window.py`: `window.show()` + `QTest.qWait` + `close()`
+→ `self.showLive(window)`; dropped the unused `QTest` import. (`run_menus` /
+`run_menu_internals` are logic/guard tests, unchanged.)
 
-### `_app_test_run.py` (edited) — authentic-first, headless fallback
-Fallback lives at the **process layer** because Qt **aborts uncatchably**
-when no platform initializes (an in-process try/except cannot catch it).
-- `_runPopen` → `_launch(RenderMode.AUTHENTIC)`; if
-  `_isDisplayFailure(code, output)` (non-zero exit **and** a platform-plugin
-  token from `_DISPLAY_FAILURE_TOKENS`), relaunch
-  `_launch(RenderMode.HEADLESS)` with a note prepended.
-- `_launch(mode)` = the Popen logic with `mode.applyEnv(baseEnv)`.
+## E. Two `latest.log` warnings fixed
 
-### `_app_test_suite.py` (edited)
-- **Run log**: module-level `_LogTee` forwards each write to the console
-  unchanged and to the log file with ANSI stripped (`_ANSI` regex). `runAll`
-  opens `<root>/latest.log`, wraps the body in
-  `redirect_stdout(_LogTee(...))`, and delegates to `_runReport()` (the old
-  body). `__root_dir__` (dir containing `tests/`) is the project root.
-- **Failed-class list**: `_runReport` collects `failedNames` (run failure →
-  `cls.__name__`; load failure → `_classNameFor(name)`),
-  `failures = len(failedNames)`, prints the count via `_log(1, …)` then a
-  **verbatim** indented list (`Failed:\n  A,\n  B`) — verbatim because
-  `_log` → `wordWrap` collapses newlines.
-- **`_classNameFor(name)`** classmethod: reads the module source (via
-  `__root_dir__` + dotted path, **no import**) and returns the first
-  `Run*`/`Test*` class name, else the dotted name — so a module that fails
-  to *import* still reports its class name in the summary.
+- **`QPainter::end: Painter ended with 1 saved states`** — a real latent bug.
+  `PaintedWidget.paintEvent` called `painter.save()` then `paintOp.paint(...)`;
+  if the op raised, control skipped `painter.restore()`. Fixed: per-op body
+  wrapped in `try/finally: painter.restore()`, so the painter reaches `end()`
+  balanced and any op exception still becomes an `EventException`.
+  (`src/worQt/widgets/_painted_widget.py`)
+- **`QCoreApplication::exec: The event loop is already running`** — benign,
+  expected (a test drives `App.__exit__`'s `exec()` inside the harness's running
+  loop). Added `'event loop is already running'` to
+  `AppTest._suppressBenignQtWarnings`. (`src/worQt/qtest/_app_test.py`)
 
-### `_app_test.py` (edited) — fixed inverted widget disposal (real bug)
-- `_deletePersistentWidgets` → renamed **`_disposeOpenedWidgets`**; the
-  condition was flipped to `if id(widget) not in preopenWidgets`. It now
-  keeps pre-open widgets and disposes only what the test opened (matching
-  the `setUp`/`tearDown` docstrings). Fixed
-  `RunAppTestInternals.run_teardown_keeps_preopen_widget`. Caller in
-  `tearDown` updated.
+## F. Triple-hold implemented (`_click_button.py`)
 
-### `__init__.py` (edited)
-Import order: `HookTest`, `SpaceTest`, `MetaTest`, `RenderMode`,
-`primitives`, `AppTest`, `AppTestRun`, `AppTestSuite`, `WidgetTest`,
-`testMeBro`. Exports include `RenderMode`, `primitives`, `WidgetTest`.
+Mirrored the triple-click tier on the hold side: five `*TripleHold` signals,
+`tripleHoldDict` Field + `_getTripleHoldDict` getter, and `_emitHolds` now caps
+at `> 3` with `{1: single, 2: double, 3: triple}` — identical in shape to
+`_emitClicks`. Fixed `run_emit_holds_branches` (the old `(_L, _L, _L)` "too many"
+case is now a valid triple → bumped to `(_L, _L, _L, _L)`; added a triple
+assertion) and added `run_triple_press_hold_emits_triple_hold` (event-driven).
 
----
+## G. Typed duplicate-registration exception
 
-## B. errorFmt fixes (`src/moreworktoy/utilities/_error_fmt.py`)
-- The `Caught <ExcType>` + message summary now renders **first** (frames are
-  deepest-first, so the error site sits right under the message). Each frame
-  gets a leading blank line.
-- **Skips synthetic frames**:
-  `if fileName.startswith('<') and fileName.endswith('>'): continue`
-  (drops `<frozen importlib._bootstrap>`, `<string>`, etc. empty boxes).
+Replaced both `NotImplementedError("lol we need a custom exception!")`
+placeholders. New `worQt.waitaminute.DuplicateRegistration(owner, name, existing,
+duplicate)` (`src/worQt/waitaminute/_duplicate_registration.py`, exported from
+the package `__init__`). Raised from `AbstractMenuBar.registerMenuType` and
+`AbstractMenu.registerActionType`. Updated the two `test_menu_boxes.py`
+assertions (`NotImplementedError` → `DuplicateRegistration`).
 
----
+## H. ClickButton state-machine cleanup — single source of truth
 
-## C. Widget bug fixes (exposed by authentic gestures; old white-box /
-offscreen tests masked them)
+Long design discussion (see section K). Decision: **keep guarding against mixed
+buttons** (the one-button-per-gesture invariant stays), but consolidate the
+guards. Changes to `src/worQt/widgets/_click_button.py`:
 
-- **`_paint_button.py` `_getContentRectPosition`**: was checking the
-  *offset* point against `paintView`; now checks `cursor in self.paintView`
-  and returns `Point2D(cursor.x - left, cursor.y - top)`.
-- **`_click_button.py` `mouseMoveEvent`**: drag distance was
-  `Vector2D(movePoint, contentRectPosition)` — mismatched coordinate systems
-  (any move cancelled the click). Now
-  `Vector2D(self.movePoint, self.assignedRectPosition)` (both widget coords).
-- **`_click_button.py` double-click**: **removed `mouseDoubleClickEvent`**,
-  added an **`event(self, e)`** reimplementation —
-  `if e.type() == QEvent.Type.MouseButtonDblClick: self.mousePressEvent(e);
-  return True` else `return super().event(e)`. Per the intended design, Qt's
-  double-click machinery is deliberately unused; the widget detects
-  double/triple from its own press/release sequence
-  (press → release → press → release → move-away), and Qt delivers the 2nd
-  press *as* a DblClick, so `event()` feeds it to `mousePressEvent`. Added
-  the `QEvent` import.
+- `_registerClick` is now the **sole guardian** of the invariant: the loop
+  became a single first-element check; docstring states the invariant.
+- `mousePressEvent` arms `movePoint`/timers **only if the press registered**
+  (`if not self.hasClicks: return`). This fixes a real crash: previously a press
+  of a different button emptied the sequence via `_registerClick` but
+  `mousePressEvent` still armed the hold timer, so **click one button then
+  press-and-hold a different button** raised `NotImplementedError` from inside
+  `_emitHolds` (empty-sequence). Now a rejected mix arms nothing.
+- `_emitClicks`/`_emitHolds` dropped the weak `firstButton != lastButton` guard
+  (dead code given the invariant) and trust `clickSequence[0]`.
+- **Removed the `> 3` "too many" guard** — replaced `clickDicts[len(...)]` with
+  `.get(len(...))`: `multiClick`/`multiHold` fire for *any* length; the
+  per-button single/double/triple signal fires only when a tier exists. No
+  `KeyError`, no explicit cap.
+- Tests (`run_click_button_internals.py`): pruned the now-dead mismatched
+  white-box cases; the "too many" cases use `(_L, _L, _L, _L)` and now assert
+  `multiClick`/`multiHold` fire with the full 4-tuple and no per-button signal;
+  removed the unused `_R` constant; fixed docstrings.
 
-### C2. Triple-click feature (`_click_button.py`)
-- Added `tripleClickDict` Field + `_getTripleClickDict` getter, and five
-  `*TripleClick` signals (`leftTripleClick`, …).
-- `_emitClicks`: `> 3 → multiClick only`; `clickDicts = {1: single,
-  2: double, 3: triple}`. **Kept the generalized `multiClick`** (emitted for
-  every sequence). Double-press-hold (`leftDoubleHold`) already worked and
-  was verified — no change needed there.
+## I. `worktoy_howto.md` created
+
+A survival guide for worktoy's unconventional design, at the repo root. Written
+as a **map that points to the source**, not a manual: metaclass/namespace hooks,
+`Field` accessors resolved by name on `type(instance)`, `AttriBox`/`THIS`
+semantics, overload dispatch + `flexCall`, frozen KeeNum members (no `@overload`
+on member methods), `__set_name__` interception/raise, typed exceptions +
+`SkipSet`, and the recursion-guard / preSet-SkipSet idioms. Every section tells
+the reader to open the real file and verify.
+
+## J. Memory correction
+
+`project_attribox_this_owner_alias` was **wrong** vs the current 1.0.0 source: it
+said `AttriBox[T](THIS)` builds `T(owner)`. The source
+(`core/_object.py::getContextualSentinels`) is clear — `THIS` → the **instance**,
+`OWNER` → the class — so it builds `T(instance)`. Corrected the note and the
+`MEMORY.md` index line. (Caught while writing `worktoy_howto.md` — a live example
+of "verify beats memory".)
 
 ---
 
-## D. Test suite conversion (`tests/test_widgets/`)
-- **Deleted** `_widget_test.py` (redundant `WidgetTest` base) and the dead,
-  broken `helpers/` package (`_mouse_event_factory.py` referenced `Button.Q`
-  on a type alias; `_example_app.py` unused).
-- Each `run_*` now imports `from worQt.qtest import WidgetTest` **directly**
-  (no re-export lay-over); `__init__.py` exports nothing.
-- **Rewrote `run_button_events.py`** to the gesture pattern (`_live` fixture
-  = build/resize/`showLive`/`initUI`; `showLive`,
-  `move/press/release/click/doubleClick/hold`, `spy/waitSignal`). Real
-  windows, real timers.
-- Offscreen `render(QPixmap)` → `showLive`: `run_render_sweep.py`,
-  `run_painted_widget.py` (3 tests), `run_paint_ops.py` (1 test; the **two**
-  paintEvent-exception tests keep `render()` for synchronous exception
-  capture), `run_widget_internals.py` (1 test).
-- `fired=[]`+lambda → `self.spy`, and hand-built `QMouseEvent` → gestures, in
-  `run_click_button_internals.py` and `run_buttons.py`.
-- **`tests/test_app/test_abstract_application.py`**: `AbstractApplication`
-  (removed — merged into `App`) → `App` in the import, `test_metaclass`,
-  `test_recursion_peek`, and docstrings.
+## K. The mixed-click question (design, resolved to "keep guarding")
 
----
-
-## Suite status
-Last full run before the final fixes: **46 passed / 3 failed**
-(`RunAppTestInternals`, `TestAbstractApplication`, `RunButtonEvents`). All
-three root causes were fixed this session. **Next: run the suite, check the
-fresh `latest.log`, add tests for triple-click / double-press-hold.**
+worQt buttons recognise same-button click/hold runs; a **different button
+cancels** the run. This is deliberate: the recognizer is **single-track** — one
+`movePoint`, one press/hold/sequential timer, one sequence — so it can follow
+only one button's lifecycle at a time. A different button is a *concurrent*
+gesture the machine has no state for; the guards force reality back onto that
+invariant. Supporting real mixed gestures (e.g. `L-R-L`) would require
+**per-button state** (each button its own press/hold/sequential/movePoint), with
+mixed gestures as a higher layer — a real rework, explicitly deferred. Also note
+`MouseButtonNum.fromEvent` uses `e.buttons()` (all held buttons), so truly
+*simultaneous* buttons would raise `ValueError` — a separate assumption mixed
+input would break.
 
 ## Open items
-- Triple **hold** not added (only double-press-hold was requested, and it
-  already exists). Trivial mirror if wanted: five `*TripleHold` signals,
-  `tripleHoldDict` + getter, length-3 case in `_emitHolds`.
-- No `RunButtonEvents` tests yet for triple-click or the double-press-hold
-  path.
-- Other GUI test files (`tests/test_windows/`: `run_menus`,
-  `run_menu_internals`, `run_main_window`) not yet reviewed for the same
-  gesture treatment.
+- **Run the suite** (section verification note). Confirm green + coverage after
+  F–H.
+- Mixed-button gestures deferred (needs per-button state; see K).
+- `run_menus` / `run_menu_internals` / other non-window windows tests were left
+  as logic tests (only `run_main_window` used a live window).
 
-## Key facts / gotchas learned
-- **App design**: `App(ApplicationMixin)` directly — there is **no**
-  `AbstractApplication` (the layered design in docstrings/CLAUDE.md was
-  collapsed). `App` carries `notify`, `handleException`, `_getSplash`,
-  `_getWindow`, `confirmExit`, splash/window Fields.
-- **Env python**: `/home/AsgerJon/miniforge3/envs/worqt_env/bin/python`.
-  Diagnostics (debugging, NOT the suite):
-  `QT_QPA_PLATFORM=offscreen PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-  <env-python> script.py`. Base `python` lacks `worktoy`.
-- **`latest.log`** is written to the project root by `runAll`.
-- **`ClickButton` timers**: press 250 ms, hold 750 ms, sequential 400 ms;
-  move limits 3**2 = 9.
-- `sendEvent` reaches `widget.event()` (through `notify`), so the `event()`
-  override is exercised by the gestures.
+## Working agreement (worktoy reliability + token cost)
+Reached this session and worth honouring:
+- **No subagents, ever** (user directive).
+- Don't preload all of worktoy; do **targeted just-in-time reads** of the one
+  file for the thing being touched — cheap *and* current.
+- worktoy is unconventional; a file that *uses* it looks conventional. **Verify
+  behaviour against a test or a 5-line probe, never from memory or a summary**
+  (this is the recurring source of regressions). worktoy lives at
+  `.../worqt_env/lib/python3.14/site-packages/worktoy/`.
+- Keep sessions narrowly scoped; long context correlates with drift.
 
----
-
-## worktoy reference relevant to worQt
-
-**`worktoy.mcls`** — metaclass framework. `BaseObject` (base for non-Qt worQt
-value classes), `BaseMeta`, `BaseSpace`, `AbstractMetaclass`,
-`AbstractNamespace`, `space_hooks`. worQt's `MixinMeta` fuses `BaseMeta` with
-Shiboken's metaclass; `qtest.MetaTest/SpaceTest/HookTest` subclass these to
-collect `run_*`/`test_*` methods.
-
-**`worktoy.desc`** — descriptors (the core idiom).
-- `Field()` — property-like; accessors by decorator `@x.GET/@x.SET/@x.DELETE`
-  plus notifiers `@x.preGet/onGet/preSet/onSet/preDelete/onDelete/setName`.
-  Accessors resolved **by name on `type(instance)`**, so subclasses override
-  by redefining the method. Use `Field` + private `__x__` slot for
-  per-instance / runtime-typed state.
-- `AttriBox[T](*args)` — lazy, type-enforced attribute; `THIS`/`OWNER`/`DESC`
-  sentinels in the deferred args. worQt rule: widgets/layouts in AttriBox,
-  `THIS` on widgets only (never layouts).
-- `FixBox[T]` (write-once), `FastBox[T]` (lean), `Alias('name')`,
-  `SymbolicName`, `BaseDescriptor`.
-
-**`worktoy.core`** — `Object` (contextual descriptor base; `self.instance`/
-`self.owner`), sentinels `THIS`, `OWNER`, `DESC`, `DELETED`, `METACALL`,
-`ARGS`, `MetaType`.
-
-**`worktoy.dispatch`** — overloading. `@overload(*types)` (stackable; `THIS`
-for the enclosing class; `strict=True` disables coercion),
-`@overload.flex/fallback/finalize`. Machinery: `TypeSig`, `Dispatcher`,
-`flexCall` (truncating-arg wrapper — why a method can take fewer args than
-passed). Used for overloaded `__init__` on geom/value types.
-
-**`worktoy.keenum`** — enumerations. `KeeNum` + `Kee[T](value)` (members must
-be UPPER_CASE). `KeeFlags`/`KeeFlag` (bitmask; 2**N members). `KeeBox`
-(AttriBox whose field type is an enum). `KeeMeta`/`KeeMetaMeta` — to extend
-the metaclass, subclass `KeeMeta` and use `YourMeta.keeNum` as the base (see
-`FontMeta`/`FontFamilyMeta`). **Members are frozen** → give them plain
-methods only, never `@overload` (the dispatcher's per-instance `setattr`
-cache is rejected — e.g. `FontWeightNum.apply`, `Alignum.apply`).
-
-**`worktoy.waitaminute`** — typed exceptions (fail-fast).
-`TypeException(name, obj, *types)`, `MissingVariable(instance, name,
-*types)`, `VariableNotNone`, `SubclassException`, `UnpackException`;
-`desc.ReadOnlyError/ProtectedError/WriteOnceError/AccessError/
-WithoutException`; `control_flow.SkipSet` (raise from `@x.preSet` to elide a
-redundant set — the "value unchanged → don't fire onSet" pattern).
-
-**`worktoy.utilities`** — `maybe(*args)`, `textFmt` (`<br>`/`<tab>` tokens),
-`stringList`, `wordWrap`, `joinWords`, `unpack`, `typeCast(type, val)`,
-`resolveMRO`, `QuickDesc('__slot__')`, `Directory`, `ExceptionInfo`.
-
-**`worktoy.work_test`** — `BaseTest` (the `unittest.TestCase` subclass
-`AppTest` extends). `worktoy.ezdata` (`EZData`/`EZField`) and
-`worktoy.lorem_ipsum` are peripheral (lorem drives the test samplers).
-
-### Recurring idioms
-- **Lazy getter + recursion guard**:
-  ```python
-  @x.GET
-  def _getX(self, **kwargs):
-    if self.__x__ is None:
-      if kwargs.get('_recursion', False): raise RecursionError
-      self._createX()                       # or assign fallback
-      return self._getX(_recursion=True)
-    if isinstance(self.__x__, T): return self.__x__
-    raise TypeException('__x__', self.__x__, T)
-  ```
-- **preSet SkipSet + onSet update**: `@x.preSet` raises `SkipSet` when the
-  value is unchanged; `@x.onSet` calls `self.update()`.
-- **No kwargs when constructing** (positional only), except the
-  `_recursion=True` guard idiom, which is pervasive and accepted.
-- Conventions: 2-space indent, <=77 cols, `camelCase`/`PascalCase`,
-  `'single quotes'` in docstrings (never backticks), descriptive
-  third-person docstrings, `from __future__ import annotations`, typing-only
-  imports under `if TYPE_CHECKING:`.
+## Key facts / gotchas
+- **Never run the test suite** as the assistant — the user runs it.
+- Env python: `/home/AsgerJon/miniforge3/envs/worqt_env/bin/python`. Base
+  `python` lacks `worktoy`. `py_compile` is fine for a syntax check (it does not
+  execute class bodies / the worktoy machinery).
+- `latest.log` is written to the project root by `runAll`.
+- ClickButton timers: press 250 ms, hold 750 ms, sequential 400 ms; move limits
+  3**2 = 9. `multiClick`/`multiHold(tuple)` fire for every resolved run of any
+  length; per-button single/double/triple only for lengths 1–3.

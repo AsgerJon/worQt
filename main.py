@@ -72,5 +72,15 @@ def tester01() -> int:
   return 0
 
 
+def runClickDemo(*args) -> int:
+  """
+  Launch the click-button demo app from the 'click_demo' package.
+  """
+  from click_demo import ClickDemoApp
+  with ClickDemoApp(*sys.argv) as app:
+    app.window.show()
+  return app.returnCode
+
+
 if __name__ == '__main__':
-  yolo(testMeBro, )
+  yolo(runClickDemo, )

@@ -217,6 +217,18 @@ class RunButtonEvents(WidgetTest):
     self.hold(button, _HOLD_MS, center)
     self.assertEqual(holdSpy.count, 1)
 
+  def run_triple_press_hold_emits_triple_hold(self) -> None:
+    """Two clicks followed by a same-button press-hold emit 'leftTripleHold':
+    the two clicks register, then the held third press reaches the hold timer
+    at a sequence of length three."""
+    button = self._live(ClickButton)
+    center = button.paintView.center
+    holdSpy = self.spy(button.leftTripleHold)
+    self.click(button, center)
+    self.click(button, center)
+    self.hold(button, _HOLD_MS, center)
+    self.assertEqual(holdSpy.count, 1)
+
   # \____________________________ ClickButton move handling
 
   def run_small_move_keeps_timers(self) -> None:

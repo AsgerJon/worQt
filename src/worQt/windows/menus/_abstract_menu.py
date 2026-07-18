@@ -15,6 +15,7 @@ from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException, SubclassException
 
 from ...mixin import MixinBase
+from ...waitaminute import DuplicateRegistration
 from . import AbstractAction
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -90,7 +91,7 @@ class AbstractMenu(QMenu, MixinBase):
     """
     existing = cls._classGetRegisteredActionTypes()
     if name in existing:
-      raise NotImplementedError("""lol we need a custom exception!""")
+      raise DuplicateRegistration(cls, name, existing[name], actionType)
     if not isinstance(actionType, type):
       raise TypeException('actionType', actionType, type)
     if not issubclass(actionType, AbstractAction):

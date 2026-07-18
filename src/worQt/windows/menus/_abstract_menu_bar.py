@@ -16,6 +16,7 @@ from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException, SubclassException
 
 from ...mixin import MixinBase
+from ...waitaminute import DuplicateRegistration
 from . import AbstractMenu
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -83,7 +84,7 @@ class AbstractMenuBar(QMenuBar, MixinBase):
     """
     existing = cls._classGetRegisteredMenuTypes()
     if name in existing:
-      raise NotImplementedError("""lol we need a custom exception!""")
+      raise DuplicateRegistration(cls, name, existing[name], menuType)
     if not isinstance(menuType, type):
       raise TypeException('menuType', menuType, type)
     if not issubclass(menuType, AbstractMenu):

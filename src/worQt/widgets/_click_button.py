@@ -1,17 +1,32 @@
 """
-ClickButton subclasses 'PaintButton' and implements button functionality
-and logic.
+ClickButton subclasses 'PaintButton' and recognises click and hold
+sequences from the raw mouse events, dispatching each as a Qt signal.
+
+The recogniser is an explicit three-phase state machine: 'IDLE',
+'PRESSING' (a button is down) and 'WAITING' (a click landed, waiting for
+the next). A 'Click Sequence' is a run of same-button clicks; a 'Hold
+Sequence' is such a run whose final press is held into the hold band.
+
+Every timing and drift threshold is a labelled default in the 'DEFAULT
+VALUES' block; a subclass customises the recogniser by overriding any of
+them. The drift for a whole sequence is measured from the first click's
+point (the anchor).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload, TypeVar
 
-from PySide6.QtCore import QTimer, Signal, SignalInstance, QEvent
+from PySide6.QtCore import (QTimer,
+                            QElapsedTimer,
+                            Signal,
+                            SignalInstance,
+                            QEvent,
+                            QObject)
 from PySide6.QtGui import QMouseEvent
-from icecream import ic
 from worktoy.desc import Field
+from worktoy.keenum import KeeNum, Kee
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException, MissingVariable
 
@@ -19,70 +34,100 @@ from ..utils import MouseButtonNum
 from ..utils.geom import Point2D, Vector2D
 from . import PaintButton
 
+T = TypeVar('T')
+
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Optional, Union, Mapping
+  from typing import Type, Any, TypeAlias, Union, Optional, Mapping
 
-  MaybeBool: TypeAlias = Optional[bool]
-  MaybePoint2D: TypeAlias = Optional[Point2D]
-  Point2DField: TypeAlias = Union[Point2D, Field]
-  MaybeTimer: TypeAlias = Optional[QTimer]
-  TimerField: TypeAlias = Union[QTimer, Field]
-  BoolField: TypeAlias = Union[bool, Field]
-
+  Meta: TypeAlias = Type[QObject]
+  Sig: TypeAlias = Union[Signal, SignalInstance]
+  MaybeObject: TypeAlias = Optional[QObject]
   ClickSequence: TypeAlias = tuple[MouseButtonNum, ...]
-  ClickSequenceField: TypeAlias = Union[ClickSequence, Field]
-  MaybeClickSequence: TypeAlias = Optional[ClickSequence]
 
-  __cpp_wyd__: TypeAlias = Union[Signal, SignalInstance]
+
+  # @formatter:off
+  class __cpp_wyd__:
+    @overload
+    def __get__(self, instance: None, owner: Meta) -> Signal: ...
+    @overload
+    def __get__(self, instance: QObject, owner: Meta) -> SignalInstance: ...
+    def __get__(self, instance: MaybeObject, owner: Meta) -> Sig: ...
   ClickDict: TypeAlias = Mapping[MouseButtonNum, __cpp_wyd__]
-  ClickDictField: TypeAlias = Union[ClickDict, Field]
+  # @formatter:on
+else:
+  __cpp_wyd__ = object
+
+
+class ClickPhase(KeeNum):
+  """The three phases of the click/hold recogniser."""
+
+  IDLE = Kee[int](0)  # nothing collected, no button down
+  PRESSING = Kee[int](1)  # a button is currently held down
+  WAITING = Kee[int](2)  # a click landed, waiting for the next
 
 
 class ClickButton(PaintButton):
   """
-  ClickButton subclasses 'PaintButton' and implements button functionality
-  and logic.
+  ClickButton subclasses 'PaintButton' and recognises click and hold
+  sequences as an explicit state machine.
   """
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DEFAULT VALUES   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Subclasses customise the recogniser by overriding any of these.
+  #
+  #  Duration bands — how long the final button stays down (milliseconds,
+  #  press to release):
+  #    below pressLimit ......... a click, added to the sequence
+  #    pressLimit .. holdLimit .. rejected: 'pressRejected' (dead zone 1)
+  #    holdLimit .. holdMax ..... a hold, dispatched on release
+  #    holdMax and beyond ....... rejected: 'holdTooLong'   (dead zone 2)
+  __press_time_limit__: int = 250  # a click must release before this
+  __hold_time_limit__: int = 750  # a hold must pass this ('_holdArmed')
+  __hold_max_limit__: int = 1500  # holding past this is rejected
+  #
+  #  Sequence wait — how long to wait after a release for the next click
+  #  before the collected Click Sequence is dispatched (milliseconds).
+  __sequential_time_limit__: int = 400
+  #
+  #  Drift limits — squared pixel distance the cursor may wander from the
+  #  first-click anchor. Down: exceeding cancels (regret). Waiting up:
+  #  exceeding dispatches the collected clicks at once.
+  __press_move_limit__: int = 3 ** 2  # while a button is down
+  __sequential_move_limit__: int = 3 ** 2  # while waiting for the next
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  #  Class Variables
-
-  #  Fallback Variables
-  # --- Time limits
-  __press_time_limit__: int = 250  # Milliseconds
-  __hold_time_limit__: int = 750  # Milliseconds
-  __sequential_time_limit__: int = 400  # Milliseconds
-  # --- Move limits
-  __press_move_limit__: int = 3 ** 2  # Move limit (squared)
-  __hold_move_limit__: int = 3 ** 2  # Move limit (squared)
-  __sequential_move_limit__: int = 3 ** 2  # Move limit (squared)
-
   #  Private Variables
-  __invalid_state__: MaybeBool = None
-  __move_point__: MaybePoint2D = None
-  __press_timer__: MaybeTimer = None
-  __hold_timer__: MaybeTimer = None
-  __sequential_timer__: MaybeTimer = None
-  __click_sequence__: MaybeClickSequence = None
+  __invalid_state__: Optional[bool] = None
+  __move_point__: Optional[Point2D] = None  # first-click drift anchor
+  __press_clock__: Optional[QElapsedTimer] = None  # times the live press
+  __hold_timer__: Optional[QTimer] = None
+  __hold_max_timer__: Optional[QTimer] = None
+  __sequential_timer__: Optional[QTimer] = None
+  __click_sequence__: Optional[tuple[MouseButtonNum, ...]] = None
+  __click_phase__ = ClickPhase.IDLE
 
   #  Public Variables
-  movePoint: Point2DField = Field()
-  pressTimer: TimerField = Field()
-  holdTimer: TimerField = Field()
-  sequentialTimer: TimerField = Field()
-  clickSequence: ClickSequenceField = Field()
-  hasClicks: BoolField = Field()
+  movePoint: Field[Point2D] = Field()
+  holdTimer: Field[QTimer] = Field()
+  holdMaxTimer: Field[QTimer] = Field()
+  sequentialTimer: Field[QTimer] = Field()
+  clickSequence: Field[ClickSequence] = Field()
+  hasClicks: Field[bool] = Field()
 
   #  Virtual Variables
-  moving: BoolField = Field()
-  singleClickDict: ClickDictField = Field()
-  singleHoldDict: ClickDictField = Field()
-  doubleClickDict: ClickDictField = Field()
-  doubleHoldDict: ClickDictField = Field()
-  tripleClickDict: ClickDictField = Field()
+  moving: Field[bool] = Field()
+  phase: Field[ClickPhase] = Field()
+  singleClickDict: Field[ClickDict] = Field()
+  singleHoldDict: Field[ClickDict] = Field()
+  doubleClickDict: Field[ClickDict] = Field()
+  doubleHoldDict: Field[ClickDict] = Field()
+  tripleClickDict: Field[ClickDict] = Field()
+  tripleHoldDict: Field[ClickDict] = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -121,6 +166,24 @@ class ClickButton(PaintButton):
   forwardTripleClick = Signal()
   backTripleClick = Signal()
 
+  leftTripleHold = Signal()
+  rightTripleHold = Signal()
+  middleTripleHold = Signal()
+  forwardTripleHold = Signal()
+  backTripleHold = Signal()
+
+  #  Private feedback: the hold band was entered while still holding. It is
+  #  exposed for subclasses that want to animate the armed hold; the public
+  #  '*Hold' dispatch only happens on release.
+  _holdArmed = Signal(tuple)
+
+  #  Rejection signals (payload: the partial sequence), one per reason so a
+  #  subclass can animate or sound each rejection distinctly.
+  pressRejected = Signal(tuple)  # dead zone 1: too slow to click
+  holdTooLong = Signal(tuple)  # dead zone 2: held past holdMax
+  moveRegret = Signal(tuple)  # drifted away while a button was down
+  buttonMismatch = Signal(tuple)  # a different button interrupted the run
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -138,35 +201,38 @@ class ClickButton(PaintButton):
   def _getMoving(self, ) -> bool:
     return False if self.__move_point__ is None else True
 
-  def _createPressTimer(self) -> None:
-    self.__press_timer__ = QTimer(self, )
-    QTimer.setSingleShot(self.__press_timer__, True)
-    self.__press_timer__.setInterval(self.__press_time_limit__)
-    self.__press_timer__.timeout.connect(self._onPressExpired)
+  @phase.GET
+  def _getPhase(self, ) -> ClickPhase:
+    return self.__click_phase__
+
+  def _pressClock(self, ) -> QElapsedTimer:
+    """The elapsed-time clock timing the live press. Started on every
+    press, read on release to place the press in a duration band."""
+    if self.__press_clock__ is None:
+      self.__press_clock__ = QElapsedTimer()
+    return self.__press_clock__
 
   def _createHoldTimer(self) -> None:
-    self.__hold_timer__ = QTimer(self, )
-    QTimer.setSingleShot(self.__hold_timer__, True)
-    self.__hold_timer__.setInterval(self.__hold_time_limit__)
-    self.__hold_timer__.timeout.connect(self._onHoldExpired)
+    holdTimer: QTimer = QTimer(self, )
+    QTimer.setSingleShot(holdTimer, True)
+    QTimer.setInterval(holdTimer, self.__hold_time_limit__)
+    QTimer.timeout.__get__(holdTimer, QTimer).connect(self._onHoldArmed)
+    self.__hold_timer__ = holdTimer
+
+  def _createHoldMaxTimer(self) -> None:
+    holdMaxTimer: QTimer = QTimer(self, )
+    QTimer.setSingleShot(holdMaxTimer, True)
+    QTimer.setInterval(holdMaxTimer, self.__hold_max_limit__)
+    QTimer.timeout.__get__(holdMaxTimer, QTimer).connect(self._onHoldTooLong)
+    self.__hold_max_timer__ = holdMaxTimer
 
   def _createSequentialTimer(self) -> None:
-    self.__sequential_timer__ = QTimer(self, )
-    QTimer.setSingleShot(self.__sequential_timer__, True)
-    self.__sequential_timer__.setInterval(self.__sequential_time_limit__)
-    self.__sequential_timer__.timeout.connect(self._onSequentialExpired)
-
-  @pressTimer.GET
-  def _getPressTimer(self, **kwargs) -> QTimer:
-    if self.__press_timer__ is None:
-      if kwargs.get('_recursion', False):
-        raise RecursionError
-      self._createPressTimer()
-      return self._getPressTimer(_recursion=True)
-    if isinstance(self.__press_timer__, QTimer):
-      return self.__press_timer__
-    name, value = '__press_timer__', self.__press_timer__
-    raise TypeException(name, value, QTimer)
+    sequentialTimer: QTimer = QTimer(self, )
+    QTimer.setSingleShot(sequentialTimer, True)
+    QTimer.setInterval(sequentialTimer, self.__sequential_time_limit__)
+    QTimer.timeout.__get__(sequentialTimer, QTimer).connect(
+        self._onSequentialExpired)
+    self.__sequential_timer__ = sequentialTimer
 
   @holdTimer.GET
   def _getHoldTimer(self, **kwargs) -> QTimer:
@@ -178,6 +244,18 @@ class ClickButton(PaintButton):
     if isinstance(self.__hold_timer__, QTimer):
       return self.__hold_timer__
     name, value = '__hold_timer__', self.__hold_timer__
+    raise TypeException(name, value, QTimer)
+
+  @holdMaxTimer.GET
+  def _getHoldMaxTimer(self, **kwargs) -> QTimer:
+    if self.__hold_max_timer__ is None:
+      if kwargs.get('_recursion', False):
+        raise RecursionError
+      self._createHoldMaxTimer()
+      return self._getHoldMaxTimer(_recursion=True)
+    if isinstance(self.__hold_max_timer__, QTimer):
+      return self.__hold_max_timer__
+    name, value = '__hold_max_timer__', self.__hold_max_timer__
     raise TypeException(name, value, QTimer)
 
   @sequentialTimer.GET
@@ -208,7 +286,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleClick,
       MouseButtonNum.FORWARD: self.forwardClick,
       MouseButtonNum.BACK   : self.backClick,
-      }
+    }
 
   @singleHoldDict.GET
   def _getSingleHoldDict(self, ) -> ClickDict:
@@ -218,7 +296,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleHold,
       MouseButtonNum.FORWARD: self.forwardHold,
       MouseButtonNum.BACK   : self.backHold,
-      }
+    }
 
   @doubleClickDict.GET
   def _getDoubleClickDict(self, ) -> ClickDict:
@@ -228,7 +306,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleDoubleClick,
       MouseButtonNum.FORWARD: self.forwardDoubleClick,
       MouseButtonNum.BACK   : self.backDoubleClick,
-      }
+    }
 
   @doubleHoldDict.GET
   def _getDoubleHoldDict(self, ) -> ClickDict:
@@ -238,7 +316,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleDoubleHold,
       MouseButtonNum.FORWARD: self.forwardDoubleHold,
       MouseButtonNum.BACK   : self.backDoubleHold,
-      }
+    }
 
   @tripleClickDict.GET
   def _getTripleClickDict(self, ) -> ClickDict:
@@ -248,176 +326,110 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleTripleClick,
       MouseButtonNum.FORWARD: self.forwardTripleClick,
       MouseButtonNum.BACK   : self.backTripleClick,
-      }
+    }
+
+  @tripleHoldDict.GET
+  def _getTripleHoldDict(self, ) -> ClickDict:
+    return {
+      MouseButtonNum.LEFT   : self.leftTripleHold,
+      MouseButtonNum.RIGHT  : self.rightTripleHold,
+      MouseButtonNum.MIDDLE : self.middleTripleHold,
+      MouseButtonNum.FORWARD: self.forwardTripleHold,
+      MouseButtonNum.BACK   : self.backTripleHold,
+    }
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  STATE MACHINE   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def _registerClick(self, button: MouseButtonNum) -> None:
-    """
-    This method registers a click of the given button. This is done by
-    appending the button to the 'clickSequence' and starting the
-    'sequentialTimer' to wait for a potential next click in the sequence.
-    """
+    """Append 'button' to the sequence, or reject the run with
+    'buttonMismatch' when a different button interrupts it. Sole guardian
+    of the one-button-per-sequence invariant, so everything downstream may
+    assume a single repeated button."""
     if not button:
       raise ValueError('Cannot register click of no button!')
-    existing = self._getClickSequence()
-    for existingButton in existing:
-      if existingButton != button:
-        return self._invalidateClicks()  # a different button cancels
-    self.__click_sequence__ = (*existing, button)  # same button accumulates
+    existing = self.clickSequence
+    if existing and existing[0] != button:
+      return self._reject(self.buttonMismatch)  # different button abandons
+    self.__click_sequence__ = (*existing, button)
     return None
 
-  def _clearClickSequence(self, ) -> None:
-    """
-    This method clears the stored click sequence. This is done by setting
-    the 'clickSequence' to an empty tuple and stopping the 'sequentialTimer'.
-    """
+  def _reset(self, ) -> None:
+    """Return the recogniser to 'IDLE': drop the sequence and the anchor,
+    stop every timer."""
     self.__click_sequence__ = None
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def _onPressExpired(self, ) -> None:
-    """
-    The press time limit ensures that no click occurs if the user holds
-    the button for too long. The state of the press timer indicates
-    whether a normal click is in progress. Upon timeout, the user may be
-    attempting to issue a 'press-hold' action. Thus, this method connected
-    to the 'timeout' signal of the 'pressTimer', does not actually do
-    anything in this base implementation.
-    """
-
-  def _onPressMoved(self, ) -> None:
-    """
-    This method is called when the user moves the mouse while still
-    holding down the mouse button. This allows the user to cancel a click
-    before releasing the mouse button, if the initial press was in error.
-    Thus, this method invokes the '_invalidateClicks' method.
-    """
-    self._invalidateClicks()
-
-  def _onHoldExpired(self, ) -> None:
-    """
-    This method is called when the user has held the mouse button long
-    enough to have indicated for the press-hold action.
-    """
-    self._emitHolds()
-
-  def _onHoldMoved(self, ) -> None:
-    """
-    This method is called when the user moves the mouse while still
-    holding the button. This cancels the ongoing user input.
-    """
-    self._invalidateClicks()
-
-  def _onSequentialExpired(self, ) -> None:
-    """
-    This method is called when the time limit for waiting for the next
-    click in a sequential click like doubleclick expires. This means that
-    this emits the stored clicks.
-    """
-    self._emitClicks()
-
-  def _onSequentialMoved(self, ) -> None:
-    """
-    If while waiting for a potential next click in a sequence, the user
-    moves the mouse, this is understood as the user having now issued the
-    desired sequence of clicks. Thus, this method emits the stored clicks
-    as a sequence, *without* the user having to wait for the sequence
-    timer to expire.
-    """
-    self._emitClicks()
-
-  def _invalidateClicks(self, ) -> None:
-    """
-    This method stops all timers and removes all ongoing click actions.
-    """
-    self._clearClickSequence()
-    self._stopTimers()
     self.__move_point__ = None
+    self.__click_phase__ = ClickPhase.IDLE
+    self._stopTimers()
+
+  def _stopTimers(self, ) -> None:
+    """Stop the hold, hold-max and sequential timers."""
+    QTimer.stop(self.holdTimer)
+    QTimer.stop(self.holdMaxTimer)
+    QTimer.stop(self.sequentialTimer)
+
+  def _reject(self, signal: SignalInstance) -> None:
+    """Emit rejection 'signal' with the partial sequence, then reset."""
+    signal.emit(self.clickSequence)
+    return self._reset()
 
   def _emitClicks(self, ) -> None:
-    """
-    This method emits the stored sequence of clicks. Every sequence is
-    reported through the generalized 'multiClick' signal; in addition, a
-    same-button run of one, two or three clicks emits the matching
-    'singleClickDict'/'doubleClickDict'/'tripleClickDict' signal. A run
-    longer than three, or of mixed buttons, is reported through
-    'multiClick' alone.
-    """
+    """Dispatch the collected Click Sequence through 'multiClick' and, for
+    a run of one, two or three, the matching per-button tier signal. Then
+    reset. The run is a single repeated button by the '_registerClick'
+    invariant."""
     if not self.hasClicks:
       raise NotImplementedError
     self.multiClick.emit(self.clickSequence)
-    if len(self.clickSequence) > 3:
-      return self._invalidateClicks()
-    firstButton, lastButton = self.clickSequence[0], self.clickSequence[-1]
-    if firstButton != lastButton:
-      return self._invalidateClicks()
-    clickDicts = {
+    clickDict = {
       1: self.singleClickDict,
       2: self.doubleClickDict,
       3: self.tripleClickDict,
-      }
-    clickDict = clickDicts[len(self.clickSequence)]
-    clickDict[firstButton].emit()
-    return self._invalidateClicks()
+    }.get(len(self.clickSequence))
+    if clickDict is not None:
+      clickDict[self.clickSequence[0]].emit()
+    return self._reset()
 
   def _emitHolds(self, ) -> None:
-    """
-    This method does the same as '_emitClicks' but for hold actions.
-    """
+    """Dispatch the collected Hold Sequence through 'multiHold' and the
+    matching per-button tier signal, then reset."""
     if not self.hasClicks:
       raise NotImplementedError
     self.multiHold.emit(self.clickSequence)
-    if len(self.clickSequence) > 2:
-      return self._invalidateClicks()
-    firstButton, lastButton = self.clickSequence[0], self.clickSequence[-1]
-    if firstButton != lastButton:
-      return self._invalidateClicks()
-    if len(self.clickSequence) == 2:
-      holdDict = self.doubleHoldDict
-    else:
-      holdDict = self.singleHoldDict
-    holdDict[firstButton].emit()
-    return self._invalidateClicks()
+    holdDict = {
+      1: self.singleHoldDict,
+      2: self.doubleHoldDict,
+      3: self.tripleHoldDict,
+    }.get(len(self.clickSequence))
+    if holdDict is not None:
+      holdDict[self.clickSequence[0]].emit()
+    return self._reset()
 
-  def _stopTimers(self, ) -> None:
-    """
-    This method stops all timers.
-    """
-    QTimer.stop(self.pressTimer)
-    QTimer.stop(self.holdTimer)
-    QTimer.stop(self.sequentialTimer)
+  def _onHoldArmed(self, ) -> None:
+    """The hold timer reached 'holdLimit' while the button is still down:
+    the press has entered the hold band. Fire the private '_holdArmed' for
+    animation; the public dispatch waits for the release."""
+    self._holdArmed.emit(self.clickSequence)
+
+  def _onHoldTooLong(self, ) -> None:
+    """The button has been held past 'holdMax' without releasing: reject
+    the run as dead zone 2."""
+    self._reject(self.holdTooLong)
+
+  def _onSequentialExpired(self, ) -> None:
+    """No further click arrived within the wait window: dispatch the
+    collected Click Sequence."""
+    self._emitClicks()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def mouseMoveEvent(self, e: QMouseEvent) -> None:
-    super().mouseMoveEvent(e)
-    if self.moving:
-      move = Vector2D(self.movePoint, self.assignedRectPosition)
-      if QTimer.isActive(self.pressTimer):
-        if move.magSqr > self.__press_move_limit__:
-          return self._onPressMoved()
-      if QTimer.isActive(self.holdTimer):
-        if move.magSqr > self.__hold_move_limit__:
-          return self._onHoldMoved()
-      if QTimer.isActive(self.sequentialTimer):
-        if move.magSqr > self.__sequential_move_limit__:
-          return self._onSequentialMoved()
-    return None
-
   def event(self, e: QEvent) -> bool:
-    #  Qt's double-click machinery is deliberately not used: a double click
-    #  is recognised from the press/release sequence this widget monitors
-    #  in 'mousePressEvent'/'mouseReleaseEvent'. Qt delivers the second
-    #  press of a double click as a 'MouseButtonDblClick' event, so it is
-    #  fed to 'mousePressEvent' as an ordinary press here rather than
-    #  dispatched to the unused 'mouseDoubleClickEvent'.
+    #  Qt delivers the second press of a double click as a
+    #  'MouseButtonDblClick' event; feed it to 'mousePressEvent' as an
+    #  ordinary press so the recogniser sees every press uniformly.
     if e.type() == QEvent.Type.MouseButtonDblClick:
       self.mousePressEvent(e)
       return True
@@ -427,23 +439,49 @@ class ClickButton(PaintButton):
     super().mousePressEvent(e)
     if (not self.hovered) or self.__invalid_state__:
       return None
-    self._stopTimers()
-    button = MouseButtonNum.fromEvent(e)
-    self._registerClick(button)
-    self.__move_point__ = Point2D(e.position())
-    self.pressTimer.start()
-    return self.holdTimer.start()
+    QTimer.stop(self.sequentialTimer)  # a new press ends the wait
+    fresh = not self.hasClicks
+    self._registerClick(MouseButtonNum.fromEvent(e))
+    if not self.hasClicks:  # rejected (different button): already reset
+      return None
+    if fresh:  # first press of the run anchors the drift reference
+      self.__move_point__ = Point2D(e.position())
+    self._pressClock().start()
+    self.__click_phase__ = ClickPhase.PRESSING
+    QTimer.start(self.holdTimer)
+    return QTimer.start(self.holdMaxTimer)
 
   def mouseReleaseEvent(self, e: QMouseEvent) -> None:
     super().mouseReleaseEvent(e)
     if (not self.hovered) or self.__invalid_state__:
       return None
-    if not self.hasClicks:
-      return self._invalidateClicks()
-    if not self.pressTimer.isActive():
-      return self._invalidateClicks()
-    self._stopTimers()
-    return self.sequentialTimer.start()
+    if self.phase is not ClickPhase.PRESSING:
+      return None  # spurious release with no press in flight
+    elapsed = self._pressClock().elapsed()
+    QTimer.stop(self.holdTimer)
+    QTimer.stop(self.holdMaxTimer)
+    if elapsed < self.__press_time_limit__:  # a click: await the next
+      self.__click_phase__ = ClickPhase.WAITING
+      return QTimer.start(self.sequentialTimer)
+    if elapsed < self.__hold_time_limit__:  # dead zone 1
+      return self._reject(self.pressRejected)
+    if elapsed < self.__hold_max_limit__:  # a hold
+      return self._emitHolds()
+    return self._reject(self.holdTooLong)  # dead zone 2 (edge)
+
+  def mouseMoveEvent(self, e: QMouseEvent) -> None:
+    super().mouseMoveEvent(e)
+    if not self.moving:
+      return None
+    drift = Vector2D(self.movePoint, self.assignedRectPosition)
+    if self.phase is ClickPhase.PRESSING:  # regret cancels a held button
+      if drift.magSqr > self.__press_move_limit__:
+        return self._reject(self.moveRegret)
+      return None
+    if self.phase is ClickPhase.WAITING:  # completing the click sequence
+      if drift.magSqr > self.__sequential_move_limit__:
+        return self._emitClicks()
+    return None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -1,8 +1,8 @@
 """
 RunClickButtonInternals covers the 'ClickButton' branches not reached by
 the event-driven tests: the 'movePoint' and timer accessor guards, the
-emit paths for clicks and holds (more than two, mismatched buttons, the
-double case), the move-cancel handlers, the release edges and the
+emit paths for clicks and holds (a run longer than three, the double and
+triple cases), the move-cancel handlers, the release edges and the
 state-validity toggles.
 """
 #  Apache-2.0 license
@@ -22,7 +22,6 @@ if TYPE_CHECKING:  # pragma: no cover
   from typing import Any
 
 _L = MouseButtonNum.LEFT
-_R = MouseButtonNum.RIGHT
 
 
 class RunClickButtonInternals(WidgetTest):
@@ -61,17 +60,16 @@ class RunClickButtonInternals(WidgetTest):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def run_emit_clicks_too_many(self) -> None:
-    """More than two clicks emit the multi-signal and then reset."""
+    """A run longer than the per-button tiers still fires 'multiClick' with
+    the full sequence, emits no per-button signal, then resets."""
     button = ClickButton()
-    button.__click_sequence__ = (_L, _L, _L)
+    multiSpy = self.spy(button.multiClick)
+    tripleSpy = self.spy(button.leftTripleClick)
+    button.__click_sequence__ = (_L, _L, _L, _L)
     button._emitClicks()
-    self.assertFalse(button.hasClicks)
-
-  def run_emit_clicks_mismatched(self) -> None:
-    """Two clicks of different buttons reset without a per-button signal."""
-    button = ClickButton()
-    button.__click_sequence__ = (_L, _R)
-    button._emitClicks()
+    self.assertEqual(multiSpy.count, 1)
+    self.assertEqual(multiSpy.args, ((_L, _L, _L, _L),))
+    self.assertEqual(tripleSpy.count, 0)
     self.assertFalse(button.hasClicks)
 
   def run_emit_clicks_double(self) -> None:
@@ -83,20 +81,26 @@ class RunClickButtonInternals(WidgetTest):
     self.assertEqual(doubleSpy.count, 1)
 
   def run_emit_holds_branches(self) -> None:
-    """The hold emitter mirrors the click emitter's three branches."""
+    """The hold emitter mirrors the click emitter's tiers: a run longer than
+    three emits 'multiHold' only, a same-button double emits the double-hold
+    and a triple the triple-hold."""
     tooMany = ClickButton()
-    tooMany.__click_sequence__ = (_L, _L, _L)
+    multiSpy = self.spy(tooMany.multiHold)
+    tooMany.__click_sequence__ = (_L, _L, _L, _L)
     tooMany._emitHolds()
+    self.assertEqual(multiSpy.count, 1)
+    self.assertEqual(multiSpy.args, ((_L, _L, _L, _L),))
     self.assertFalse(tooMany.hasClicks)
-    mismatched = ClickButton()
-    mismatched.__click_sequence__ = (_L, _R)
-    mismatched._emitHolds()
-    self.assertFalse(mismatched.hasClicks)
     double = ClickButton()
     doubleSpy = self.spy(double.leftDoubleHold)
     double.__click_sequence__ = (_L, _L)
     double._emitHolds()
     self.assertEqual(doubleSpy.count, 1)
+    triple = ClickButton()
+    tripleSpy = self.spy(triple.leftTripleHold)
+    triple.__click_sequence__ = (_L, _L, _L)
+    triple._emitHolds()
+    self.assertEqual(tripleSpy.count, 1)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  MOVE CANCEL HANDLERS  # # # # # # # # # # # # # # # # # # # # # # # # #
