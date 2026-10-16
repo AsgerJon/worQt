@@ -51,14 +51,6 @@ class AbstractWidget(QWidget, WidgetMixin):
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def initUI(self, ) -> None:
-    """
-    This method is invoked during 'showEvent' before the super call.
-    Subclasses should implement this method rather than the 'showEvent'
-    method if at all possible. The default implementation does nothing.
-    """
-    pass
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

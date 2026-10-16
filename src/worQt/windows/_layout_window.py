@@ -13,7 +13,6 @@ from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
 
 from . import BaseWindow
-from ..layouts import BaseLayout
 from ..widgets import AbstractWidget
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -32,13 +31,10 @@ class LayoutWindow(BaseWindow):
 
   #  Public Variables
   baseWidget = AttriBox[AbstractWidget](THIS)
-  baseLayout = AttriBox[BaseLayout]()  # No THIS!
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PARENT METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def initUI(self, ) -> None:
-    #  self.baseLayout.addWidget(...)
-    self.baseWidget.setLayout(self.baseLayout)
     self.setCentralWidget(self.baseWidget)

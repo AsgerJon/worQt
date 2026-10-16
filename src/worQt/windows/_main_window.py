@@ -29,4 +29,3 @@ class MainWindow(LayoutWindow):
     This method should implement the business logic of the application and
     connect signals and slots.
     """
-    #  self.this.connect(self.that)

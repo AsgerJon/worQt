@@ -12,17 +12,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QMargins
+from types import NotImplementedType as NIType
+
+from PySide6.QtCore import QMargins, QSize, QSizeF, QRect, QRectF
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox, Field
 from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
 
-from ._rect import Rect
-from ._size import Size
+from . import Rect
+from . import Size
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Self
+  from typing import Self, Any, Optional, Union
 
 
 class InSets(BaseObject):
@@ -92,40 +94,117 @@ class InSets(BaseObject):
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @overload(Rect)
-  def __radd__(self, rect: Rect) -> Rect:
-    """'rect + insets' grows the rect outward by the insets."""
-    return Rect(rect.left - self.left, rect.top - self.top,
-                rect.right + self.right, rect.bottom + self.bottom)
+  @classmethod
+  def _resolveOther(cls, other: Any) -> Union[Self, NIType]:
+    if isinstance(other, cls):
+      return other
+    try:
+      resolved = cls(other)
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return resolved
 
-  @overload(Rect)
-  def __rsub__(self, rect: Rect) -> Rect:
-    """'rect - insets' shrinks the rect inward by the insets."""
-    return Rect(rect.left + self.left, rect.top + self.top,
-                rect.right - self.right, rect.bottom - self.bottom)
+  #  Mathematical Operators
 
-  @overload(Size)
-  def __radd__(self, size: Size) -> Size:
-    return Size(self.left + size.width + self.right,
-                self.top + size.height + self.bottom)
+  def __pos__(self, ) -> Self:
+    cls = type(self)
+    return cls(self)
 
-  @overload(Size)
-  def __rsub__(self, size: Size) -> Size:
-    return Size(size.width - self.left - self.right,
-                size.height - self.top - self.bottom)
+  def __neg__(self, ) -> Self:
+    cls = type(self)
+    return cls(-self.left, -self.top, -self.right, -self.bottom)
 
   @overload(THIS)
   def __add__(self, other: Self) -> Self:
-    return InSets(self.left + other.left, self.top + other.top,
-                  self.right + other.right, self.bottom + other.bottom)
+    cls = type(self)
+    left = self.left + other.left
+    top = self.top + other.top
+    right = self.right + other.right
+    bottom = self.bottom + other.bottom
+    return cls(left, top, right, bottom)
 
-  @overload(THIS)
-  def __sub__(self, other: Self) -> Self:
-    return InSets(self.left - other.left, self.top - other.top,
-                  self.right - other.right, self.bottom - other.bottom)
+  @overload(Size)
+  def __add__(self, size: Size) -> Size:
+    width: int = self.left + size.width + self.right
+    height: int = self.top + size.height + self.bottom
+    return Size(width, height)
+
+  @overload(Rect)
+  def __add__(self, rect: Rect) -> Rect:
+    """'insets + rect' grows the rect outward by the insets."""
+    left = rect.left - self.left
+    top = rect.top - self.top
+    right = rect.right + self.right
+    bottom = rect.bottom + self.bottom
+    return Rect(left, top, right, bottom)
+
+  @overload(QSize)
+  @overload(QSizeF)
+  def __add__(self, size: Union[QSize, QSizeF]) -> Union[QSize, QSizeF]:
+    width = self.left + size.width() + self.right
+    height = self.top + size.height() + self.bottom
+    return type(size)(width, height)
+
+  @overload(QRect)
+  @overload(QRectF)
+  def __add__(self, rect: Union[QRect, QRectF]) -> Union[QRect, QRectF]:
+    """'insets + rect' grows the rect outward by the insets."""
+    left = rect.left() - self.left
+    top = rect.top() - self.top
+    right = rect.right() + self.right
+    bottom = rect.bottom() + self.bottom
+    return type(rect)(left, top, right, bottom)
+
+  @overload(int)
+  def __add__(self, value: int) -> Self:
+    cls = type(self)
+    left = self.left + value
+    top = self.top + value
+    right = self.right + value
+    bottom = self.bottom + value
+    return cls(left, top, right, bottom)
+
+  def __iadd__(self, other: Any) -> Any:
+    try:
+      out = self + other
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return out
+
+  def __radd__(self, other: Any) -> Any:
+    """'rect + insets' grows the rect outward by the insets."""
+    return self + other
+
+  def __sub__(self, other: Any) -> Any:
+    resolved = self._resolveOther(other)
+    if resolved is NotImplemented:
+      return NotImplemented
+    return self + (-resolved)
+
+  def __isub__(self, other: Any) -> Union[Self, NIType]:
+    resolved = self._resolveOther(other)
+    if resolved is NotImplemented:
+      return NotImplemented
+    return self - resolved
+
+  def __rsub__(self, other: Any) -> Any:
+    try:
+      out = other + (-self)
+    except (TypeError, ValueError):
+      return NotImplemented
+    else:
+      return out
 
   def __str__(self) -> str:
-    return 'InSets(%d, %d, %d, %d)' % (
-        self.left, self.top, self.right, self.bottom)
+    infoSpec: str = """%s(left=%d, top=%d, right=%d, bottom=%d)"""
+    dims = (self.left, self.top, self.right, self.bottom)
+    clsName: str = type(self).__name__
+    return infoSpec % (clsName, *dims)
 
-  __repr__ = __str__
+  def __repr__(self, ) -> str:
+    infoSpec: str = """%s(%d, %d, %d, %d)"""
+    dims = (self.left, self.top, self.right, self.bottom)
+    clsName: str = type(self).__name__
+    return infoSpec % (clsName, *dims)
