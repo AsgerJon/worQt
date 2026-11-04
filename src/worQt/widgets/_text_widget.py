@@ -17,7 +17,7 @@ from worktoy.desc import Field, AttriBox
 
 from . import LabelWidget
 from ..utils import WFont
-from ..utils.font_nums import FontFamilyNum, FontWeightNum
+from ..utils.font_nums import GenericFamilyNum, FontWeightNum
 from ..utils.geom import Size, InSets
 from ..utils.qee_num import Alignum
 
@@ -48,7 +48,7 @@ class TextWidget(LabelWidget):
 
   #  Public Variables
   font: WFontBox = AttriBox[WFont](
-    FontFamilyNum.CASCADIA_MONO,
+    GenericFamilyNum.MONO,
     FontWeightNum.NORMAL,
     10,
     )

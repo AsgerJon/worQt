@@ -7,21 +7,13 @@ and 'strikeout' (or 'strikethrough').
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from types import FunctionType
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QFont
-from worktoy.desc import Field
 from worktoy.keenum import KeeFlags, KeeFlag
-from worktoy.waitaminute import TypeException
-
-# from ...paint_ops import TextPaintOp
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Callable, Union
-
-  QFontMethod: TypeAlias = Callable[[QFont, ], QFont]
-  MethodField: TypeAlias = Union[QFontMethod, Field]
+  pass
 
 
 class FontLineFlags(KeeFlags):
@@ -36,7 +28,13 @@ class FontLineFlags(KeeFlags):
   OVERLINE = KeeFlag()
 
   def apply(self, font: QFont, ) -> QFont:
-    QFont.setUnderline(font, True if self.name == 'UNDERLINE' else False)
-    QFont.setStrikeOut(font, True if self.name == 'STRIKEOUT' else False)
-    QFont.setOverline(font, True if self.name == 'OVERLINE' else False)
+    """
+    The 'apply' method gives 'font' exactly the lines in these flags -
+    each of underline, strike-out and overline on or off - and returns it.
+    A combination such as 'UNDERLINE | OVERLINE' sets both.
+    """
+    cls = type(self)
+    QFont.setUnderline(font, True if self & cls.UNDERLINE else False)
+    QFont.setStrikeOut(font, True if self & cls.STRIKEOUT else False)
+    QFont.setOverline(font, True if self & cls.OVERLINE else False)
     return font

@@ -8,17 +8,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QFont
-from worktoy.keenum import Kee
-from worktoy.waitaminute.keenum import KeeResolveError
-
-# from ...paint_ops import TextPaintOp
-from . import FontMeta
+from worktoy.keenum import KeeNum, Kee
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
+  from typing import Any, Self
 
 
-class FontWeightNum(FontMeta.keeNum):
+class FontWeightNum(KeeNum):
   """
   FontWeightNum enumerates font weights. Values match QFont.Weight values.
   """
@@ -42,14 +38,20 @@ class FontWeightNum(FontMeta.keeNum):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @classmethod
-  def __class_resolve__(cls, weight: Any) -> FontWeightNum:
+  def __class_resolve__(cls, weight: Any) -> Self:
+    """
+    The '__class_resolve__' hook resolves a member from its 'QFont.Weight',
+    which is what 'QFont.weight()' returns. Anything else is left to the
+    normal resolution.
+    """
     for member in cls:
       if member.value == weight:
         return member
-    raise KeeResolveError(cls, weight)
+    return NotImplemented
 
   def apply(self, font: QFont) -> None:
-    """Set this weight on 'font'. A plain method, not an '@overload':
-    the dispatcher caches a bound method on the instance via 'setattr',
-    which a frozen 'KeeNum' member rejects with 'KeeWriteOnceError'."""
+    """The 'apply' method sets this weight on 'font'. A plain method, not
+    an '@overload': the dispatcher caches a bound method on the instance
+    via 'setattr', which a frozen 'KeeNum' member rejects with
+    'KeeWriteOnceError'."""
     font.setWeight(self.value)

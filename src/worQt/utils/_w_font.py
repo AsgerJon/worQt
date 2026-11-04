@@ -1,9 +1,18 @@
 """
-WFont provides a subclass of 'QFont' supporting font related enumerations
-and properties. The 'WPainter' class (subclass of 'QPainter') reimplements
-the 'setFont' method to overload 'WFont' instances in addition. This
-design pattern changes the text color from being an aspect of the 'QPen'
-assigned to the painter to instead be an attribute provided by 'WFont'.
+WFont is the font worQt paints text with: a 'QFont' that also carries the
+text colour, so a widget's whole text style lives in one value and
+'WPainter.setFont' sets the pen along with the font.
+
+A 'WFont' is built from positional arguments in any order - a family (a
+'GenericFamilyNum' or an installed family's name), a weight, a style, line
+flags, a point size, a colour, and optionally a 'QFont' to start from:
+
+    WFont(GenericFamilyNum.MONO, FontWeightNum.BOLD, 14)
+
+Its typed fields ('familyName', 'weightNum', 'styleNum', 'fontSize', the
+line flags) read from and write to the 'QFont' itself, so the two can never
+disagree; only 'color' is extra state. Resolving the family needs the
+installed fonts, so building a 'WFont' needs a running 'QApplication'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -13,235 +22,261 @@ from string import ascii_letters
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QFontMetricsF, QFontMetrics, QPen
-from worktoy.desc import Field, AttriBox
-from worktoy.keenum import KeeBox
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QPen
+from worktoy.desc import Field
+from worktoy.utilities import textFmt
 from worktoy.waitaminute import TypeException
-from worktoy.waitaminute.control_flow import SkipSet
 
-from worQt.mixin import MixinBase
-from worQt.utils import Color
-from worQt.utils.font_nums import FontFamilyNum, FontStyleNum
-from worQt.utils.font_nums import FontLineFlags, FontWeightNum
-from worQt.utils.geom import Size
-from worQt.utils.qee_num import ColorNum
+from ..mixin import MixinBase
+from ._color import Color
+from .font_nums import FontFamily, GenericFamilyNum, FontWeightNum
+from .font_nums import FontStyleNum, FontLineFlags
+from .geom import Size
+from .qee_num import ColorNum
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Union, Any, Optional
+  from typing import Any, Optional, TypeAlias, Union
 
-  SizeField: TypeAlias = Union[Size, Field]
-  MaybeInt: TypeAlias = Optional[int]
-  IntField: TypeAlias = Union[int, Field]
-  IntArgs: TypeAlias = tuple[Optional[int], tuple[Any, ...]]
-  FamArgs: TypeAlias = tuple[Optional[FontFamilyNum], tuple[Any, ...]]
-  WeightArgs: TypeAlias = tuple[Optional[FontWeightNum], tuple[Any, ...]]
-  StyleArgs: TypeAlias = tuple[Optional[FontStyleNum], tuple[Any, ...]]
-  LinesArgs: TypeAlias = tuple[Optional[FontLineFlags], tuple[Any, ...]]
-
-  FamilyBox: TypeAlias = Union[FontFamilyNum, KeeBox]
-  WeightBox: TypeAlias = Union[FontWeightNum, KeeBox]
-  StyleBox: TypeAlias = Union[FontStyleNum, KeeBox]
-  LinesBox: TypeAlias = Union[FontLineFlags, KeeBox]
-  ColorBox: TypeAlias = Union[Color, AttriBox]
-  BoolBox: TypeAlias = Union[bool, AttriBox]
-
-  QFontField: TypeAlias = Union[QFont, Field]
-  QMetricsField: TypeAlias = Union[QFontMetrics, Field]
-  QMetricsFieldF: TypeAlias = Union[QFontMetricsF, Field]
-  QPenField: TypeAlias = Union[QPen, Field]
-  MaybePen: TypeAlias = Optional[QPen]
+  FamilyLike: TypeAlias = Union[GenericFamilyNum, str]
+  WeightLike: TypeAlias = Union[FontWeightNum, QFont.Weight, str]
+  StyleLike: TypeAlias = Union[FontStyleNum, QFont.Style, str]
+  ColorLike: TypeAlias = Union[Color, QColor, ColorNum]
+  Aspects: TypeAlias = dict[str, Any]
 
 
 class WFont(QFont, MixinBase):
   """
-  WFont provides a subclass of 'QFont' supporting font related enumerations
-  and properties. The 'WPainter' class (subclass of 'QPainter') reimplements
-  the 'setFont' method to overload 'WFont' instances in addition. This
-  design pattern changes the text color from being an aspect of the 'QPen'
-  assigned to the painter to instead be an attribute provided by 'WFont'.
+  WFont is the font worQt paints text with: a 'QFont' that also carries
+  the text colour. See the module docstring for how to build one.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  #  Class Variables
-
   #  Fallback Variables
-  __fallback_family__: str = 'MONTSERRAT'
-  __fallback_weight__: str = 'NORMAL'
-  __fallback_style__: str = 'NORMAL'
-  __fallback_underline__: bool = False
-  __fallback_strikeout__: bool = False
-  __fallback_overline__: bool = False
-  __fallback_color__: Color = ColorNum.BLACK.value
+  __fallback_family__: str = 'SANS'  # a 'GenericFamilyNum' member name
   __fallback_size__: int = 20
+  __fallback_color__: tuple[int, int, int, int] = (0, 0, 0, 255)
 
   #  Private Variables
-  __cached_pen__: MaybePen = None
-  __font_size__: MaybeInt = None
+  __text_color__: Optional[Color] = None
 
   #  Public Variables
-  familyNum: FamilyBox = KeeBox[FontFamilyNum](__fallback_family__)
-  weightNum: WeightBox = KeeBox[FontWeightNum](__fallback_weight__, )
-  styleNum: StyleBox = KeeBox[FontStyleNum](__fallback_style__, )
-  underlineFlag: BoolBox = AttriBox[bool](__fallback_underline__, )
-  strikeoutFlag: BoolBox = AttriBox[bool](__fallback_strikeout__, )
-  overlineFlag: BoolBox = AttriBox[bool](__fallback_overline__, )
-  color: ColorBox = AttriBox[Color](__fallback_color__, )
-  fontSize: IntField = Field()
+  familyName: Field[str] = Field()
+  weightNum: Field[FontWeightNum] = Field()
+  styleNum: Field[FontStyleNum] = Field()
+  underlineFlag: Field[bool] = Field()
+  strikeoutFlag: Field[bool] = Field()
+  overlineFlag: Field[bool] = Field()
+  fontSize: Field[int] = Field()
+  color: Field[Color] = Field()
 
   #  Virtual Variables
-  pen: QPenField = Field()
-  metrics: QMetricsField = Field()
-  metricsF: QMetricsFieldF = Field()
-  charSize: SizeField = Field()
+  pen: Field[QPen] = Field()
+  metrics: Field[QFontMetrics] = Field()
+  metricsF: Field[QFontMetricsF] = Field()
+  charSize: Field[Size] = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @color.onSet
-  def _createPen(self, ) -> None:
-    penObject = QPen()
-    QPen.setColor(penObject, self.color.Q)
-    QPen.setStyle(penObject, Qt.PenStyle.SolidLine)
-    QPen.setWidth(penObject, 1)
-    self.__cached_pen__ = penObject
+  @familyName.GET
+  def _getFamilyName(self, ) -> str:
+    return QFont.family(self)
 
-  @pen.GET
-  def _getPen(self, **kwargs) -> QPen:
-    if self.__cached_pen__ is None:
-      if kwargs.get('_recursion', False):
-        raise RecursionError
-      self._createPen()
-      return self._getPen(_recursion=True)
-    if isinstance(self.__cached_pen__, QPen):
-      return self.__cached_pen__
-    raise TypeException('__cached_pen__', self.__cached_pen__, QPen)
+  @weightNum.GET
+  def _getWeightNum(self, ) -> FontWeightNum:
+    return FontWeightNum(QFont.weight(self))
+
+  @styleNum.GET
+  def _getStyleNum(self, ) -> FontStyleNum:
+    return FontStyleNum(QFont.style(self))
+
+  @underlineFlag.GET
+  def _getUnderlineFlag(self, ) -> bool:
+    return True if QFont.underline(self) else False
+
+  @strikeoutFlag.GET
+  def _getStrikeoutFlag(self, ) -> bool:
+    return True if QFont.strikeOut(self) else False
+
+  @overlineFlag.GET
+  def _getOverlineFlag(self, ) -> bool:
+    return True if QFont.overline(self) else False
 
   @fontSize.GET
-  def _getFontSize(self, **kwargs) -> int:
-    if self.__font_size__ is None:
+  def _getFontSize(self, ) -> int:
+    return QFont.pointSize(self)
+
+  def _createColor(self, ) -> None:
+    self.__text_color__ = Color(*self.__fallback_color__)
+
+  @color.GET
+  def _getColor(self, **kwargs) -> Color:
+    if self.__text_color__ is None:
       if kwargs.get('_recursion', False):
         raise RecursionError
-      self.__font_size__ = self.__fallback_size__
-      return self._getFontSize(_recursion=True)
-    if isinstance(self.__font_size__, int):
-      return self.__font_size__
-    raise TypeException('__font_size__', self.__font_size__, int)
+      self._createColor()
+      return self._getColor(_recursion=True)
+    if isinstance(self.__text_color__, Color):
+      return self.__text_color__
+    raise TypeException('__text_color__', self.__text_color__, Color)
+
+  @pen.GET
+  def _getPen(self, ) -> QPen:
+    """
+    The 'pen' getter returns the solid, one pixel wide pen in the text
+    colour that 'WPainter.setFont' paints this font's text with.
+    """
+    pen = QPen()
+    QPen.setColor(pen, self.color.Q)
+    QPen.setStyle(pen, Qt.PenStyle.SolidLine)
+    QPen.setWidth(pen, 1)
+    return pen
 
   @metrics.GET
-  def _getMetrics(self, **kwargs) -> QFontMetrics:
+  def _getMetrics(self, ) -> QFontMetrics:
     return QFontMetrics(self)
 
   @metricsF.GET
-  def _getMetricsF(self, **kwargs) -> QFontMetricsF:
+  def _getMetricsF(self, ) -> QFontMetricsF:
     return QFontMetricsF(self)
 
   @charSize.GET
-  def _getCharSize(self, **kwargs) -> Size:
-    widthSum = 0
-    chars = ascii_letters
-    for char in ascii_letters:
-      widthSum += self.metricsF.horizontalAdvance(char)
-    height = self.metricsF.height()
-    return Size(int(round(widthSum / len(chars))), height)
+  def _getCharSize(self, ) -> Size:
+    """
+    The 'charSize' getter returns the size of an average letter: the mean
+    advance of the ASCII letters by the line height.
+    """
+    metricsF = self.metricsF
+    widthSum = sum(metricsF.horizontalAdvance(c) for c in ascii_letters)
+    width = int(round(widthSum / len(ascii_letters)))
+    return Size(width, int(round(metricsF.height())))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  @familyName.SET
+  def _setFamilyName(self, value: FamilyLike) -> None:
+    """
+    The 'familyName' setter takes a 'GenericFamilyNum', which always finds
+    an installed family, or a family name, which must be installed.
+    """
+    if isinstance(value, GenericFamilyNum):
+      return QFont.setFamily(self, value.family)
+    if isinstance(value, str):
+      return QFont.setFamily(self, FontFamily.resolve(value))
+    raise TypeException('familyName', value, GenericFamilyNum, str)
+
+  @weightNum.SET
+  def _setWeightNum(self, value: WeightLike) -> None:
+    QFont.setWeight(self, FontWeightNum(value).value)
+
+  @styleNum.SET
+  def _setStyleNum(self, value: StyleLike) -> None:
+    QFont.setStyle(self, FontStyleNum(value).value)
+
+  @underlineFlag.SET
+  def _setUnderlineFlag(self, value: bool) -> None:
+    QFont.setUnderline(self, True if value else False)
+
+  @strikeoutFlag.SET
+  def _setStrikeoutFlag(self, value: bool) -> None:
+    QFont.setStrikeOut(self, True if value else False)
+
+  @overlineFlag.SET
+  def _setOverlineFlag(self, value: bool) -> None:
+    QFont.setOverline(self, True if value else False)
+
   @fontSize.SET
-  def _setFontSize(self, value: int, **kwargs) -> None:
-    if not isinstance(value, int):
+  def _setFontSize(self, value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
       raise TypeException('fontSize', value, int)
-    self.__font_size__ = value
-    QFont.setPointSize(self, value)
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  NOTIFIERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  @fontSize.preSet
-  def _preSetFontSize(self, value: int, **kwargs) -> None:
     if value <= 0:
-      raise ValueError('fontSize must be positive')
-    cls = type(self)
-    desc = getattr(cls, 'fontSize')
-    try:
-      existing = desc.__instance_get__(self, type(self, ), _recursion=True)
-    except RecursionError:
-      pass
-    else:
-      if value == existing:
-        raise SkipSet
-
-  @fontSize.onSet
-  def _onSetFontSize(self, value: int, **kwargs) -> None:
+      infoSpec = """A font size must be positive, but received: %d!"""
+      raise ValueError(textFmt(infoSpec % value))
     QFont.setPointSize(self, value)
 
-  @weightNum.preSet
-  def _preSetWeightNum(self, value: FontWeightNum, **kwargs) -> None:
-    if value == self.weightNum:
-      raise SkipSet
-
-  @weightNum.onSet
-  def _onSetWeightNum(self, value: FontWeightNum, **kwargs) -> None:
-    QFont.setWeight(self, value.value)
-
-  @styleNum.preSet
-  def _preSetStyleNum(self, value: FontStyleNum, **kwargs) -> None:
-    if value == self.styleNum:
-      raise SkipSet
-
-  @styleNum.onSet
-  def _onSetStyleNum(self, value: FontStyleNum, **kwargs) -> None:
-    QFont.setStyle(self, value.value)
-
-  @familyNum.preSet
-  def _preSetFamilyNum(self, value: FontFamilyNum, **kwargs) -> None:
-    if value == self.familyNum:
-      raise SkipSet
-
-  @familyNum.onSet
-  def _onSetFamilyNum(self, value: FontFamilyNum, **kwargs) -> None:
-    QFont.setFamily(self, value.value)
-
-  @underlineFlag.preSet
-  def _preSetUnderlineFlag(self, value: bool, **kwargs) -> None:
-    if value == self.underlineFlag:
-      raise SkipSet
-
-  @underlineFlag.onSet
-  def _onSetUnderlineFlag(self, value: bool, **kwargs) -> None:
-    QFont.setUnderline(self, value)
-
-  @strikeoutFlag.preSet
-  def _preSetStrikeoutFlag(self, value: bool, **kwargs) -> None:
-    if value == self.strikeoutFlag:
-      raise SkipSet
-
-  @strikeoutFlag.onSet
-  def _onSetStrikeoutFlag(self, value: bool, **kwargs) -> None:
-    QFont.setStrikeOut(self, value)
-
-  @overlineFlag.preSet
-  def _preSetOverlineFlag(self, value: bool, **kwargs) -> None:
-    if value == self.overlineFlag:
-      raise SkipSet
-
-  @overlineFlag.onSet
-  def _onSetOverlineFlag(self, value: bool, **kwargs) -> None:
-    QFont.setOverline(self, value)
+  @color.SET
+  def _setColor(self, value: ColorLike) -> None:
+    """
+    The 'color' setter takes a 'Color', a 'QColor' or a 'ColorNum' member,
+    and keeps a copy of its own.
+    """
+    self.__text_color__ = Color(value)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  @staticmethod
+  def _aspectOf(arg: Any) -> str:
+    """
+    The '_aspectOf' method names the aspect a constructor argument sets,
+    judged by its type alone. 'QFont.Weight' is an 'int', so it is checked
+    before the point size.
+    """
+    if isinstance(arg, QFont):
+      return 'base'
+    if isinstance(arg, (GenericFamilyNum, str)):
+      return 'familyName'
+    if isinstance(arg, (FontWeightNum, QFont.Weight)):
+      return 'weightNum'
+    if isinstance(arg, (FontStyleNum, QFont.Style)):
+      return 'styleNum'
+    if isinstance(arg, FontLineFlags):
+      return 'lineFlags'
+    if isinstance(arg, (Color, QColor, ColorNum)):
+      return 'color'
+    if isinstance(arg, int) and not isinstance(arg, bool):
+      return 'fontSize'
+    raise TypeException('arg', arg, QFont, GenericFamilyNum, str,
+                        FontWeightNum, FontStyleNum, FontLineFlags, Color,
+                        int)
+
+  @classmethod
+  def _sortAspects(cls, *args: Any) -> Aspects:
+    """
+    The '_sortAspects' method maps each constructor argument to the aspect
+    it sets. Two arguments for the same aspect are refused rather than
+    letting one silently win.
+    """
+    aspects = dict()
+    for arg in args:
+      aspect = cls._aspectOf(arg)
+      if aspect in aspects:
+        infoSpec = """'%s' received two arguments for '%s': '%s' and
+        '%s'!"""
+        info = infoSpec % (cls.__name__, aspect, aspects[aspect], arg)
+        raise ValueError(textFmt(info))
+      aspects[aspect] = arg
+    return aspects
+
+  def _fallbackAspects(self, ) -> Aspects:
+    """
+    The '_fallbackAspects' method returns what a font built from nothing
+    starts as: the fallback generic family and point size. A font built
+    from a 'QFont' starts as that font instead.
+    """
+    family = GenericFamilyNum(self.__fallback_family__)
+    return {'familyName': family, 'fontSize': self.__fallback_size__}
+
+  def __init__(self, *args: Any) -> None:
+    aspects = self._sortAspects(*args)
+    base = aspects.pop('base', None)
+    if base is None:
+      QFont.__init__(self, )
+      aspects = {**self._fallbackAspects(), **aspects}
+    else:
+      QFont.__init__(self, base)
+    for aspect, value in aspects.items():
+      if aspect == 'lineFlags':
+        value.apply(self)
+        continue
+      setattr(self, aspect, value)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -249,178 +284,8 @@ class WFont(QFont, MixinBase):
 
   def boundingWidth(self, text: str, ) -> Size:
     """
-    Returns the bounding size of the given text when rendered with this font.
+    The 'boundingWidth' method returns the size 'text' takes up on one line
+    in this font: its advance by the line height.
     """
     metrics = self.metrics
-    width = metrics.horizontalAdvance(text)
-    height = metrics.height()
-    return Size(width, height)
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  ABSTRACT METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PARENT METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def family(self, **kwargs) -> str:
-    """
-    Reimplementation ensuring agreement with the 'familyNum' descriptor.
-    """
-    superFamily = QFont.family(self)
-    if superFamily == self.familyNum.value:
-      return superFamily
-    if kwargs.get('_recursion', False):
-      raise RecursionError
-    QFont.setFamily(self, self.familyNum.value)
-    return self.family(_recursion=True)
-
-  def weight(self, **kwargs) -> QFont.Weight:
-    """
-    Reimplementation ensuring agreement with the 'weightNum' descriptor.
-    """
-    superWeight = QFont.weight(self)
-    if superWeight == self.weightNum.value:
-      return superWeight
-    if kwargs.get('_recursion', False):
-      raise RecursionError
-    QFont.setWeight(self, self.weightNum.value)
-    return self.weight(_recursion=True)
-
-  def style(self, **kwargs) -> QFont.Style:
-    """
-    Reimplementation ensuring agreement with the 'styleNum' descriptor.
-    """
-    superStyle = QFont.style(self)
-    if superStyle == self.styleNum.value:
-      return superStyle
-    if kwargs.get('_recursion', False):
-      raise RecursionError
-    QFont.setStyle(self, self.styleNum.value)
-    return self.style(_recursion=True)
-
-  def pointSize(self, **kwargs) -> int:
-    """
-    Reimplementation ensuring agreement with the 'fontSize' descriptor.
-    """
-    superSize = QFont.pointSize(self)
-    if superSize == self.fontSize:
-      return superSize
-    if kwargs.get('_recursion', False):
-      raise RecursionError
-    QFont.setPointSize(self, self.fontSize)
-    return self.pointSize(_recursion=True)
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PySide6 API  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  @staticmethod
-  def _parseFontFamily(*args, ) -> FamArgs:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, FontFamilyNum):
-        list.extend(unusedArgs, posArgs)
-        return arg, (*unusedArgs,)
-      unusedArgs.append(arg)
-    return None, (*unusedArgs,)
-
-  @staticmethod
-  def _parseFontWeight(*args, ) -> WeightArgs:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, FontWeightNum):
-        list.extend(unusedArgs, posArgs)
-        return arg, (*unusedArgs,)
-      unusedArgs.append(arg)
-    return None, (*unusedArgs,)
-
-  @staticmethod
-  def _parseFontStyle(*args, ) -> StyleArgs:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, FontStyleNum):
-        list.extend(unusedArgs, posArgs)
-        return arg, (*unusedArgs,)
-      unusedArgs.append(arg)
-    return None, (*unusedArgs,)
-
-  @staticmethod
-  def _parseFontLines(*args, ) -> LinesArgs:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, FontLineFlags):
-        list.extend(unusedArgs, posArgs)
-        return arg, (*unusedArgs,)
-      unusedArgs.append(arg)
-    return None, (*unusedArgs,)
-
-  @staticmethod
-  def _parseFontSize(*args, ) -> IntArgs:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, int):
-        list.extend(unusedArgs, posArgs)
-        return arg, (*unusedArgs,)
-      unusedArgs.append(arg)
-    return None, (*unusedArgs,)
-
-  def __init__(self, *args, **kwargs) -> None:
-    unusedArgs = []
-    posArgs = [*reversed(args), ]
-    while posArgs:
-      arg = posArgs.pop()
-      if isinstance(arg, QFont):
-        QFont.__init__(self, arg)
-        list.extend(unusedArgs, posArgs)
-        break
-      unusedArgs.append(arg)
-    else:
-      QFont.__init__(self, )
-    family, args = self._parseFontFamily(*unusedArgs)
-    weight, args = self._parseFontWeight(*args)
-    style, args = self._parseFontStyle(*args)
-    lines, args = self._parseFontLines(*args)
-    size, args = self._parseFontSize(*args)
-    if family is not None:
-      self.familyNum = family
-    if weight is not None:
-      self.weightNum = weight
-    if style is not None:
-      self.styleNum = style
-    if lines is not None:
-      self.underlineFlag = bool(lines & FontLineFlags.UNDERLINE)
-      self.strikeoutFlag = bool(lines & FontLineFlags.STRIKEOUT)
-      self.overlineFlag = bool(lines & FontLineFlags.OVERLINE)
-    if size is not None:
-      self.fontSize = size
-    if self.fontSize != self.pointSize():  # pragma: no cover
-      raise ValueError  # post-init consistency guard; never fails
-    if self.family() != self.familyNum.value:  # pragma: no cover
-      raise ValueError
-    if self.weight() != self.weightNum.value:  # pragma: no cover
-      raise ValueError
-    if self.style() != self.styleNum.value:  # pragma: no cover
-      raise ValueError
-    QFont.setUnderline(self, True if self.underlineFlag else False)
-    QFont.setStrikeOut(self, True if self.strikeoutFlag else False)
-    QFont.setOverline(self, True if self.overlineFlag else False)
+    return Size(metrics.horizontalAdvance(text), metrics.height())
