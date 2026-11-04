@@ -57,20 +57,14 @@ class BaseWindow(AbstractWindow):
     """  # MainWindow implements this method.
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  PARENT METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def show(self) -> None:
+  def _buildUI(self, ) -> None:
     """
-    This method runs the three initializing methods before the super call,
-    once, guarded by the shared '__ui_built__' flag so the build-once
-    lifecycle in 'AbstractWindow.show' does not run 'initUI' a second time.
-    Subclasses should generally not need to override this method
-    specifically.
+    The '_buildUI' method builds the menus, then the contents, then the
+    logic. 'AbstractWindow.show' runs it once, on the first 'show()'.
     """
-    if not self.__ui_built__:
-      self.initMenus()
-      self.initUI()
-      self.initLogic()
-      self.__ui_built__ = True
-    super().show()
+    self.initMenus()
+    self.initUI()
+    self.initLogic()

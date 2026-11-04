@@ -179,9 +179,12 @@ class App(ApplicationMixin):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def hasUnsavedChanges(self) -> bool:
-    """Hook: does the application hold unsaved changes? The default 'False'
-    means a plain app never blocks exit. A concrete app overrides this to
-    report its document state, e.g. 'return self.window.document.isDirty()'."""
+    """
+    The 'hasUnsavedChanges' hook tells whether the application holds
+    unsaved changes. The default 'False' means a plain app never blocks
+    exit. A concrete app overrides this to report its document state, for
+    example 'return self.window.document.isDirty()'.
+    """
     return False
 
   def saveChanges(self) -> bool:
@@ -199,27 +202,40 @@ class App(ApplicationMixin):
     place the exit guard lives, so no window or action reimplements it."""
     if not self.hasUnsavedChanges():
       return True
-    answer = QMessageBox.warning(
-        self.window, 'Unsaved changes',
-        'There are unsaved changes. Save before exiting?',
-        QMessageBox.StandardButton.Save
-        | QMessageBox.StandardButton.Discard
-        | QMessageBox.StandardButton.Cancel)
+    answer = self.askToSave()
     if answer == QMessageBox.StandardButton.Save:
       return self.saveChanges()
     if answer == QMessageBox.StandardButton.Discard:
       return True
     return False  # Cancel
 
+  def askToSave(self) -> QMessageBox.StandardButton:  # pragma: no cover
+    """
+    The 'askToSave' method asks whether to save the unsaved changes before
+    exiting, and returns the button chosen: Save, Discard or Cancel. It is
+    a hook of its own so an app with its own dialog - or a test, which
+    must never open a modal one - can answer instead of the default
+    'QMessageBox'.
+    """
+    return QMessageBox.warning(
+        self.window, 'Unsaved changes',
+        'There are unsaved changes. Save before exiting?',
+        QMessageBox.StandardButton.Save
+        | QMessageBox.StandardButton.Discard
+        | QMessageBox.StandardButton.Cancel)
+
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  TITLE STAR   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def _startTitleWatch(self) -> None:
-    """Begin keeping the window title's unsaved-changes marker current.
-    There is no generic 'dirty changed' signal, so the base app falls back
-    to polling 'hasUnsavedChanges' on a timer at '__fallback_title_interval__'
-    milliseconds. Started once, when the window is built."""
+    """
+    The '_startTitleWatch' method starts keeping the window title's
+    unsaved-changes marker current, once, when the window is built. There
+    is no 'unsaved changes changed' notification yet, so it polls
+    'hasUnsavedChanges' every '__fallback_title_interval__' milliseconds;
+    the document layer is the place for that notification.
+    """
     if self.__title_timer__ is not None:
       return
     self.__title_timer__ = QTimer(self)

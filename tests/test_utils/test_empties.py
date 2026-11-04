@@ -49,6 +49,11 @@ class TestEmpties(UtilsTest):
     self.assertEqual(brush.color().alpha(), 0)
 
   def test_button_state_flags_bool(self) -> None:
-    """The flags are truthy only when the disabled bit is set."""
-    self.assertTrue(ButtonStateFlags.DISABLED)
-    self.assertFalse(ButtonStateFlags.HOVERED)
+    """A state is falsy only when no flag is set; whether it is disabled
+    is asked with '& DISABLED'."""
+    flags = ButtonStateFlags
+    self.assertFalse(flags.NULL)
+    self.assertTrue(flags.HOVERED)
+    self.assertTrue(flags.DISABLED | flags.PRESSED)
+    self.assertTrue((flags.HOVERED | flags.DISABLED) & flags.DISABLED)
+    self.assertFalse(flags.HOVERED & flags.DISABLED)

@@ -33,7 +33,6 @@ from ..utils import EmptyPen, EmptyBrush, WPainter
 from ..utils.qee_num import (Alignum,
                              HAlignum,
                              VAlignum,
-                             SizePolicy,
                              SizingMode)
 from ..utils.geom import Size, Rect, Color
 from ..utils.geom import InSets
@@ -54,7 +53,6 @@ if TYPE_CHECKING:  # pragma: no cover
   AlignField: TypeAlias = Union[Alignum, Field]
   HAlignField: TypeAlias = Union[HAlignum, Field]
   VAlignField: TypeAlias = Union[VAlignum, Field]
-  PolicyField: TypeAlias = Union[SizePolicy, Field]
   InSetsBox: TypeAlias = Union[InSets, AttriBox]
   ColorBox: TypeAlias = Union[Color, AttriBox]
   Colors: TypeAlias = tuple[Color, Color, Color]
@@ -86,8 +84,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
   MaybeSizingMode: TypeAlias = Optional[SizingMode]
   SizingModeField: TypeAlias = Union[SizingMode, Field]
-  MaybeSizePolicy: TypeAlias = Optional[SizePolicy]
-  SizePolicyField: TypeAlias = Union[SizePolicy, Field]
 
 
 class PaintedWidget(AbstractWidget):
@@ -113,7 +109,6 @@ class PaintedWidget(AbstractWidget):
 
   #  Fallback Variables
   __fallback_alignum__ = Alignum.CENTER
-  __fallback_policy__ = SizePolicy()
   __fallback_required_size__ = 32, 32
   # --- Box Model Variables
   __fallback_margins_dims__ = InSets(2, 2, 2, 2)
@@ -129,7 +124,6 @@ class PaintedWidget(AbstractWidget):
 
   #  Private Variables
   __alignment_flag__: MaybeAlign = None
-  __size_policy__: MaybeSizePolicy = None
   __horizontal_mode__: MaybeSizingMode = None
   __vertical_mode__: MaybeSizingMode = None
   __paint_view__: MaybeRect = None

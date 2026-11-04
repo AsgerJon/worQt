@@ -1,6 +1,8 @@
 """
 ButtonStateFlags subclasses 'KeeFlags' from the 'worktoy.keenum' package
-enumerating the possible button states.
+enumerating the possible button states. A state combines flags - a
+disabled button can still be hovered - and, like any 'KeeFlags', it is
+falsy only when no flag is set.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -11,7 +13,7 @@ from typing import TYPE_CHECKING
 from worktoy.keenum import KeeFlags, KeeFlag
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any, TypeAlias, Union, Optional
+  pass
 
 
 class ButtonStateFlags(KeeFlags):
@@ -27,10 +29,3 @@ class ButtonStateFlags(KeeFlags):
   HOVERED = KeeFlag()
   PRESSED = KeeFlag()
   DISABLED = KeeFlag()
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def __bool__(self, ) -> bool:
-    return True if self.DISABLED.value & self.value else False

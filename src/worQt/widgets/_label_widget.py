@@ -26,7 +26,7 @@ from . import AbstractWidget as Widget
 from ..paint_ops import PaintLabel, PaintBoxModel
 from ..utils import Color, WFont
 from ..utils.geom import Size
-from ..utils.qee_num import SizePolicy, SizingMode
+from ..utils.qee_num import SizingMode
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import TypeAlias, Optional, Union, Self
@@ -43,8 +43,6 @@ if TYPE_CHECKING:  # pragma: no cover
   WFontBox: TypeAlias = Union[WFont, AttriBox]
   MaybeSizingMode: TypeAlias = Optional[SizingMode]
   SizingModeField: TypeAlias = Union[SizingMode, Field]
-  MaybeSizePolicy: TypeAlias = Optional[SizePolicy]
-  SizePolicyField: TypeAlias = Union[SizePolicy, Field]
 
   MaybeColor: TypeAlias = Optional[Color]
   ColorField: TypeAlias = Union[Color, Field]
@@ -90,8 +88,6 @@ class LabelWidget(PaintedWidget):
   __current_text__: MaybeStr = None
   __min_width__: MaybeInt = None
   __min_height__: MaybeInt = None
-  __horizontal_mode__: MaybeSizePolicy = None
-  __vertical_mode__: MaybeSizePolicy = None
   __x_radius__: MaybeInt = None
   __y_radius__: MaybeInt = None
   __background_color__: MaybeColor = None

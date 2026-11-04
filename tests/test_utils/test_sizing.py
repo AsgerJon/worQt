@@ -34,11 +34,10 @@ class TestSizing(UtilsTest):
                      QSizePolicy.Policy.MinimumExpanding)
 
   def test_policy_defaults(self) -> None:
-    """A default 'SizePolicy' is intrinsic on both axes and frozen."""
+    """A default 'SizePolicy' is intrinsic on both axes."""
     policy = SizePolicy()
     self.assertIs(policy.horizontal, SizingMode.INTRINSIC)
     self.assertIs(policy.vertical, SizingMode.INTRINSIC)
-    self.assertTrue(policy.frozen)
 
   def test_policy_set_axis(self) -> None:
     """A per-axis mode is settable on a standalone policy."""
@@ -46,12 +45,6 @@ class TestSizing(UtilsTest):
     policy.horizontal = SizingMode.EXTRINSIC
     self.assertIs(policy.horizontal, SizingMode.EXTRINSIC)
     self.assertIs(policy.vertical, SizingMode.INTRINSIC)
-
-  def test_policy_frozen_is_write_protected(self) -> None:
-    """The 'frozen' flag rejects assignment."""
-    policy = SizePolicy()
-    with self.assertRaises(NotImplementedError):
-      policy.frozen = False
 
   def test_policy_q_conversion(self) -> None:
     """The 'Q' field builds a 'QSizePolicy' from the per-axis modes."""
@@ -68,8 +61,7 @@ class TestSizing(UtilsTest):
 
   def test_policy_recursion_guards(self) -> None:
     """Each lazy getter guards against a failed build."""
-    for name in ('_getHorizontalMode', '_getVerticalMode',
-                 '_getFrozenFlag'):
+    for name in ('_getHorizontalMode', '_getVerticalMode'):
       policy = SizePolicy()
       with self.assertRaises(RecursionError):
         getattr(policy, name)(_recursion=True)
@@ -77,8 +69,7 @@ class TestSizing(UtilsTest):
   def test_policy_type_guards(self) -> None:
     """Each getter rejects a corrupt backing slot."""
     specs = (('__horizontal_mode__', '_getHorizontalMode'),
-             ('__vertical_mode__', '_getVerticalMode'),
-             ('__is_frozen__', '_getFrozenFlag'))
+             ('__vertical_mode__', '_getVerticalMode'))
     for slot, getter in specs:
       policy = SizePolicy()
       setattr(policy, slot, 'bad')
@@ -92,22 +83,21 @@ class TestSizing(UtilsTest):
     with self.assertRaises(TypeException):
       SizePolicy().vertical = 'bad'
 
-  def test_policy_set_same_axis_skipped(self) -> None:
-    """Re-setting an axis to its current value is skipped."""
+  def test_policy_set_same_axis_value(self) -> None:
+    """Re-setting an axis to its current value keeps it."""
     policy = SizePolicy()
     policy.horizontal = SizingMode.EXTRINSIC
-    policy.horizontal = SizingMode.EXTRINSIC  # same -> SkipSet
+    policy.horizontal = SizingMode.EXTRINSIC
     self.assertIs(policy.horizontal, SizingMode.EXTRINSIC)
     policy.vertical = SizingMode.EXTRINSIC
     policy.vertical = SizingMode.EXTRINSIC
     self.assertIs(policy.vertical, SizingMode.EXTRINSIC)
 
   def test_policy_set_different_axis_value(self) -> None:
-    """Re-setting an already-set axis to a different value proceeds (the
-    pre-set guard sees a real change, not a no-op)."""
+    """Re-setting an already-set axis to a different value changes it."""
     policy = SizePolicy()
     policy.horizontal = SizingMode.EXTRINSIC
-    policy.horizontal = SizingMode.INTRINSIC  # differs -> no SkipSet
+    policy.horizontal = SizingMode.INTRINSIC
     self.assertIs(policy.horizontal, SizingMode.INTRINSIC)
     policy.vertical = SizingMode.EXTRINSIC
     policy.vertical = SizingMode.INTRINSIC

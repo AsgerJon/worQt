@@ -12,7 +12,7 @@ from worktoy.desc import Field, AttriBox
 from worktoy.waitaminute import TypeException
 
 from ..utils.geom import InSets, Color, Rect, Size, RoundedRect, Point2D
-from ..utils.qee_num import SizePolicy, ColorNum, SizingMode
+from ..utils.qee_num import ColorNum, SizingMode
 from ..waitaminute.events import InvalidSizePolicy
 from . import AbstractPaintOp
 

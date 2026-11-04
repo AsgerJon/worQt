@@ -36,8 +36,8 @@ class AbstractWindow(QMainWindow, MixinBase):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  #  Private Variables
-  __ui_built__ = None  # guards the build-once lifecycle in 'show'
+  #  Public Variables
+  uiBuilt = AttriBox[bool](False)  # set once the first 'show' built the UI
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -60,11 +60,22 @@ class AbstractWindow(QMainWindow, MixinBase):
   #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def _buildUI(self, ) -> None:
+    """
+    The '_buildUI' method builds the window, and the first 'show()' runs
+    it, once. Here it runs 'initUI'; a subclass with more to build, such
+    as 'BaseWindow' with its menus, overrides this rather than 'show'.
+    """
+    self.initUI()
+
   def show(self, ) -> None:
-    """Build the UI once (via 'initUI') before the first show."""
-    if not self.__ui_built__:
-      self.initUI()
-      self.__ui_built__ = True
+    """
+    The 'show' method builds the UI on the first call only, then shows the
+    window, so showing a window again never builds it twice.
+    """
+    if not self.uiBuilt:
+      self._buildUI()
+      self.uiBuilt = True
     super().show()
 
   def closeEvent(self, event: QCloseEvent) -> None:
