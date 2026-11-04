@@ -6,6 +6,7 @@ collects the test methods encountered in the class body.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+from types import FunctionType
 from typing import TYPE_CHECKING, Any
 
 from worktoy.mcls.space_hooks import AbstractSpaceHook
@@ -25,7 +26,10 @@ class HookTest(AbstractSpaceHook):
   def setItemPhase(self, key: str, val: Any, old: Any = None, ) -> bool:
     """
     The 'setItemPhase' method detects test methods in the class body and
-    collects them in the '__test_methods__' variable of the space.
+    collects them in the '__test_methods__' variable of the space. Only
+    plain functions count: a 'run*'/'test*' name bound to a classmethod
+    (such as 'AppTest.runTest'), a staticmethod or a callable descriptor
+    like an 'AttriBox' is a helper or a field, never a test.
 
     Parameters
     ----------
@@ -44,7 +48,7 @@ class HookTest(AbstractSpaceHook):
     """
 
     if str.startswith(key, 'run') or str.startswith(key, 'test'):
-      if callable(val):
+      if isinstance(val, FunctionType):
         self.space.addTestMethod(key, val)
     return False
 

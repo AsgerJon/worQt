@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRect, QRectF
 from PySide6.QtGui import QPainterPath
-from icecream import ic
 from worktoy.dispatch import overload
 from worktoy.waitaminute import TypeException
 

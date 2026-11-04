@@ -1,11 +1,13 @@
 """
 The 'worQt.qtest' package: a test runner safe from hanging. Write tests by
-subclassing 'AppTest' (its metaclass collects every 'test*'/'run*' method)
-and run the suite with 'testMeBro()', 'AppTestSuite().runAll()', or
-'python -m worQt.qtest'. Each discovered test *class* runs on its own: an
-'AppTest' is isolated in a child process under a deadline, so a hang or
-segfault becomes a reported status instead of a frozen terminal, while a
-plain 'BaseTest'/'TestCase' runs in-process. A failure prints its traceback.
+subclassing 'AppTest' (its metaclass collects every 'test*'/'run*' method,
+inherited ones included) or a plain 'BaseTest', and run the suite with
+'python -m worQt.qtest', 'testMeBro()' or 'AppTestSuite().runAll()'. Every
+discovered test *class* runs in a child process of its own under a
+deadline, so a hang, a segfault or a broken import becomes a reported
+status - with the stack of where it happened - instead of a frozen
+terminal or a dead suite. Inside the child the standard unittest runner
+runs the tests, an 'AppTest' inside a live event loop.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen

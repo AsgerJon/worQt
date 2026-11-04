@@ -17,7 +17,6 @@ from PySide6.QtGui import (QPainter,
   QBrush,
   QFont,
   QTextOption, QPaintDevice)
-from icecream import ic
 from worktoy.utilities import textFmt
 from worktoy.waitaminute import TypeException
 from worktoy.desc import Field

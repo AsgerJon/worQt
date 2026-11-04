@@ -16,15 +16,18 @@ Tests run through the in-house `worQt.qtest` harness, NOT pytest. Put `src` on
 `PYTHONDONTWRITEBYTECODE=1`.
 
 ```bash
-# Run the whole test suite (each 'AppTest' class in its own child process)
+# Run the whole test suite (every test class in its own child process)
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest
 
-# Run a single test class by its dotted module name
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_app.test_abstract_application
+# Run only some test modules by dotted name (plain or 'AppTest' alike)
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_utils.test_color
 
-# Scratch runner: main.py drives yolo(), which runs a list of callables and
-# pretty-prints any traceback with source context. Edit the yolo(...) call at
-# the bottom of main.py to choose what runs.
+# Every top-level run (any entry point) rewrites 'latest.log' in the repo root
+# with its complete record: status lines plus every child's full output.
+
+# Local scratch runner: the gitignored 'main.py' hands callables to 'yolo()'
+# ('yolo.py'), which runs them and pretty-prints any traceback. Its
+# 'runTests'/'testMeBro' run the qtest suite.
 PYTHONDONTWRITEBYTECODE=1 python main.py
 ```
 
@@ -67,7 +70,13 @@ lazily constructing its splash screen and main window on first access.
 
 ### Application classes (`src/worQt/app`)
 
-Linear inheritance chain, each layer adding one concern:
+**Goal, not yet built:** today these three classes are empty shells (no
+`notify` override, no context manager, no `splash`/`window`). The design they
+are working towards is a linear inheritance chain, each layer adding one
+concern. The window chain (`src/worQt/windows`), the declarative menu system
+(`windows/menus`) and the paint ops (`src/worQt/paint_ops`, introduced through
+`PaintedWidget`, with `BoxWidget` as the box-model widget) are goals in the
+same sense: kept as scaffolding to build out, test-first.
 
 - `ApplicationMixin(QApplication, MixinBase)` — the actual fusion point where a
   concrete Qt type meets worktoy machinery.
@@ -108,11 +117,18 @@ These are enforced in this codebase; match them (see CONTRIBUTING.md):
 Tests live under `tests/`, mirroring the package (`tests/test_app` → `worQt.app`).
 Each test subpackage exposes a base test class subclassing
 `worktoy.work_test.BaseTest` (e.g. `AppTest`), and concrete `Test*` classes
-subclass that. `python_files = test_*.py`.
+subclass that. Discovery picks up `test*.py`/`run*.py` modules, each defining
+exactly one `Test*`/`Run*` class. Plain `BaseTest` classes (`test_*` methods)
+are for Qt value types; `AppTest` classes (`run_*`/`test_*` methods, inherited
+ones included) run inside a live event loop. Every class runs in its own child
+process under a deadline, through the standard unittest runner.
+`tests/test_qtest/fixtures/` holds deliberately failing modules for the
+harness's own tests; their `_` names keep them out of discovery.
 
 ## Repo noise
 
-The repo root and history contain scratch/legacy files unrelated to the package:
-`main_cls*.py`, `OLD_main_*.py`, and `src/_deprecated/`. These are not part of
-`worQt`; do not treat them as reference or import from them. The active source is
+Retired code and notes live in `archive/` at the repo root: gitignored, local
+only, paths mirroring where each file used to live (see `archive/README.md`).
+It includes the previous paint-op implementation from `main@478b34b`, as a
+reference for the `paint_ops` goal. Never import from it. The active source is
 exclusively under `src/worQt`.

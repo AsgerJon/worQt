@@ -10,7 +10,7 @@ from . import AppTestSuite
 
 def testMeBro() -> int:
   """
-  Run the full test suite. This is a sanity check that the test suite runs
-  at all, and that it passes on the current codebase.
+  The 'testMeBro' function runs the full test suite and returns 0 when it
+  passed, 1 otherwise.
   """
   return AppTestSuite().runAll()

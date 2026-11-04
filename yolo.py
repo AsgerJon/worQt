@@ -3,7 +3,6 @@
 #  Copyright (c) 2024-2025 Asger Jon Vistisen
 from __future__ import annotations
 
-import unittest
 import os
 import sys
 import time
@@ -90,40 +89,14 @@ def yolo(*args: Callable) -> None:
     print(msg % (seconds, time.ctime()))
 
 
-def runTests(verbosity: int = None) -> int:
-  """Runs the tests"""
-  results = []
-  loader = unittest.TestLoader()
-  res = None
-  here = os.path.abspath(os.path.dirname(__file__))
-  testRoot = os.path.join(here, 'tests')
-  testRoot = os.path.normpath(testRoot)
-  suite = loader.discover(start_dir=testRoot, )
-  runner = unittest.TextTestRunner(verbosity=0)
-  print(runner.run(suite))
-
-  for item in os.listdir(testRoot):
-    break
-    os.chdir(testRoot)
-    if not item.startswith('test'):
-      continue
-    testPath = os.path.join(testRoot, item)
-    testPath = os.path.normpath(testPath)
-    print(testPath)
-    try:
-      suite = loader.discover(start_dir=item, )
-    except ImportError as importError:
-      print('Unable to import test module: %s' % testPath)
-      print(importError)
-      continue
-    runner = unittest.TextTestRunner(verbosity=2)
-    res = runner.run(suite)
-    if res.wasSuccessful():
-      results.append('Tests passed in: %s' % testPath)
-    else:
-      results.append('Tests failed in: %s' % testPath)
-  for result in results:
-    print(result)
-  if res is None:
-    return -1
-  return 0
+def runTests(*names: str) -> int:
+  """
+  The 'runTests' function runs the test suite through the 'worQt.qtest'
+  harness - every test class in its own child process - and returns 0 when
+  everything passed, 1 otherwise. Given dotted module names, such as
+  'tests.test_utils.test_color', it runs only those.
+  """
+  from worQt.qtest import AppTestSuite  # needs 'src' on 'sys.path'
+  if names:
+    return AppTestSuite().runNames(*names)
+  return AppTestSuite().runAll()

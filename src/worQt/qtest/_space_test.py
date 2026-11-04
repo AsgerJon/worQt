@@ -69,19 +69,15 @@ class SpaceTest(BaseSpace):
     """
     if self.__test_methods__ is None:
       return dict()
-    if isinstance(self.__test_methods__, dict):
-      if not self.__test_methods__:
-        return dict()
-      for key, test in self.__test_methods__.items():
-        if isinstance(key, str) and callable(test):
-          continue
-        break
-      else:
-        return self.__test_methods__
-      if isinstance(key, str):
+    if not isinstance(self.__test_methods__, dict):
+      name, value = '__test_methods__', self.__test_methods__
+      raise TypeException(name, value, dict)
+    for key, test in self.__test_methods__.items():
+      if not isinstance(key, str):
         raise TypeException('key', key, str)
-      raise TypeException('test', test, Callable)
-    raise TypeException('__test_methods__', self.__test_methods__, tuple)
+      if not callable(test):
+        raise TypeException('test', test, Callable)
+    return self.__test_methods__
 
   def addTestMethod(self, key: str, method: Callable) -> None:
     """
