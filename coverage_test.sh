@@ -4,7 +4,7 @@
 #
 #  Run the 'worQt.qtest' suite under coverage and report.
 #
-#  'worQt.qtest' isolates each 'AppTest' in its own child process; with
+#  'worQt.qtest' isolates each test class in its own child process; with
 #  'WORQT_COVERAGE=1' the harness launches each child under 'coverage run'
 #  ('parallel = true' in 'pyproject.toml [tool.coverage.run]' gives every
 #  process its own data file), so 'combine' is needed before reporting. A

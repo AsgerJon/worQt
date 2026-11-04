@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QPainter, QPaintEvent
-from icecream import ic
 from worktoy.desc import Field, AttriBox
 from worktoy.waitaminute import TypeException
 

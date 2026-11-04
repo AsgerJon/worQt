@@ -1,122 +1,74 @@
 """
-The 'run' function provides the main entry point for running the tests.
+AppTestSuite discovers the test modules under the project's 'tests' tree
+and runs each in its own child process through 'AppTestRun', reporting one
+status per test class.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
 import os
-import re
 import sys
-import inspect
-import unittest
-from contextlib import redirect_stdout
+import time
+import traceback
 from typing import TYPE_CHECKING
-from types import ModuleType
-from importlib import import_module
 
 from worktoy.dispatch import overload
 from worktoy.desc import Field
 from worktoy.mcls import BaseObject
-from worktoy.waitaminute import TypeException, SubclassException
-from worktoy.work_test import BaseTest
+from worktoy.waitaminute import TypeException
 from worktoy.utilities import wordWrap
 
-from moreworktoy.utilities import errorFmt
-from . import MetaTest, AppTestRun
+from . import AppTestRun
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Optional, Iterator, Type
+  from typing import IO, TypeAlias, Optional, Iterator
 
   MaybeStr: TypeAlias = Optional[str]
-  Test: TypeAlias = Type[BaseTest]
-
-#  Matches the ANSI colour escapes 'errorFmt' emits, stripped from the log
-#  file so 'latest.log' stays plain text.
-_ANSI = re.compile(r'\x1b\[[0-9;]*m')
-
-
-class _LogTee:
-  """
-  Forwards every write to the console stream unchanged and, with the ANSI
-  colour escapes stripped, to the log file, so the run is shown in colour
-  yet recorded as plain text.
-  """
-
-  __slots__ = ('__console__', '__log_file__')
-
-  def __init__(self, console, logFile) -> None:
-    self.__console__ = console
-    self.__log_file__ = logFile
-
-  def write(self, text: str) -> int:
-    self.__log_file__.write(_ANSI.sub('', text))
-    return self.__console__.write(text)
-
-  def flush(self) -> None:
-    self.__console__.flush()
-    self.__log_file__.flush()
 
 
 class AppTestSuite(BaseObject):
   """
-  Discovers and runs every test class under the project's 'tests' tree,
-  each through 'AppTestRun' (an 'AppTest' in its own child process, a plain
-  'BaseTest'/'TestCase' in-process), and reports the outcomes. Discovery is
-  by naming: a module file is a candidate when its name begins with 'run' or
-  'test', and the single test class it holds is recognised when its name
-  begins with 'Run' or 'Test'. Modules are located by filename without being
-  imported; each is imported only when it is about to run.
+  AppTestSuite discovers and runs every test class under the project's
+  'tests' tree, each in its own child process through 'AppTestRun', and
+  reports the outcomes. Discovery is by naming: a module file is a
+  candidate when its name begins with 'run' or 'test', and the single test
+  class it defines is recognised when its name begins with 'Run' or 'Test'.
+  The suite itself never imports a test module - only the child does - so
+  nothing a test module does at import time can reach the suite or the
+  modules after it.
+
+  Every top-level run also writes its complete record - each status line
+  and the full output of every child, whatever the console verbosity - to
+  'latest.log' in the project root, replacing the previous run's. A suite
+  running inside a test child, as the harness's own tests do, leaves the
+  log alone.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  #  Class Variables
-
-  #  Fallback Variables
-
   #  Private Variables
-  __main_dir__: MaybeStr = None
   __tests_dir__: MaybeStr = None
   __root_dir__: MaybeStr = None
   __discovered_cache__: Optional[tuple[str, ...]] = None
   __verbosity__: int = 2
+  __log_name__: str = 'latest.log'
+  __log_path__: MaybeStr = None  # overrides '<root>/latest.log' when set
+  __log_file__ = None  # the open log while a run is going
 
   #  Public Variables
-  mainDir: Field[str] = Field()
   testsDir: Field[str] = Field()
   verbosity: Field[int] = Field()
-
-  #  Virtual Variables
+  logPath: Field[str] = Field()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _createMainDir(self, ) -> None:
-    mainModule: ModuleType = sys.modules['__main__']
-    mainFile: str = getattr(mainModule, '__file__', os.getcwd())
-    self.__main_dir__ = os.path.dirname(os.path.abspath(mainFile))
-
-  @mainDir.GET
-  def _getMainDir(self, **kwargs, ) -> str:
-    if self.__main_dir__ is None:
-      if kwargs.get('_recursion', False):
-        raise RecursionError
-      self._createMainDir()
-      return self._getMainDir(_recursion=True)
-    if isinstance(self.__main_dir__, str):
-      if os.path.exists(self.__main_dir__):
-        if os.path.isdir(self.__main_dir__):
-          return self.__main_dir__
-        raise NotADirectoryError(self.__main_dir__)
-      raise FileNotFoundError(self.__main_dir__)
-    raise TypeException('__main_dir__', self.__main_dir__, str)
-
   def _createTestsDir(self, ) -> None:
-    self.__tests_dir__ = os.path.join(self._getSrcDir(), 'tests')
+    self.__tests_dir__ = os.path.join(self._findRootDir(), 'tests')
 
   @testsDir.GET
   def _getTestsDir(self, **kwargs) -> str:
@@ -140,6 +92,16 @@ class AppTestSuite(BaseObject):
   @verbosity.SET
   def _setVerbosity(self, value: int) -> None:
     self.__verbosity__ = int(value)
+
+  @logPath.GET
+  def _getLogPath(self, ) -> str:
+    """
+    The 'logPath' getter returns where a run writes its log: 'latest.log'
+    in the project root, unless '__log_path__' says otherwise.
+    """
+    if self.__log_path__ is not None:
+      return self.__log_path__
+    return os.path.join(self.__root_dir__, self.__log_name__)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  NOTIFIERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -175,11 +137,12 @@ class AppTestSuite(BaseObject):
     directly in 'dirPath' (relative to 'basePath'), and the absolute paths
     of the package subdirectories worth recursing into. Packages are
     containers, not runnable units, so they are recursed into but never
-    yielded as names.
+    yielded as names. Entries are sorted, so the run order is the same on
+    every machine rather than whatever order the filesystem lists them in.
     """
     names = []
     packageDirs = []
-    for item in os.listdir(dirPath):
+    for item in sorted(os.listdir(dirPath)):
       full = os.path.join(dirPath, item)
       if item.startswith(('run', 'test')) and item.endswith('.py'):
         rel = os.path.relpath(full[:-3], basePath)
@@ -205,10 +168,10 @@ class AppTestSuite(BaseObject):
 
   def _discover(self, ) -> tuple[str, ...]:
     """
-    The dotted names of every 'run*'/'test*' module and 'run*'/'test*'
-    package found recursively under 'self.testsDir', WITHOUT importing
-    them. Reads 'self.testsDir', computes the 'sys.path' root once, and
-    hands both to the static '_walk'.
+    The dotted names of every 'run*'/'test*' module found recursively under
+    'self.testsDir', WITHOUT importing them. Reads 'self.testsDir',
+    computes the 'sys.path' root once, and hands both to the static
+    '_walk'.
     """
     basePath: str = os.path.dirname(self.testsDir.rstrip(os.sep))
     return self._walk(self.testsDir, basePath)
@@ -220,163 +183,196 @@ class AppTestSuite(BaseObject):
   def __iter__(self, ) -> Iterator[str]:
     """
     Yields the dotted name of every discovered 'run*'/'test*' test module.
-    Each name resolves to its test class through 'getNamed'.
     """
     yield from self._getDiscovered()
 
   @staticmethod
-  def _describe(code: int, timeout: float) -> tuple[str, str]:
+  def _describe(code: int, timedOut: bool, deadline: float) -> tuple:
     """
-    Maps an exit code (as returned by 'AppTestRun.run') to a
-    '(label, reason)' pair for reporting. A negative code is death by
-    signal: -9 is the deadline kill, -11 a segfault.
+    The '_describe' method turns how a child ended into the
+    '(label, reason)' pair the report shows. A timeout is known from the
+    supervisor having killed the child, never guessed from the exit code,
+    so a child killed by anything else is not mistaken for one.
     """
-    if not code:
+    if timedOut:
+      return 'TIMEOUT', 'killed after its %gs deadline' % (deadline,)
+    if code == AppTestRun.__pass_code__:
       return 'PASS', ''
-    if code == 3:
-      return 'FAIL', 'the test raised'
-    if code == 2:
-      return 'ERROR', 'malformed suite'
-    if code == 1:
-      return 'ERROR', 'no test class found'
-    if code == -9:
-      return 'TIMEOUT', 'killed after %gs deadline' % (timeout,)
+    if code == AppTestRun.__fail_code__:
+      return 'FAIL', 'a test failed'
+    if code == AppTestRun.__error_code__:
+      return 'ERROR', 'the test class could not be loaded or run'
     if code == -11:
       return 'CRASH', 'segmentation fault (signal 11)'
     if code < 0:
       return 'CRASH', 'killed by signal %d' % (-code,)
-    return 'FAIL', 'exit code %d' % (code,)
+    return 'ERROR', 'the child exited with code %d' % (code,)
+
+  @staticmethod
+  def _isNested() -> bool:
+    """
+    The '_isNested' method tells whether this suite runs inside a test
+    child, where it must not touch the log of the run it is part of.
+    """
+    variable = AppTestRun.__child_variable__
+    return True if os.environ.get(variable) else False
+
+  def _openLog(self, ) -> Optional[IO]:
+    """
+    The '_openLog' method opens the log for a new run, replacing the last
+    run's, and returns it - or 'None' inside a test child, or when the log
+    cannot be written, which is reported but never stops the run. The log
+    is line-buffered, so even a run that gets killed leaves what it had.
+    """
+    if self._isNested():
+      return None
+    try:
+      return open(self.logPath, 'w', 1, 'utf-8')
+    except OSError as error:
+      self._log(1, 'Could not write the log %s: %s' % (self.logPath, error))
+      return None
+
+  def _closeLog(self, ) -> None:
+    """The '_closeLog' method closes the log of the run that just ended."""
+    if self.__log_file__ is not None:
+      self.__log_file__.close()
+    self.__log_file__ = None
+
+  def _write(self, text: str) -> None:
+    """
+    The '_write' method appends 'text' to the log of the current run, if
+    there is one.
+    """
+    if self.__log_file__ is not None:
+      self.__log_file__.write('%s\n' % (text,))
 
   def _log(self, level: int, *parts: str) -> None:
     """
-    Reflows 'parts' to at most 77 columns via 'wordWrap' and prints the
-    result, but only when 'verbosity' is at least 'level'. Verbosity 0 is
-    silent, 1 prints only the final summary, 2 (the default) prints every
-    per-test outcome.
+    Reflows 'parts' to at most 77 columns via 'wordWrap', writes the result
+    to the log, and prints it when 'verbosity' is at least 'level'. Meant
+    for the suite's own status lines; child output goes through '_echo'.
     """
-    if self.verbosity < level:
-      return
-    print(wordWrap(77, *parts))
+    text = wordWrap(77, *parts)
+    self._write(text)
+    if self.verbosity >= level:
+      print(text)
 
-  @classmethod
-  def _classNameFor(cls, name: str) -> str:
+  def _echo(self, level: int, output: str) -> None:
     """
-    The best-effort test-class name for a module, read from its source
-    without importing it, so a module that fails to load is still reported
-    by its class name rather than its dotted path. Returns the first
-    'Run*'/'Test*' class declared in the file, or the dotted name when the
-    source cannot be read or holds no such class.
+    The '_echo' method writes child output to the log, and prints it when
+    'verbosity' is at least 'level', exactly as the child wrote it.
+    Reflowing it would flatten every traceback into an unreadable
+    paragraph.
     """
-    path = '%s.py' % os.path.join(cls.__root_dir__, *str.split(name, '.'))
+    if not output.strip():
+      return
+    text = output.rstrip()
+    self._write(text)
+    if self.verbosity >= level:
+      print(text)
+
+  def _report(self, name: str, label: str, reason: str, output: str) -> None:
+    """
+    The '_report' method prints the outcome of one test module. The
+    child's output is shown whenever the class did not pass, and for a
+    passing class only at verbosity 3.
+    """
+    self._echo(3 if label == 'PASS' else 2, output)
+    if reason:
+      self._log(2, '%s: %s (%s)' % (label, name, reason))
+    else:
+      self._log(2, '%s: %s' % (label, name))
+    self._log(2, '-' * 60)
+
+  def _runOne(self, name: str) -> bool:
+    """
+    The '_runOne' method runs the test module 'name' in its child, reports
+    the outcome and returns whether it passed. A failure of the harness
+    itself while supervising is reported as an error of that module rather
+    than ending the whole suite.
+    """
+    self._log(2, 'RUN: %s' % (name,))
+    testRun = AppTestRun(name)
     try:
-      handle = open(path, 'r', encoding='utf-8')
-      try:
-        lines = handle.readlines()
-      finally:
-        handle.close()
-    except OSError:
-      return name
-    for line in lines:
-      stripped = str.strip(line)
-      if not str.startswith(stripped, 'class '):
-        continue
-      ident = str.strip(str.split(str.split(stripped[6:], '(')[0], ':')[0])
-      if str.startswith(ident, 'Run') or str.startswith(ident, 'Test'):
-        return ident
-    return name
+      code, output = testRun.run()
+    except Exception:
+      output = traceback.format_exc()
+      self._report(name, 'ERROR', 'the harness failed', output)
+      return False
+    label, reason = self._describe(code, testRun.timedOut, testRun.deadline)
+    self._report(name, label, reason, output)
+    return True if label == 'PASS' else False
+
+  def runNames(self, *names: str) -> int:
+    """
+    The 'runNames' method runs the named test modules, each in its own
+    child, reporting each outcome at verbosity 2 and a summary at
+    verbosity 1, and recording all of it in 'latest.log'. It returns 0
+    when every module passed and 1 otherwise, ready to be a process exit
+    status.
+    """
+    self.__log_file__ = self._openLog()
+    try:
+      return self._runLogged(*names)
+    finally:
+      self._closeLog()
+
+  def _runLogged(self, *names: str) -> int:
+    """
+    The '_runLogged' method is the body of 'runNames', run while the log
+    is open; the timestamp heading the log says which run it records.
+    """
+    stamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    self._write('worQt.qtest run started %s' % (stamp,))
+    failedNames = [name for name in names if not self._runOne(name)]
+    failures = len(failedNames)
+    passed = len(names) - failures
+    self._log(1, '%d passed, %d failed of %d test classes' % (
+        passed, failures, len(names)))
+    if failedNames:
+      failedList = ',\n'.join('  %s' % (name,) for name in failedNames)
+      self._echo(1, 'Failed:\n%s' % (failedList,))
+    return 1 if failures else 0
 
   def runAll(self, ) -> int:
     """
-    Runs every discovered test class through 'AppTestRun' - an 'AppTest' in
-    its own expendable child process, a plain 'TestCase' in-process -
-    reporting each outcome at verbosity 2 and a summary at verbosity 1.
-    Returns the count of classes that did not pass, suitable as a process
-    exit code. The whole report is also saved, with the ANSI colour
-    stripped, to 'latest.log' at the project root.
+    The 'runAll' method runs every discovered test module through
+    'runNames' and returns its status: 0 when everything passed, 1
+    otherwise.
     """
-    logPath = os.path.join(self.__root_dir__, 'latest.log')
-    logFile = open(logPath, 'w', encoding='utf-8')
-    try:
-      with redirect_stdout(_LogTee(sys.stdout, logFile)):
-        return self._runReport()
-    finally:
-      logFile.close()
-
-  def _runReport(self, ) -> int:
-    """
-    The 'runAll' body: runs every discovered class and prints the report to
-    stdout, which 'runAll' tees to 'latest.log'.
-    """
-    rule = '-' * 60
-    failedNames = []
-    names = [*self]
-    for name in names:
-      try:
-        cls = self.getNamed(name)
-      except Exception as error:
-        #  'errorFmt' is pre-formatted; reflowing it through '_log'/
-        #  'wordWrap' would collapse its newlines, so print it verbatim.
-        if self.verbosity >= 2:
-          print(errorFmt(error))
-        self._log(2, rule)
-        #  The class object is unavailable (the module failed to load), so
-        #  its name is recovered from the source for the summary.
-        failedNames.append(self._classNameFor(name))
-        continue
-      self._log(2, 'RUN: %s' % (cls.__name__,))
-      code, output = AppTestRun(cls).run()
-      #  'output' is already formatted (e.g. 'errorFmt' boxes); reflowing
-      #  it through 'wordWrap' would collapse its newlines and spacing, so
-      #  it is printed verbatim rather than through '_log'.
-      if output.strip() and self.verbosity >= 2:
-        print(output)
-      #  Plain (non-AppTest) classes run in-process and have no deadline.
-      timeout = cls.getTimeout() if hasattr(cls, 'getTimeout') else 0.0
-      label, reason = self._describe(code, timeout)
-      if reason:
-        self._log(2, '%s: %s (%s)' % (label, cls.__name__, reason))
-      else:
-        self._log(2, '%s: %s' % (label, cls.__name__))
-      self._log(2, rule)
-      if label != 'PASS':
-        failedNames.append(cls.__name__)
-    failures = len(failedNames)
-    passed = len(names) - failures
-    self._log(
-        1, '%d passed, %d failed of %d tests' % (
-          passed, failures, len(names)
-        )
-    )
-    #  Printed verbatim rather than through '_log'/'wordWrap', which would
-    #  collapse the newlines and indentation back onto one reflowed line.
-    if failedNames and self.verbosity >= 1:
-      failedList = ',\n'.join('  %s' % n for n in failedNames)
-      print('Failed:\n%s' % failedList)
-    return failures
+    return self.runNames(*self)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @staticmethod
-  def _getSrcDir() -> str:
-    here: str = os.path.dirname(os.path.abspath(__file__))
-    while 'tests' not in os.listdir(here) and len(here) > 1:
-      here = os.path.dirname(here)
-    if 'tests' in os.listdir(here):
+  def _findRootDir() -> str:
+    """
+    The '_findRootDir' method returns the project root: the directory
+    holding 'tests'. The working directory comes first, being the project
+    the user runs the suite from; otherwise the search walks up from this
+    package, which finds the repository when 'worQt' runs from its source
+    tree.
+    """
+    here: str = os.getcwd()
+    if os.path.isdir(os.path.join(here, 'tests')):
       return here
-    return os.getcwd()  # pragma: no cover  # no 'tests' above the running
-    # package
+    here = os.path.dirname(os.path.abspath(__file__))
+    while not os.path.isdir(os.path.join(here, 'tests')):
+      parent = os.path.dirname(here)
+      if parent == here:  # pragma: no cover  # reached the filesystem root
+        return os.getcwd()
+      here = parent
+    return here
 
   @classmethod
   def __class_init__(cls, name, bases, space, **kwargs) -> None:
     """
     Caches the absolute path to the root directory containing 'tests'.
-    Discovery is deferred until the first 'getNamed' call. If no such root
-    can be found, '_getSrcDir' raises 'FileNotFoundError' here, at class
-    creation.
+    Discovery is deferred until the suite is first iterated.
     """
-    cls.__root_dir__ = cls._getSrcDir()
+    cls.__root_dir__ = cls._findRootDir()
 
   @classmethod
   def _getDiscovered(cls, ) -> tuple[str, ...]:
@@ -388,24 +384,3 @@ class AppTestSuite(BaseObject):
       testsDir = os.path.join(cls.__root_dir__, 'tests')
       cls.__discovered_cache__ = cls(testsDir)._discover()
     return cls.__discovered_cache__
-
-  @classmethod
-  def getNamed(cls, name: str) -> MetaTest:
-    if name not in cls._getDiscovered():
-      raise ImportError(name)
-    namedModule = import_module(name)
-    out = None
-    for objName, obj in inspect.getmembers(namedModule, inspect.isclass):
-      if not objName.startswith(('Run', 'Test')):
-        continue
-      if not issubclass(obj, unittest.TestCase):
-        raise SubclassException(obj, unittest.TestCase)
-      if out is None:
-        out = obj
-        continue
-      infoSpec = """Found multiple test classes in the same module: %s!"""
-      info = infoSpec % (name,)
-      raise RuntimeError(info)
-    if out is None:
-      raise ImportError(name)
-    return out

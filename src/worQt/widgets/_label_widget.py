@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt, QRect
 from PySide6.QtGui import QFontMetrics, QTextOption
 from PySide6.QtWidgets import QWidget
-from icecream import ic
 from worktoy.core.sentinels import THIS
 from worktoy.desc import Field, AttriBox, Alias
 from worktoy.dispatch import overload

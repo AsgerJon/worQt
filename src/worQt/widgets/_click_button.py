@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QTimer, Signal, SignalInstance, QEvent
 from PySide6.QtGui import QMouseEvent
-from icecream import ic
 from worktoy.desc import Field
 from worktoy.utilities import maybe
 from worktoy.waitaminute import TypeException, MissingVariable

@@ -177,3 +177,9 @@ cython_debug/
 claude*
 CLAUDE*
 .claude/
+
+# Local archive of retired code and notes, kept out of the repository
+archive/
+
+# Draft commit message
+/commit_message.txt

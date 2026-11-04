@@ -6,8 +6,8 @@ MetaTest subclasses 'BaseMeta' and provides the metaclass from which the
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from worktoy.desc import Field
 from worktoy.mcls import BaseMeta
@@ -15,7 +15,7 @@ from worktoy.mcls import BaseMeta
 from . import SpaceTest
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Optional
+  from typing import TypeAlias
 
   Bases: TypeAlias = tuple[type, ...]
 
@@ -31,7 +31,7 @@ class MetaTest(BaseMeta):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  Private Variables
-  __test_methods__: Optional[dict[str, Callable]] = None
+  __test_methods__: dict[str, Callable]
 
   #  Public Variables
   testMethods: Field[dict[str, Callable]] = Field()
@@ -42,7 +42,19 @@ class MetaTest(BaseMeta):
 
   @testMethods.GET
   def _getTestMethods(cls, ) -> dict[str, Callable]:
-    return getattr(cls, '__test_methods__', )
+    """
+    The 'testMethods' getter returns every test method the class runs,
+    including those inherited from base test classes, so a shared bank of
+    tests written once on a base runs on every subclass. Each class body
+    records only its own methods, so the getter merges them from the most
+    basic class down; a subclass redefining a test replaces it in place.
+    """
+    out = dict()
+    for base in reversed(cls.__mro__):
+      own = vars(base).get('__test_methods__', None)
+      if own:
+        out.update(own)
+    return out
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

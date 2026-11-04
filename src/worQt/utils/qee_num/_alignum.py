@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QSize, QRect, QRectF, QSizeF
-from icecream import ic
 from worktoy.desc import Field
 from worktoy.dispatch import overload
 from worktoy.keenum import KeeNum, Kee

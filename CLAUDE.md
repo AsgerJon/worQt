@@ -16,15 +16,18 @@ Tests run through the in-house `worQt.qtest` harness, NOT pytest. Put `src` on
 `PYTHONDONTWRITEBYTECODE=1`.
 
 ```bash
-# Run the whole test suite (each 'AppTest' class in its own child process)
+# Run the whole test suite (every test class in its own child process)
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest
 
-# Run a single test class by its dotted module name
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_app.test_abstract_application
+# Run only some test modules by dotted name (plain or 'AppTest' alike)
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_utils.test_color
 
-# Scratch runner: main.py drives yolo(), which runs a list of callables and
-# pretty-prints any traceback with source context. Edit the yolo(...) call at
-# the bottom of main.py to choose what runs.
+# Every top-level run (any entry point) rewrites 'latest.log' in the repo root
+# with its complete record: status lines plus every child's full output.
+
+# Local scratch runner: the gitignored 'main.py' hands callables to 'yolo()'
+# ('yolo.py'), which runs them and pretty-prints any traceback. Its
+# 'runTests'/'testMeBro' run the qtest suite.
 PYTHONDONTWRITEBYTECODE=1 python main.py
 ```
 
@@ -67,40 +70,43 @@ lazily constructing its splash screen and main window on first access.
 
 ### Application classes (`src/worQt/app`)
 
-Two layers, not three — the earlier `AbstractApplication` middle layer was
-folded into `App`:
-
-- `ApplicationMixin(QApplication, MixinBase)` — the actual fusion point where a
-  concrete Qt type meets worktoy machinery. Empty body; it exists only to be the
-  place the two metaclasses meet.
-- `App(ApplicationMixin)` — the concrete application, carrying every app-scoped
-  concern directly:
-  - `notify()` funnels exceptions raised inside slots/event filters into
-    `handleException()` (a no-op hook for subclasses to override). Only
-    `Exception` is intercepted; `KeyboardInterrupt`/`SystemExit` propagate.
-  - `returnCode`, `splash` (a `QSplashScreen`) and `window` (a `QMainWindow`
-    subclass) are worktoy `Field` descriptors backed by lazily-constructed
-    private slots. The window *type* is app-specific: a concrete subclass sets
-    `__window_class__`, and `getWindowClass()` raises `MissingVariable` if it is
-    unset. Because any `MixinBase` can reach the running application through
-    `self.app`, `self.app.window` reaches these from anywhere in the graph.
-  - Exit guard: `hasUnsavedChanges()`/`saveChanges()` are hooks a concrete app
-    overrides; `confirmExit()` is the single place the Save/Discard/Cancel prompt
-    lives, consulted by `AbstractWindow.closeEvent`.
-  - Title star: `_startTitleWatch()` polls `hasUnsavedChanges()` on a `QTimer`
-    (there is no generic "dirty changed" signal) and `_refreshTitle()` keeps the
-    `__unsaved_marker__` (` *`) on the window title current.
-  - Context manager: `__enter__` returns the app; `__exit__` runs the Qt event
-    loop (`self.exec()`) and records `returnCode` only on a clean exit (no
-    exception in the with-body). Usage:
+- `ApplicationMixin(QApplication, MixinBase)` — the fusion point where a
+  concrete Qt type meets worktoy machinery.
+- `App(ApplicationMixin)` — the worQt application, used as a context manager:
+  `__exit__` runs the Qt event loop only on a clean exit. It owns the lazily
+  built `splash` and `window` (a concrete app sets `__window_class__`),
+  routes exceptions raised in slots and event filters from `notify()` to the
+  `handleException()` hook (only `Exception`; `KeyboardInterrupt`/`SystemExit`
+  propagate), and guards exit: `confirmExit()` offers Save/Discard/Cancel when
+  `hasUnsavedChanges()`, and the window title carries a ` *` marker while
+  there are unsaved changes. Usage:
 
   ```python
-  class MyApp(App):
-    __window_class__ = MyWindow
-
   with MyApp(*sys.argv) as app:
       app.window.show()
   ```
+
+### The rest of the package
+
+- `windows` — `AbstractWindow` (build the UI once on the first `show()`;
+  `closeEvent` consults the app's exit guard) → `BaseWindow` (menu bar) →
+  `LayoutWindow` → `MainWindow`. `windows/menus` is the declarative menu
+  system: `MenuBox`/`ActionBox` fields register menu and action types on the
+  owning bar/menu, which build them lazily.
+- `widgets` — `PaintedWidget` implements the box model (margins, borders,
+  paddings, content) and paints through `paint_ops`; `LabelWidget`,
+  `TextWidget`, `PaintButton`, `ClickButton` and `PushButton` build on it.
+- `paint_ops` — painting operations as descriptors on a painted widget
+  (`PaintBoxModel`, `PaintLabel`).
+- `layouts` — `GridLayout` with `LayoutCell`/`LayoutIndex`.
+- `waitaminute` — exceptions raised by widgets during event handling.
+- `utils` — value types (geometry, `Color`), enums, fonts, `WPainter`.
+- `src/moreworktoy` — `errorFmt`, utilities that may move to worktoy.
+
+`qtest` also provides `WidgetTest` (an `AppTest` with gestures: `showLive`,
+`click`, `hold`, `key`, `typeText`, signal spies and waiters) and the
+`primitives` behind it. A test child runs on the real display and falls back
+to `offscreen` when no windowing platform is available.
 
 ## Conventions
 
@@ -124,11 +130,17 @@ These are enforced in this codebase; match them (see CONTRIBUTING.md):
 Tests live under `tests/`, mirroring the package (`tests/test_app` → `worQt.app`).
 Each test subpackage exposes a base test class subclassing
 `worktoy.work_test.BaseTest` (e.g. `AppTest`), and concrete `Test*` classes
-subclass that. `python_files = test_*.py`.
+subclass that. Discovery picks up `test*.py`/`run*.py` modules, each defining
+exactly one `Test*`/`Run*` class. Plain `BaseTest` classes (`test_*` methods)
+are for Qt value types; `AppTest` classes (`run_*`/`test_*` methods, inherited
+ones included) run inside a live event loop. Every class runs in its own child
+process under a deadline, through the standard unittest runner.
+`tests/test_qtest/fixtures/` holds deliberately failing modules for the
+harness's own tests; their `_` names keep them out of discovery.
 
 ## Repo noise
 
-The repo root and history contain scratch/legacy files unrelated to the package:
-`main_cls*.py`, `OLD_main_*.py`, and `src/_deprecated/`. These are not part of
-`worQt`; do not treat them as reference or import from them. The active source is
-exclusively under `src/worQt`.
+Retired code and notes live in `archive/` at the repo root: gitignored, local
+only, paths mirroring where each file used to live (see `archive/README.md`).
+Never import from it. The active source is under `src/worQt` and
+`src/moreworktoy`.

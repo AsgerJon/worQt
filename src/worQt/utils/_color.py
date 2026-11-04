@@ -43,18 +43,18 @@ class Color(BaseObject):
   __alpha_keys__: TupleField = (*stringList("""alpha, a"""),)
 
   #  Public Variables
-  red: IntBox = FixBox[int](255)
-  green: IntBox = FixBox[int](255)
-  blue: IntBox = FixBox[int](255)
-  alpha: IntBox = FixBox[int](255)
+  red = FixBox[int](255)
+  green = FixBox[int](255)
+  blue = FixBox[int](255)
+  alpha = FixBox[int](255)
 
   #  Virtual Variables
-  Q: ColorField = Field()
-  fillBrush: BrushField = Field()
-  solidPen: PenField = Field()
-  dashedPen: PenField = Field()
-  dottedPen: PenField = Field()
-  dashDotPen: PenField = Field()
+  Q = Field[QColor]()
+  fillBrush = Field[QBrush]()
+  solidPen = Field[QPen]()
+  dashedPen = Field[QPen]()
+  dottedPen = Field[QPen]()
+  dashDotPen = Field[QPen]()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -151,13 +151,13 @@ class Color(BaseObject):
       (*self.__green_keys__,),
       (*self.__blue_keys__,),
       (*self.__alpha_keys__,),
-      )
+    )
     VALUES = (
       self.red,
       self.green,
       self.blue,
       self.alpha,
-      )
+    )
     for keys, value in zip(KEYS, VALUES):
       if key in keys:
         return value
@@ -245,7 +245,7 @@ class Color(BaseObject):
       (*self.__green_keys__,),
       (*self.__blue_keys__,),
       (*self.__alpha_keys__,),
-      ]
+    ]
     VALS = dict()
     NAMES = ('red', 'green', 'blue', 'alpha',)
     for keys, name in zip(KEYS, NAMES):

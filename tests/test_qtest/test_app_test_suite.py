@@ -1,10 +1,8 @@
 """
-TestAppTestSuite covers 'AppTestSuite': filesystem discovery
-('_scanDir'/'_walk'/'_discover'), the 'mainDir'/'testsDir'/'verbosity'
-accessors and their defensive branches, exit-code description, name
-resolution ('getNamed' and its edge cases) and the run loop ('runAll',
-exercised against a stubbed 'AppTestRun'). 'testMeBro' is covered against a
-stubbed suite so it does not launch the real test run.
+TestAppTestSuite covers 'AppTestSuite': discovery (sorted, and blind to
+the harness fixtures), the mapping of how a child ended to the reported
+label, the run-and-report path with its exit status, and the guards on
+'testsDir'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -13,315 +11,220 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import shutil
-import sys
 import tempfile
-import types
 from typing import TYPE_CHECKING
+from unittest import mock
 
-import worQt.qtest._app_test_suite as suiteModule
-import worQt.qtest._test_me_bro as broModule
-from worktoy.waitaminute import SubclassException, TypeException
-from worktoy.work_test import BaseTest
+from worktoy.waitaminute import TypeException
 
-from worQt.qtest import AppTestSuite, testMeBro
+from worQt.qtest import AppTestRun, AppTestSuite
 
 from . import QTestTest
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
+  pass
+
+_FIXTURES = 'tests.test_qtest.fixtures.'
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_CHILD_VARIABLE = AppTestRun.__child_variable__
 
 
-class _Pass:
-  """Stub test class reporting a clean run."""
-  _fake = (0, '')
-
-  @classmethod
-  def getTimeout(cls) -> float:
-    return 30.0
+def _raisingRun(self) -> tuple[int, str]:
+  """Stands in for 'AppTestRun.run' when the harness itself fails."""
+  raise OSError('the harness broke')
 
 
-class _Fail:
-  """Stub test class reporting a failing run with output."""
-  _fake = (3, 'boom')
-
-  @classmethod
-  def getTimeout(cls) -> float:
-    return 30.0
-
-
-class _FakeRun:
-  """Drop-in for 'AppTestRun' returning the class's canned result."""
-
-  def __init__(self, cls) -> None:
-    self.cls = cls
-
-  def run(self) -> tuple:
-    return self.cls._fake
+def _quietRun(self) -> tuple[int, str]:
+  """Stands in for 'AppTestRun.run' with a passing, chatty child."""
+  return 0, 'child output'
 
 
 class TestAppTestSuite(QTestTest):
-  """Tests for the discovery-and-run suite."""
+  """Tests for 'AppTestSuite'."""
 
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  HELPERS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  Spawns two children.
+  __time_out__ = 90.0
 
   @staticmethod
-  def _tree() -> str:
-    """Build a throwaway 'tests' tree and return its path."""
-    tmp = tempfile.mkdtemp()
-    td = os.path.join(tmp, 'tests')
-    os.makedirs(os.path.join(td, 'sub'))
-    os.makedirs(os.path.join(td, 'nopkg'))  # no __init__: not a package
-    rels = ['__init__.py', 'run_a.py', 'test_b.py', 'x.py',
-            'sub/__init__.py', 'sub/test_c.py', 'nopkg/run_d.py']
-    for rel in rels:
-      open(os.path.join(td, rel), 'w').close()
-    return td
+  def _capture(suite: AppTestSuite, *names: str) -> tuple[int, str]:
+    """Runs 'names' through 'suite'; returns '(status, printed)'."""
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+      status = suite.runNames(*names)
+    return status, buffer.getvalue()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  DISCOVERY   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DISCOVERY  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_discover_tree(self) -> None:
-    """'_discover' finds 'run*'/'test*' modules in packages and skips a
-    directory without '__init__.py'."""
-    td = self._tree()
-    try:
-      names = set(AppTestSuite(td)._discover())
-      self.assertIn('tests.run_a', names)
-      self.assertIn('tests.test_b', names)
-      self.assertIn('tests.sub.test_c', names)
-      self.assertFalse(any('run_d' in n for n in names))  # nopkg skipped
-      self.assertFalse(any(n.endswith('.x') for n in names))  # not run/test
-    finally:
-      shutil.rmtree(os.path.dirname(td), ignore_errors=True)
+  def test_scan_dir_is_sorted(self) -> None:
+    """A directory scan lists modules in sorted, stable order."""
+    root = os.path.dirname(os.path.dirname(_HERE))
+    names, packageDirs = AppTestSuite._scanDir(_HERE, root)
+    self.assertTrue(names)
+    self.assertEqual([*names], sorted(names))
+    self.assertIn(os.path.join(_HERE, 'fixtures'), packageDirs)
 
-  def test_iter_uses_discovered_cache(self) -> None:
-    """Iterating the suite yields the discovered (real) test modules."""
+  def test_fixtures_are_not_discovered(self) -> None:
+    """The deliberately failing fixtures are never part of the suite."""
     names = [*AppTestSuite()]
     self.assertIn('tests.test_qtest.test_app_test_suite', names)
+    self.assertFalse([name for name in names if '.fixtures.' in name])
 
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  ACCESSORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def test_main_dir(self) -> None:
-    """'mainDir' resolves lazily to an existing directory."""
-    self.assertTrue(os.path.isdir(AppTestSuite().mainDir))
-
-  def test_main_dir_not_a_directory(self) -> None:
-    """A 'mainDir' pointing at a file raises 'NotADirectoryError'."""
-    tmp = tempfile.mkdtemp()
-    afile = os.path.join(tmp, 'afile')
-    open(afile, 'w').close()
-    try:
-      suite = AppTestSuite()
-      suite.__main_dir__ = afile
-      with self.assertRaises(NotADirectoryError):
-        _ = suite.mainDir
-    finally:
-      shutil.rmtree(tmp, ignore_errors=True)
-
-  def test_main_dir_missing(self) -> None:
-    """A 'mainDir' pointing nowhere raises 'FileNotFoundError'."""
-    suite = AppTestSuite()
-    suite.__main_dir__ = os.path.join(tempfile.gettempdir(), 'nope_xyz_123')
-    with self.assertRaises(FileNotFoundError):
-      _ = suite.mainDir
-
-  def test_tests_dir_lazy(self) -> None:
-    """A no-arg suite resolves 'testsDir' to an existing directory and adds
-    its parent to 'sys.path'."""
-    suite = AppTestSuite()
-    testsDir = suite.testsDir
-    self.assertTrue(os.path.isdir(testsDir))
-    self.assertIn(os.path.dirname(testsDir), sys.path)
-
-  def test_tests_dir_not_a_directory(self) -> None:
-    """A 'testsDir' pointing at a file raises 'NotADirectoryError'."""
-    tmp = tempfile.mkdtemp()
-    afile = os.path.join(tmp, 'afile')
-    open(afile, 'w').close()
-    try:
-      with self.assertRaises(NotADirectoryError):
-        _ = AppTestSuite(afile).testsDir
-    finally:
-      shutil.rmtree(tmp, ignore_errors=True)
-
-  def test_tests_dir_missing(self) -> None:
-    """A 'testsDir' pointing nowhere raises 'FileNotFoundError'."""
-    missing = os.path.join(tempfile.gettempdir(), 'nope_tests_xyz')
-    with self.assertRaises(FileNotFoundError):
-      _ = AppTestSuite(missing).testsDir
-
-  def test_verbosity_round_trip(self) -> None:
-    """'verbosity' is settable and readable."""
-    suite = AppTestSuite()
-    suite.verbosity = 0
-    self.assertEqual(suite.verbosity, 0)
-
-  def test_dir_recursion_guards(self) -> None:
-    """The lazy 'mainDir'/'testsDir' getters guard against re-entry."""
-    with self.assertRaises(RecursionError):
-      AppTestSuite()._getMainDir(_recursion=True)
-    with self.assertRaises(RecursionError):
-      AppTestSuite()._getTestsDir(_recursion=True)
-
-  def test_dir_wrong_slot_type(self) -> None:
-    """A non-string 'mainDir'/'testsDir' slot raises 'TypeException'."""
-    main = AppTestSuite()
-    main.__main_dir__ = 123
-    with self.assertRaises(TypeException):
-      _ = main.mainDir
-    tests = AppTestSuite()
-    tests.__tests_dir__ = 123
-    with self.assertRaises(TypeException):
-      _ = tests.testsDir
-
-  def test_log_below_verbosity_is_silent(self) -> None:
-    """A '_log' below the suite's verbosity prints nothing and returns."""
-    suite = AppTestSuite()
-    suite.verbosity = 0
-    with contextlib.redirect_stdout(io.StringIO()) as captured:
-      suite._log(2, 'hidden')
-    self.assertEqual(captured.getvalue(), '')
+  def test_find_root_dir(self) -> None:
+    """The root directory is the one holding 'tests'."""
+    root = AppTestSuite._findRootDir()
+    self.assertTrue(os.path.isdir(os.path.join(root, 'tests')))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DESCRIBE   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_describe_codes(self) -> None:
-    """'_describe' maps every exit-code family to a label."""
-    cases = {
-      0  : 'PASS',
-      3  : 'FAIL',
-      2  : 'ERROR',
-      1  : 'ERROR',
-      -9 : 'TIMEOUT',
-      -11: 'CRASH',
-      -5 : 'CRASH',  # other signal
-      7  : 'FAIL',  # other positive code
-    }
-    for code, label in cases.items():
-      self.assertEqual(AppTestSuite._describe(code, 30.0)[0], label)
+  def test_describe(self) -> None:
+    """Each way a child can end maps to its label."""
+    describe = AppTestSuite._describe
+    passCode = AppTestRun.__pass_code__
+    failCode = AppTestRun.__fail_code__
+    errorCode = AppTestRun.__error_code__
+    self.assertEqual(describe(passCode, False, 0.0)[0], 'PASS')
+    self.assertEqual(describe(failCode, False, 0.0)[0], 'FAIL')
+    self.assertEqual(describe(errorCode, False, 0.0)[0], 'ERROR')
+    self.assertEqual(describe(-11, False, 0.0)[0], 'CRASH')
+    self.assertEqual(describe(-6, False, 0.0)[0], 'CRASH')
+    self.assertEqual(describe(1, False, 0.0)[0], 'ERROR')
+
+  def test_describe_timeout_comes_from_the_supervisor(self) -> None:
+    """Only a kill by the supervisor is a TIMEOUT; any other -9 is not."""
+    describe = AppTestSuite._describe
+    self.assertEqual(describe(-9, True, 5.0)[0], 'TIMEOUT')
+    self.assertIn('5s', describe(-9, True, 5.0)[1])
+    self.assertEqual(describe(-9, False, 0.0)[0], 'CRASH')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  GET NAMED   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  RUN AND REPORT   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_get_named_resolves(self) -> None:
-    """'getNamed' resolves a discovered module to its test class."""
-    cls = AppTestSuite.getNamed('tests.test_app.test_exec')
-    self.assertEqual(cls.__name__, 'TestExec')
+  def test_run_names_pass(self) -> None:
+    """A passing module gives status 0; verbosity 3 shows its output."""
+    suite = AppTestSuite()
+    suite.verbosity = 3
+    status, printed = self._capture(suite, _FIXTURES + '_plain')
+    self.assertEqual(status, 0, printed)
+    self.assertIn('PASS: %s_plain' % _FIXTURES, printed)
+    self.assertIn('test_no_application', printed)
 
-  def test_get_named_unknown_raises(self) -> None:
-    """An undiscovered name raises 'ImportError'."""
-    with self.assertRaises(ImportError):
-      AppTestSuite.getNamed('tests.nope.nope')
+  def test_run_names_fail(self) -> None:
+    """A failing module gives status 1 and shows the child's output."""
+    suite = AppTestSuite()
+    status, printed = self._capture(suite, _FIXTURES + '_fail')
+    self.assertEqual(status, 1, printed)
+    self.assertIn('FAIL: %s_fail' % _FIXTURES, printed)
+    self.assertIn('run_fails', printed)
+    self.assertIn('0 passed, 1 failed of 1 test classes', printed)
+    self.assertIn('Failed:\n  %s_fail' % _FIXTURES, printed)
 
-  def _injectModule(self, name: str, module: types.ModuleType) -> None:
-    """Register 'module' under 'name' and add it to the discovered cache,
-    restoring the cache in 'tearDown' via the saved snapshot."""
-    sys.modules[name] = module
-    AppTestSuite.__discovered_cache__ = (*AppTestSuite._getDiscovered(), name)
+  def test_run_names_harness_failure(self) -> None:
+    """A failure of the harness is an ERROR of that module, not a crash."""
+    suite = AppTestSuite()
+    with mock.patch.object(AppTestRun, 'run', _raisingRun):
+      status, printed = self._capture(suite, 'any.module')
+    self.assertEqual(status, 1)
+    self.assertIn('the harness failed', printed)
+    self.assertIn('the harness broke', printed)
 
-  def test_get_named_multiple_classes(self) -> None:
-    """A module with two test classes raises 'RuntimeError'."""
-    saved = AppTestSuite._getDiscovered()
-    module = types.ModuleType('tests._fake_multi')
+  def test_verbosity_zero_is_silent(self) -> None:
+    """At verbosity 0 nothing is printed."""
+    suite = AppTestSuite()
+    suite.verbosity = 0
+    with mock.patch.object(AppTestRun, 'run', _quietRun):
+      status, printed = self._capture(suite, 'any.module')
+    self.assertEqual(status, 0)
+    self.assertEqual(printed, '')
 
-    class TestOne(BaseTest):
-      pass
-
-    class TestTwo(BaseTest):
-      pass
-
-    module.TestOne, module.TestTwo = TestOne, TestTwo
-    try:
-      self._injectModule('tests._fake_multi', module)
-      with self.assertRaises(RuntimeError):
-        AppTestSuite.getNamed('tests._fake_multi')
-    finally:
-      AppTestSuite.__discovered_cache__ = saved
-      sys.modules.pop('tests._fake_multi', None)
-
-  def test_get_named_non_testcase(self) -> None:
-    """A 'Test'-named class that is not a 'TestCase' raises
-    'SubclassException'."""
-    saved = AppTestSuite._getDiscovered()
-    module = types.ModuleType('tests._fake_bad')
-
-    class TestNope:  # not a TestCase
-      pass
-
-    module.TestNope = TestNope
-    try:
-      self._injectModule('tests._fake_bad', module)
-      with self.assertRaises(SubclassException):
-        AppTestSuite.getNamed('tests._fake_bad')
-    finally:
-      AppTestSuite.__discovered_cache__ = saved
-      sys.modules.pop('tests._fake_bad', None)
-
-  def test_get_named_no_class(self) -> None:
-    """A module with no test class raises 'ImportError'."""
-    saved = AppTestSuite._getDiscovered()
-    module = types.ModuleType('tests._fake_none')
-    try:
-      self._injectModule('tests._fake_none', module)
-      with self.assertRaises(ImportError):
-        AppTestSuite.getNamed('tests._fake_none')
-    finally:
-      AppTestSuite.__discovered_cache__ = saved
-      sys.modules.pop('tests._fake_none', None)
+  def test_passing_output_hidden_at_verbosity_two(self) -> None:
+    """At the default verbosity a passing class shows its status only."""
+    suite = AppTestSuite()
+    with mock.patch.object(AppTestRun, 'run', _quietRun):
+      status, printed = self._capture(suite, 'any.module')
+    self.assertEqual(status, 0)
+    self.assertIn('PASS: any.module', printed)
+    self.assertNotIn('child output', printed)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  RUN ALL (stubbed)  # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  LATEST LOG   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_run_all_counts_failures(self) -> None:
-    """'runAll' runs each discovered class through 'AppTestRun', logs each
-    outcome and returns the failure count. A passing, a failing and an
-    unresolvable name are exercised."""
+  def test_log_path_default(self) -> None:
+    """By default the log is 'latest.log' in the project root."""
+    logPath = AppTestSuite().logPath
+    self.assertEqual(os.path.basename(logPath), 'latest.log')
+    self.assertTrue(os.path.isdir(os.path.join(os.path.dirname(logPath),
+                                               'tests')))
 
-    class _Suite(AppTestSuite):
-      def __iter__(self) -> Any:
-        yield from ['ok', 'bad', 'err']
+  def test_log_records_the_whole_run(self) -> None:
+    """A top-level run logs everything, whatever the console verbosity."""
+    suite = AppTestSuite()
+    suite.verbosity = 0
+    with tempfile.TemporaryDirectory() as tmp:
+      suite.__log_path__ = os.path.join(tmp, 'latest.log')
+      with mock.patch.dict(os.environ):
+        os.environ.pop(_CHILD_VARIABLE, None)
+        with mock.patch.object(AppTestRun, 'run', _quietRun):
+          status, printed = self._capture(suite, 'any.module')
+      with open(suite.__log_path__) as log:
+        logged = log.read()
+    self.assertEqual(status, 0)
+    self.assertEqual(printed, '')
+    self.assertIn('worQt.qtest run started', logged)
+    self.assertIn('child output', logged)
+    self.assertIn('PASS: any.module', logged)
+    self.assertIn('1 passed, 0 failed of 1 test classes', logged)
 
-      def getNamed(self, name: str) -> Any:
-        if name == 'err':
-          raise ImportError('err')
-        return {'ok': _Pass, 'bad': _Fail}[name]
+  def test_log_left_alone_inside_a_test_child(self) -> None:
+    """A suite running inside a test child never writes the log."""
+    suite = AppTestSuite()
+    suite.verbosity = 0
+    with tempfile.TemporaryDirectory() as tmp:
+      suite.__log_path__ = os.path.join(tmp, 'latest.log')
+      with mock.patch.dict(os.environ, {_CHILD_VARIABLE: '1'}):
+        with mock.patch.object(AppTestRun, 'run', _quietRun):
+          self._capture(suite, 'any.module')
+      self.assertFalse(os.path.exists(suite.__log_path__))
 
-    saved = suiteModule.AppTestRun
-    suiteModule.AppTestRun = _FakeRun
-    try:
-      suite = _Suite()
-      suite.verbosity = 2  # exercise the per-line logging
-      #  Capture the stub suite's RUN/FAIL/ERROR logging so it does not
-      #  leak into the real runner's report and look like a failure.
-      with contextlib.redirect_stdout(io.StringIO()):
-        failures = suite.runAll()
-      self.assertEqual(failures, 2)  # 'bad' + 'err'
-    finally:
-      suiteModule.AppTestRun = saved
+  def test_log_unwritable_is_not_fatal(self) -> None:
+    """A log that cannot be written is reported, and the run goes on."""
+    suite = AppTestSuite()
+    with tempfile.TemporaryDirectory() as tmp:
+      suite.__log_path__ = os.path.join(tmp, 'missing', 'latest.log')
+      with mock.patch.dict(os.environ):
+        os.environ.pop(_CHILD_VARIABLE, None)
+        with mock.patch.object(AppTestRun, 'run', _quietRun):
+          status, printed = self._capture(suite, 'any.module')
+    self.assertEqual(status, 0)
+    self.assertIn('Could not write the log', printed)
+    self.assertIn('PASS: any.module', printed)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  TEST ME BRO  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  TESTS DIR  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def test_me_bro_delegates(self) -> None:
-    """'testMeBro' delegates to 'AppTestSuite().runAll()'."""
+  def test_tests_dir_guards(self) -> None:
+    """'testsDir' refuses a missing path, a file, and a non-string."""
+    with self.assertRaises(FileNotFoundError):
+      _ = AppTestSuite(os.path.join(_HERE, 'no_such_dir')).testsDir
+    with self.assertRaises(NotADirectoryError):
+      _ = AppTestSuite(os.path.abspath(__file__)).testsDir
+    suite = AppTestSuite()
+    suite.__tests_dir__ = 123
+    with self.assertRaises(TypeException):
+      _ = suite.testsDir
 
-    class _Stub:
-      def runAll(self) -> int:
-        return 0
+  def test_tests_dir_recursion_guard(self) -> None:
+    """The lazy 'testsDir' getter refuses to recurse on a failed build."""
+    with self.assertRaises(RecursionError):
+      AppTestSuite()._getTestsDir(_recursion=True)
 
-    saved = broModule.AppTestSuite
-    broModule.AppTestSuite = _Stub
-    try:
-      self.assertEqual(testMeBro(), 0)
-    finally:
-      broModule.AppTestSuite = saved
+  def test_tests_dir_default(self) -> None:
+    """By default 'testsDir' is the 'tests' directory under the root."""
+    testsDir = AppTestSuite().testsDir
+    self.assertEqual(os.path.basename(testsDir), 'tests')

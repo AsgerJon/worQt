@@ -1,3 +1,5 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+# Personal: whether this machine uses the shared inspection profile
+/inspectionProfiles/profiles_settings.xml

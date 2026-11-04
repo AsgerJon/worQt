@@ -6,26 +6,26 @@ special test class suitable for tests that require a running QApplication.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING
 import sys
+import unittest
 
 from PySide6.QtCore import QCoreApplication, QTimer, QEvent
 from PySide6.QtCore import qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 from worktoy.desc import Field
-from worktoy.utilities import maybe
+from worktoy.utilities import maybe, textFmt
 from worktoy.waitaminute import TypeException
 from worktoy.work_test import BaseTest
-
-from moreworktoy.utilities import errorFmt
 
 from . import MetaTest
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import TypeAlias, Optional, Type, Any
+  from typing import TypeAlias, Optional, Type, Any, Callable
 
   AppType: TypeAlias = Type[QApplication]
+  Outcome: TypeAlias = list[tuple[bool, Any]]
 
 
 class AppTest(BaseTest, metaclass=MetaTest):
@@ -38,9 +38,6 @@ class AppTest(BaseTest, metaclass=MetaTest):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  #  Annotations from metaclass
-  testMethods: Field[dict[str, Callable]]
-
   #  Fallback Variables
   __fallback_application__: AppType = QApplication
 
@@ -49,7 +46,7 @@ class AppTest(BaseTest, metaclass=MetaTest):
   __time_out__: float = 30.0
 
   #  Private Variables
-  __persistent_widgets__: Optional[set[int]] = None
+  __preopen__ = None  # top-level widgets already open when this test began
 
   #  Public Variables
   app: Field[QApplication] = Field()
@@ -61,8 +58,9 @@ class AppTest(BaseTest, metaclass=MetaTest):
   @app.GET
   def _getApp(self, ) -> QCoreApplication:
     """
-    The running 'QApplication'. 'runTest' creates it before any test method
-    runs, so it always exists by the time a test reads 'self.app'.
+    The 'app' getter returns the running 'QApplication'. 'runTest' creates
+    it before any test method runs, so it always exists by the time a test
+    reads 'self.app'.
     """
     running = QApplication.instance()
     if isinstance(running, QCoreApplication):
@@ -70,50 +68,6 @@ class AppTest(BaseTest, metaclass=MetaTest):
     raise TypeException(
         'QApplication.instance()', running, QCoreApplication, QApplication
     )
-
-  def _getPersistentWidgets(self, ) -> set[int]:
-    """
-    The set of top-level widgets that were open before this test started.
-    'tearDown' uses it to dispose only the windows and dialogs THIS test
-    opened, never any others.
-    """
-    return maybe(self.__persistent_widgets__, set())
-
-  def _clearPersistentWidgets(self, ) -> None:
-    """
-    Clear the set of top-level widgets that were open before this test
-    started. 'tearDown' uses it to dispose only the windows and dialogs THIS
-    test opened, never any others.
-    """
-    self.__persistent_widgets__ = None
-
-  def _freezePersistentWidgets(self, ) -> None:
-    """
-    Snapshot the top-level widgets that are open right now, so 'tearDown'
-    disposes only the windows and dialogs THIS test opens, never any others.
-    """
-    self._clearPersistentWidgets()
-    widgets = QApplication.topLevelWidgets()
-    self.__persistent_widgets__ = {id(w) for w in widgets}
-
-  def _disposeOpenedWidgets(self, ) -> None:
-    """
-    Dispose every top-level widget THIS test opened - those absent from the
-    'setUp' snapshot - without firing 'closeEvent'; 'deleteLater' avoids any
-    unsaved-changes prompt or geometry write that 'close' would trigger.
-    Widgets already open before the test started are left alone.
-    """
-    preopenWidgets = self._getPersistentWidgets()
-    for widget in QApplication.topLevelWidgets():
-      if id(widget) not in preopenWidgets:
-        widget.hide()
-        widget.deleteLater()
-    #  'deleteLater' only acts once a 'DeferredDelete' event is delivered,
-    #  and the run loop is not re-entered between tests, so flush them now -
-    #  the widgets are actually freed before the next test instead of piling
-    #  up.
-    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    QApplication.processEvents()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  OPTIONAL METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -132,60 +86,70 @@ class AppTest(BaseTest, metaclass=MetaTest):
   @classmethod
   def getTimeout(cls, ) -> float:
     """
-    The deadline in seconds for one run in its child process. Subclasses
-    with slower suites may override.
+    The 'getTimeout' method returns the deadline in seconds for running
+    this class in its child process, counted from when the class has
+    loaded. Subclasses with slower suites may override it, or simply set
+    '__time_out__'.
     """
     return cls.__time_out__
 
   def setUp(self, ) -> None:
     """
-    Snapshot the top-level widgets already open, so 'tearDown' disposes only
-    the windows and dialogs THIS test opens, never any others. A test owns
-    what it opens; the shared 'QApplication' lives for the whole class.
+    The 'setUp' method snapshots the top-level widgets already open, so
+    'tearDown' disposes only the windows and dialogs THIS test opens, never
+    any others. A test owns what it opens; the shared 'QApplication' lives
+    for the whole class. The snapshot holds the widgets themselves rather
+    than their ids: a widget Qt created on its own side (a popup, a
+    tooltip) may get a fresh Python wrapper on every lookup, so only a held
+    reference keeps its identity stable until 'tearDown' compares against
+    it.
     """
     super().setUp()
-    self._freezePersistentWidgets()
+    self.__preopen__ = (*QApplication.topLevelWidgets(),)
 
   def tearDown(self, ) -> None:
     """
-    Dispose every top-level widget this test opened (and only those), without
-    firing 'closeEvent' - 'deleteLater' avoids any unsaved-changes prompt or
-    geometry write that 'close' would trigger - then let the base tear down.
+    The 'tearDown' method lets the base tear down, then disposes every
+    top-level widget this test opened - even when the base fails the test,
+    for instance over a failed 'subTest' block - so a failing test never
+    leaves windows behind for the next one.
     """
-    super().tearDown()
-    self._disposeOpenedWidgets()
+    try:
+      super().tearDown()
+    finally:
+      self._disposeOpened()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @classmethod
-  def _runMethod(cls, name: str) -> bool:
+  def _disposeOpened(self, ) -> None:
     """
-    Runs a single collected test method on a fresh document, with
-    'setUp'/'tearDown' around it. Returns True on success; on failure it
-    prints the formatted exception and returns False. Only 'Exception' is
-    caught, so 'KeyboardInterrupt'/'SystemExit' still abort the run.
+    The '_disposeOpened' method hides and deletes every top-level widget
+    opened since 'setUp', without firing 'closeEvent' - 'deleteLater'
+    avoids any unsaved-changes prompt or geometry write that 'close' would
+    trigger. 'deleteLater' alone only acts once the event loop gets control
+    back, which it does not between tests, so the deferred deletes are
+    flushed here and the widgets are actually freed before the next test.
     """
-    instance = cls(name)
-    try:
-      instance.setUp()
-      getattr(instance, name)()
-    except Exception as exception:
-      print('FAILED: %s.%s' % (cls.__name__, name))
-      print(errorFmt(exception))
-      return False
-    finally:
-      instance.tearDown()
-    return True
+    preopen = maybe(self.__preopen__, ())
+    self.__preopen__ = None
+    for widget in QApplication.topLevelWidgets():
+      if widget in preopen:
+        continue
+      widget.hide()
+      widget.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QApplication.processEvents()
 
   @classmethod
   def _suppressBenignQtWarnings(cls, ) -> None:
     """
-    Installs a Qt message handler that drops known-benign warnings and
-    forwards every other message to stderr unchanged, so real warnings stay
-    visible. Each 'AppTest' runs in its own process, so this is scoped to
-    the test child. The dropped tokens are:
+    The '_suppressBenignQtWarnings' method installs a Qt message handler
+    that drops known-benign warnings and forwards every other message to
+    stderr unchanged, so real warnings stay visible. Each 'AppTest' runs
+    in its own process, so this is scoped to the test child. The dropped
+    tokens are:
 
     - 'propagateSizeHints' - emitted by the 'offscreen' QPA plugin when a
       top-level window is shown.
@@ -204,31 +168,53 @@ class AppTest(BaseTest, metaclass=MetaTest):
     qInstallMessageHandler(handler)
 
   @classmethod
-  def runTest(cls, ) -> Any:
+  def _callInLoop(cls, app: Any, call: Callable, outcome: Outcome) -> None:
     """
-    Runs every collected test method from inside a live, running event
-    loop: a 'QApplication' is created, the methods are scheduled to run
-    once the loop is spinning ('QTimer.singleShot'), 'app.exec' is entered,
-    and the loop is quit once they finish. Returning normally counts as
-    success; any failure is printed and re-raised so '__main__' reports it.
+    The '_callInLoop' method is what the event loop runs once it spins: it
+    records what 'call' returned, or whatever it raised, and quits the
+    loop either way. An exception must not escape from here - Qt would
+    print it and carry on, 'exec' would return normally, and a broken run
+    would be reported as a pass.
+    """
+    try:
+      outcome.append((True, call()))
+    except BaseException as exception:
+      outcome.append((False, exception))
+    finally:
+      app.quit()
+
+  @classmethod
+  def runInLoop(cls, call: Callable) -> Any:
+    """
+    The 'runInLoop' method calls 'call' from inside a live, running event
+    loop and returns its value, which is what lets test methods rely on
+    queued signals, timers and 'QTest.qWait' exactly as the application
+    would. Whatever 'call' raised is raised again here, after the loop has
+    stopped. It creates the 'QApplication' if none exists yet; it must not
+    be called while a loop is already running.
     """
     cls._suppressBenignQtWarnings()
     app = QApplication.instance() or cls.getApplicationType()(sys.argv)
-    methods: dict[str, Callable[[], None]] = cls.testMethods
-    failed = []
-
-    def _runAll() -> None:
-      try:
-        failed.extend(n for n in methods if not cls._runMethod(n))
-      finally:
-        app.quit()
-
-    QTimer.singleShot(0, _runAll)
+    outcome = []
+    QTimer.singleShot(0, partial(cls._callInLoop, app, call, outcome))
     app.exec()
-    if failed:  # pragma: no cover
-      #  Only fires from a no-running-loop call against a failing class;
-      #  reaching it in-suite would leak a persistent QApplication into the
-      #  in-process tests. Covered indirectly by a real failing child run.
-      infoSpec = '%d of %d test(s) failed: %s'
-      info = infoSpec % (len(failed), len(methods), ', '.join(failed))
-      raise AssertionError(info)
+    if not outcome:
+      infoSpec = """The event loop of '%s' stopped before its tests ran!"""
+      raise RuntimeError(textFmt(infoSpec % cls.__name__))
+    returned, value = outcome[0]
+    if returned:
+      return value
+    raise value
+
+  @classmethod
+  def runTest(cls, ) -> unittest.TestResult:
+    """
+    The 'runTest' method runs every collected test method of the class
+    inside a live event loop through the standard unittest machinery, and
+    returns the 'TestResult'. Being standard is the point: 'setUpClass',
+    'addCleanup', 'skipTest', 'expectedFailure' and a failing 'tearDown'
+    all behave exactly as they do in any other unittest suite.
+    """
+    suite = unittest.TestSuite([cls(name) for name in cls.testMethods])
+    runner = unittest.TextTestRunner(sys.stderr, True, 2)
+    return cls.runInLoop(partial(runner.run, suite))
