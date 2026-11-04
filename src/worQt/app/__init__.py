@@ -6,11 +6,9 @@ The 'app' subpackage exposes the application classes for worQt.
 from __future__ import annotations
 
 from ._application_mixin import ApplicationMixin
-from ._abstract_application import AbstractApplication
 from ._app import App
 
 __all__ = (
   'ApplicationMixin',
-  'AbstractApplication',
   'App',
 )

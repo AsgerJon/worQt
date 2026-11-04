@@ -14,11 +14,13 @@ import sys
 import unittest
 from types import ModuleType
 from typing import TYPE_CHECKING
+from unittest import mock
 
 from worktoy.waitaminute import SubclassException
 from worktoy.work_test import BaseTest
 
-from worQt.qtest import AppTest, AppTestRun, AppTestSuite
+import worQt.qtest
+from worQt.qtest import AppTest, AppTestRun, AppTestSuite, RenderMode
 
 from . import QTestTest
 
@@ -206,3 +208,64 @@ class TestAppTestRun(QTestTest):
     self.assertEqual(AppTestRun._classTimeout(TestPlainSlow), 42.0)
     default = AppTestRun.__default_time_out__
     self.assertEqual(AppTestRun._classTimeout(TestPlainDefault), default)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  DISPLAY FALLBACK   # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def test_render_mode_env(self) -> None:
+    """The authentic mode keeps the platform; headless forces offscreen."""
+    env = {'QT_QPA_PLATFORM': 'xcb', 'OTHER': '1'}
+    self.assertEqual(RenderMode.AUTHENTIC.applyEnv(env), env)
+    headless = RenderMode.HEADLESS.applyEnv(env)
+    self.assertEqual(headless['QT_QPA_PLATFORM'], 'offscreen')
+    self.assertEqual(headless['OTHER'], '1')
+    self.assertEqual(env['QT_QPA_PLATFORM'], 'xcb')
+
+  def test_is_display_failure(self) -> None:
+    """Only a failed child that says it had no display is one."""
+    noDisplay = 'qt.qpa.xcb: could not connect to display'
+    self.assertTrue(AppTestRun._isDisplayFailure(-6, noDisplay))
+    self.assertFalse(AppTestRun._isDisplayFailure(0, noDisplay))
+    self.assertFalse(AppTestRun._isDisplayFailure(3, 'AssertionError'))
+
+  def test_falls_back_to_headless(self) -> None:
+    """A child that had no display runs once more, headless."""
+    modes = []
+    noDisplay = 'qt.qpa.xcb: could not connect to display'
+
+    def fakeLaunch(self, mode: RenderMode) -> tuple[int, str]:
+      modes.append(mode)
+      if mode is RenderMode.AUTHENTIC:
+        return -6, noDisplay
+      return 0, 'ran offscreen'
+
+    with mock.patch.object(AppTestRun, '_launch', fakeLaunch):
+      code, output = AppTestRun('any.module').run()
+    self.assertEqual(modes, [RenderMode.AUTHENTIC, RenderMode.HEADLESS])
+    self.assertEqual(code, 0)
+    self.assertIn('ran headless', output)
+    self.assertIn('ran offscreen', output)
+
+  def test_genuine_failure_is_not_rerun(self) -> None:
+    """A real test failure runs once, on the real display only."""
+    modes = []
+
+    def fakeLaunch(self, mode: RenderMode) -> tuple[int, str]:
+      modes.append(mode)
+      return 3, 'AssertionError: 1 != 2'
+
+    with mock.patch.object(AppTestRun, '_launch', fakeLaunch):
+      code, output = AppTestRun('any.module').run()
+    self.assertEqual(modes, [RenderMode.AUTHENTIC])
+    self.assertEqual(code, 3)
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  LAZY EXPORT  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def test_widget_test_is_lazy(self) -> None:
+    """'WidgetTest' loads on access; an unknown name still raises."""
+    self.assertTrue(issubclass(worQt.qtest.WidgetTest, AppTest))
+    with self.assertRaises(AttributeError):
+      _ = worQt.qtest.NoSuchThing

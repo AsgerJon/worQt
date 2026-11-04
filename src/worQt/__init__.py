@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
   from . import mixin
   from . import qtest
+  from . import layouts
   from . import widgets
   from . import windows
 
@@ -29,11 +30,12 @@ __all__ = (
   'ClassBodyTemplate',
   'mixin',
   'qtest',
+  'layouts',
   'widgets',
   'windows',
 )
 
-_LAZY_PACKAGES = ('mixin', 'qtest', 'widgets', 'windows')
+_LAZY_PACKAGES = ('mixin', 'qtest', 'layouts', 'widgets', 'windows')
 
 
 def __getattr__(name: str) -> Any:

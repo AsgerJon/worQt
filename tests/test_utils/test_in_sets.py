@@ -109,3 +109,7 @@ class TestInSets(UtilsTest):
     self.assertIsInstance(qMargins, QMargins)
     self.assertEqual(qMargins.left(), 1)
     self.assertEqual(qMargins.bottom(), 4)
+
+  def test_str(self) -> None:
+    """The string form reports all four insets."""
+    self.assertEqual(str(InSets(1, 2, 3, 4)), 'InSets(1, 2, 3, 4)')

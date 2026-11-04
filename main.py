@@ -18,7 +18,7 @@ from worQt.qtest import testMeBro
 
 ic.configureOutput(includeContext=True)
 
-from worQt.app import AbstractApplication
+from worQt.app import App
 from yolo import yolo, runTests
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def tester00(*args, ) -> int:
   """Hello World!"""
-  stuff = ['hello world!', os, sys, frozenset, runTests, AbstractApplication]
+  stuff = ['hello world!', os, sys, frozenset, runTests, App]
   for item in stuff:
     print(item)
   return 0

@@ -10,10 +10,22 @@ from __future__ import annotations
 
 from ._widget_mixin import WidgetMixin
 from ._abstract_widget import AbstractWidget
-from ._base_widget import BaseWidget
+from ._painted_widget import PaintedWidget
+from ._label_widget import LabelWidget
+from ._text_widget import TextWidget
+from ._paint_button import PaintButton
+from ._click_button import ClickButton
+from ._push_button import PushButton
+from ._scratch_widget import ScratchWidget
 
 __all__ = [
   'WidgetMixin',
   'AbstractWidget',
-  'BaseWidget',
-]
+  'PaintedWidget',
+  'LabelWidget',
+  'TextWidget',
+  'PaintButton',
+  'ClickButton',
+  'PushButton',
+  'ScratchWidget',
+  ]

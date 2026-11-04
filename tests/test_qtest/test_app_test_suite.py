@@ -121,6 +121,7 @@ class TestAppTestSuite(QTestTest):
     self.assertIn('FAIL: %s_fail' % _FIXTURES, printed)
     self.assertIn('run_fails', printed)
     self.assertIn('0 passed, 1 failed of 1 test classes', printed)
+    self.assertIn('Failed:\n  %s_fail' % _FIXTURES, printed)
 
   def test_run_names_harness_failure(self) -> None:
     """A failure of the harness is an ERROR of that module, not a crash."""

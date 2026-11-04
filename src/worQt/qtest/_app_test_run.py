@@ -36,7 +36,7 @@ from worktoy.mcls import BaseObject
 from worktoy.utilities import textFmt
 from worktoy.waitaminute import SubclassException
 
-from . import MetaTest
+from . import MetaTest, RenderMode
 
 if TYPE_CHECKING:  # pragma: no cover
   from typing import IO, TypeAlias, Type
@@ -64,6 +64,14 @@ class AppTestRun(BaseObject):
   __kill_grace__: float = 2.0  # seconds for the stack dump before the kill
   __handshake_variable__: str = 'WORQT_QTEST_FD'
   __child_variable__: str = 'WORQT_QTEST_CHILD'  # set in every child
+  #  What Qt prints when it cannot start a windowing platform
+  __display_failure_tokens__: tuple[str, ...] = (
+    'no Qt platform plugin could be initialized',
+    'could not connect to display',
+    'Could not load the Qt platform plugin',
+  )
+  __headless_note__: str = """authentic display unavailable; ran headless
+  (offscreen)"""
 
   #  Public Variables
   testName = AttriBox[str]()
@@ -88,11 +96,43 @@ class AppTestRun(BaseObject):
     child printed, in order. The exit code is negative when a signal
     ended the child: -11 for a segfault, -9 when it was killed. A kill
     for overrunning a deadline also sets 'timedOut' and 'deadline'.
+
+    The child runs on the real display first. When it dies because no
+    windowing platform could be started - Qt aborts, which nothing
+    in-process can catch, so the fallback lives here - it runs once more
+    headless ('offscreen'), with a note heading the output. A genuine
+    test failure never triggers that second run.
+    """
+    code, output = self._launch(RenderMode.AUTHENTIC)
+    if not self._isDisplayFailure(code, output):
+      return code, output
+    self.timedOut, self.deadline = False, 0.0
+    code, output = self._launch(RenderMode.HEADLESS)
+    return code, '%s\n%s' % (textFmt(self.__headless_note__), output)
+
+  @classmethod
+  def _isDisplayFailure(cls, code: int, output: str) -> bool:
+    """
+    The '_isDisplayFailure' method tells whether a child died because Qt
+    could not start a windowing platform. A child that exited cleanly is
+    never second-guessed.
+    """
+    if not code:
+      return False
+    for token in cls.__display_failure_tokens__:
+      if token in output:
+        return True
+    return False
+
+  def _launch(self, mode: RenderMode) -> tuple[int, str]:
+    """
+    The '_launch' method runs the child once, under 'mode', and returns
+    '(exitCode, output)'.
     """
     readEnd, writeEnd = os.pipe()
     try:
       with TemporaryFile() as log:
-        child = self._spawn(log, writeEnd)
+        child = self._spawn(log, writeEnd, mode)
         self._supervise(child, readEnd)
         log.seek(0)
         output = log.read().decode('utf-8', 'replace')
@@ -111,16 +151,17 @@ class AppTestRun(BaseObject):
       argv[1:1] = ['-m', 'coverage', 'run']
     return argv
 
-  def _childEnv(self, writeEnd: int) -> dict[str, str]:
+  def _childEnv(self, writeEnd: int, mode: RenderMode) -> dict[str, str]:
     """
     The '_childEnv' method returns the environment of the child. Unbuffered
     output keeps the order of what the child prints and loses nothing when
     it is killed; 'faulthandler' turns a segfault into a stack trace from
     the first line of the interpreter on. The child marker tells a suite
     running inside a test (as the harness's own tests do) that it is not
-    the top-level run, so it leaves 'latest.log' alone.
+    the top-level run, so it leaves 'latest.log' alone. 'mode' decides
+    the Qt platform: the real one, or 'offscreen'.
     """
-    env = dict(os.environ)
+    env = mode.applyEnv(dict(os.environ))
     env['PYTHONPATH'] = os.pathsep.join(sys.path)
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONFAULTHANDLER'] = '1'
@@ -128,7 +169,7 @@ class AppTestRun(BaseObject):
     env[self.__child_variable__] = '1'
     return env
 
-  def _spawn(self, log: IO, writeEnd: int) -> Popen:
+  def _spawn(self, log: IO, writeEnd: int, mode: RenderMode) -> Popen:
     """
     The '_spawn' method starts the child in a session of its own, so a
     kill takes down anything it started too. The output goes to a file
@@ -140,7 +181,7 @@ class AppTestRun(BaseObject):
           self._childArgv(),
           stdout=log,
           stderr=STDOUT,
-          env=self._childEnv(writeEnd),
+          env=self._childEnv(writeEnd, mode),
           start_new_session=True,
           pass_fds=(writeEnd,),
       )

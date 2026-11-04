@@ -324,13 +324,14 @@ class AppTestSuite(BaseObject):
     """
     stamp = time.strftime('%Y-%m-%d %H:%M:%S')
     self._write('worQt.qtest run started %s' % (stamp,))
-    failures = 0
-    for name in names:
-      if not self._runOne(name):
-        failures += 1
+    failedNames = [name for name in names if not self._runOne(name)]
+    failures = len(failedNames)
     passed = len(names) - failures
     self._log(1, '%d passed, %d failed of %d test classes' % (
         passed, failures, len(names)))
+    if failedNames:
+      failedList = ',\n'.join('  %s' % (name,) for name in failedNames)
+      self._echo(1, 'Failed:\n%s' % (failedList,))
     return 1 if failures else 0
 
   def runAll(self, ) -> int:

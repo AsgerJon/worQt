@@ -70,30 +70,43 @@ lazily constructing its splash screen and main window on first access.
 
 ### Application classes (`src/worQt/app`)
 
-**Goal, not yet built:** today these three classes are empty shells (no
-`notify` override, no context manager, no `splash`/`window`). The design they
-are working towards is a linear inheritance chain, each layer adding one
-concern. The window chain (`src/worQt/windows`), the declarative menu system
-(`windows/menus`) and the paint ops (`src/worQt/paint_ops`, introduced through
-`PaintedWidget`, with `BoxWidget` as the box-model widget) are goals in the
-same sense: kept as scaffolding to build out, test-first.
-
-- `ApplicationMixin(QApplication, MixinBase)` — the actual fusion point where a
+- `ApplicationMixin(QApplication, MixinBase)` — the fusion point where a
   concrete Qt type meets worktoy machinery.
-- `AbstractApplication(ApplicationMixin)` — overrides Qt's `notify()` to funnel
-  exceptions raised inside slots/event filters into `handleException()` (a no-op
-  hook for subclasses to override). Only `Exception` is intercepted;
-  `KeyboardInterrupt`/`SystemExit` propagate.
-- `App(AbstractApplication)` — concrete app used as a context manager. `__enter__`
-  returns the app; `__exit__` runs the Qt event loop (`self.exec()`) only on a
-  clean exit (no exception in the with-body). `splash` and `window` are worktoy
-  `Field` descriptors backed by lazily-constructed private slots. Usage:
+- `App(ApplicationMixin)` — the worQt application, used as a context manager:
+  `__exit__` runs the Qt event loop only on a clean exit. It owns the lazily
+  built `splash` and `window` (a concrete app sets `__window_class__`),
+  routes exceptions raised in slots and event filters from `notify()` to the
+  `handleException()` hook (only `Exception`; `KeyboardInterrupt`/`SystemExit`
+  propagate), and guards exit: `confirmExit()` offers Save/Discard/Cancel when
+  `hasUnsavedChanges()`, and the window title carries a ` *` marker while
+  there are unsaved changes. Usage:
 
   ```python
-  with App(*sys.argv) as app:
-      app.splash.show()
+  with MyApp(*sys.argv) as app:
       app.window.show()
   ```
+
+### The rest of the package
+
+- `windows` — `AbstractWindow` (build the UI once on the first `show()`;
+  `closeEvent` consults the app's exit guard) → `BaseWindow` (menu bar) →
+  `LayoutWindow` → `MainWindow`. `windows/menus` is the declarative menu
+  system: `MenuBox`/`ActionBox` fields register menu and action types on the
+  owning bar/menu, which build them lazily.
+- `widgets` — `PaintedWidget` implements the box model (margins, borders,
+  paddings, content) and paints through `paint_ops`; `LabelWidget`,
+  `TextWidget`, `PaintButton`, `ClickButton` and `PushButton` build on it.
+- `paint_ops` — painting operations as descriptors on a painted widget
+  (`PaintBoxModel`, `PaintLabel`).
+- `layouts` — `GridLayout` with `LayoutCell`/`LayoutIndex`.
+- `waitaminute` — exceptions raised by widgets during event handling.
+- `utils` — value types (geometry, `Color`), enums, fonts, `WPainter`.
+- `src/moreworktoy` — `errorFmt`, utilities that may move to worktoy.
+
+`qtest` also provides `WidgetTest` (an `AppTest` with gestures: `showLive`,
+`click`, `hold`, `key`, `typeText`, signal spies and waiters) and the
+`primitives` behind it. A test child runs on the real display and falls back
+to `offscreen` when no windowing platform is available.
 
 ## Conventions
 
@@ -129,6 +142,5 @@ harness's own tests; their `_` names keep them out of discovery.
 
 Retired code and notes live in `archive/` at the repo root: gitignored, local
 only, paths mirroring where each file used to live (see `archive/README.md`).
-It includes the previous paint-op implementation from `main@478b34b`, as a
-reference for the `paint_ops` goal. Never import from it. The active source is
-exclusively under `src/worQt`.
+Never import from it. The active source is under `src/worQt` and
+`src/moreworktoy`.

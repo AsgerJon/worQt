@@ -146,13 +146,18 @@ class AppTest(BaseTest, metaclass=MetaTest):
   def _suppressBenignQtWarnings(cls, ) -> None:
     """
     The '_suppressBenignQtWarnings' method installs a Qt message handler
-    that drops known-benign warnings the 'offscreen' QPA plugin emits -
-    such as 'propagateSizeHints()' when a top-level window is shown - and
-    forwards every other message to stderr unchanged, so real warnings
-    stay visible. Each 'AppTest' runs in its
-    own process, so this is scoped to the test child.
+    that drops known-benign warnings and forwards every other message to
+    stderr unchanged, so real warnings stay visible. Each 'AppTest' runs
+    in its own process, so this is scoped to the test child. The dropped
+    tokens are:
+
+    - 'propagateSizeHints' - emitted by the 'offscreen' QPA plugin when a
+      top-level window is shown.
+    - 'event loop is already running' - emitted when a test drives an
+      exec-based path (such as 'App.__exit__') while the harness already
+      owns the running loop; the nested 'exec' returns at once by design.
     """
-    benign = ('propagateSizeHints',)
+    benign = ('propagateSizeHints', 'event loop is already running',)
 
     def handler(msgType: Any, context: Any, message: str) -> None:
       for token in benign:
