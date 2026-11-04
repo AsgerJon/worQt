@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRect, QRectF
 from PySide6.QtGui import QPixmap, QFont, QPaintDevice, QPainterPath
+from PySide6.QtGui import QColor, QImage
 
 from worktoy.waitaminute import TypeException
 
@@ -22,11 +23,63 @@ from worQt.utils.geom import Rect, RoundedRect
 from . import UtilsAppTest
 
 if TYPE_CHECKING:  # pragma: no cover
-  from typing import Any
+  from typing import Any, Callable
+
+_WHITE = '#ffffff'
+_BLACK = '#000000'
 
 
 class RunPainter(UtilsAppTest):
   """Tests for 'WPainter' and 'WPainterPath'."""
+
+  @staticmethod
+  def _paintOnWhite(paint: Callable[[WPainter], Any]) -> QImage:
+    """Paints on a white 100x100 pixmap; returns what ended up on it."""
+    pixmap = QPixmap(100, 100)
+    pixmap.fill(QColor(255, 255, 255))
+    painter = WPainter()
+    painter.begin(pixmap)
+    try:
+      paint(painter)
+    finally:
+      painter.end()
+    return pixmap.toImage()
+
+  def run_fill_between_paints_only_the_ring(self) -> None:
+    """The ring between the rects is filled; the inner rect is not."""
+    image = self._paintOnWhite(lambda painter: painter.fillBetween(
+        Rect(0, 0, 100, 100), Rect(20, 20, 80, 80), Color(0, 0, 0)))
+    self.assertEqual(image.pixelColor(10, 10).name(), _BLACK)
+    self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
+
+  def run_fill_between_equal_rects_paints_nothing(self) -> None:
+    """Equal rects have nothing between them, so nothing is painted - and
+    'fillBetween' returns instead of swapping them forever."""
+    rect = Rect(20, 20, 80, 80)
+    image = self._paintOnWhite(lambda painter: painter.fillBetween(
+        rect, Rect(rect), Color(0, 0, 0)))
+    self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
+    self.assertEqual(image.pixelColor(30, 30).name(), _WHITE)
+
+  def run_fill_between_same_edges_fills_corners(self) -> None:
+    """A square rect around a rounded one with the same edges leaves
+    only the corners between them, and those are filled."""
+    square = Rect(0, 0, 100, 100)
+    rounded = RoundedRect(Rect(0, 0, 100, 100), 30, 30)
+    image = self._paintOnWhite(lambda painter: painter.fillBetween(
+        square, rounded, Color(0, 0, 0)))
+    self.assertEqual(image.pixelColor(2, 2).name(), _BLACK)
+    self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
+
+  def run_fill_between_same_edges_either_order(self) -> None:
+    """With the same edges the less rounded rect is the outer one, so the
+    corners are filled whichever order the two come in."""
+    square = Rect(0, 0, 100, 100)
+    rounded = RoundedRect(Rect(0, 0, 100, 100), 30, 30)
+    image = self._paintOnWhite(lambda painter: painter.fillBetween(
+        rounded, square, Color(0, 0, 0)))
+    self.assertEqual(image.pixelColor(2, 2).name(), _BLACK)
+    self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
   def run_path_add_rect(self) -> None:
     """'addRect' accepts a worQt 'Rect' and grows the path."""
@@ -106,16 +159,11 @@ class RunPainter(UtilsAppTest):
       painter.end()
 
   def run_fill_between_swaps_args(self) -> None:
-    """Passing the inner rect first is corrected by a swap, not an error."""
-    pixmap = QPixmap(100, 100)
-    painter = WPainter()
-    painter.begin(pixmap)
-    try:
-      painter.fillBetween(Rect(10, 10, 90, 90),
-                          Rect(0, 0, 100, 100),
-                          Color(0, 0, 0))
-    finally:
-      painter.end()
+    """Passing the inner rect first paints the same ring, not an error."""
+    image = self._paintOnWhite(lambda painter: painter.fillBetween(
+        Rect(20, 20, 80, 80), Rect(0, 0, 100, 100), Color(0, 0, 0)))
+    self.assertEqual(image.pixelColor(10, 10).name(), _BLACK)
+    self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
   def run_fill_between_rejects_intersecting(self) -> None:
     """Overlapping, non-nested rects are refused."""

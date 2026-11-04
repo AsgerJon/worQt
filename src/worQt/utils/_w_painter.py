@@ -118,36 +118,65 @@ class WPainter(QPainter, MixinBase):
       color: Color,
       ) -> None:
     """
-    Fills the area between two rectangles. The inner rectangle is subtracted
-    from the outer rectangle, and the resulting area is filled with the
-    current brush.
+    The 'fillBetween' method fills the area between two nested rects with
+    'color' - the ring a box model paints for a border or a padding. The
+    two may come in either order. Equal rects have nothing between them,
+    so nothing is painted; rects with the same edges but different corner
+    radii leave the corners between them, which are filled.
     """
-    if outer in inner:
-      return self.fillBetween(inner, outer, color)
-    if inner not in outer:
-      infoSpec = """'%s.fillBetween' requires non-intersecting rectangles, 
-      but received: '%s' and '%s'!"""
-      info = infoSpec % (type(self).__name__, str(outer), str(inner))
-      raise ValueError(textFmt(info))
-    innerQRect = inner.Q
-    outerQRect = outer.Q
-    innerPath = QPainterPath()
-    if isinstance(inner, RoundedRect):
-      innerPath.addRoundedRect(inner.Q, inner.hr, inner.vr)
-    elif isinstance(inner, Rect):
-      innerPath.addRoundedRect(inner.Q, 0, 0)
-    else:  # pragma: no cover
-      raise TypeException('inner', inner, Rect, RoundedRect)
-    outerPath = QPainterPath()
-    if isinstance(outer, RoundedRect):
-      outerPath.addRoundedRect(outer.Q, outer.hr, outer.vr)
-    elif isinstance(outer, Rect):
-      outerPath.addRoundedRect(outer.Q, 0, 0)
-    else:  # pragma: no cover
-      raise TypeException('outer', outer, Rect, RoundedRect)
-    fillPath = outerPath.subtracted(innerPath)
+    outer, inner = self._nestRects(outer, inner)
+    fillPath = self._rectPath(outer).subtracted(self._rectPath(inner))
     self.setBrush(color.fillBrush)
     return self.drawPath(fillPath)
+
+  @staticmethod
+  def _cornerRadii(rect: Rect) -> int:
+    """
+    The '_cornerRadii' method returns how rounded 'rect' is: the sum of its
+    corner radii, 0 for a plain 'Rect'.
+    """
+    if isinstance(rect, RoundedRect):
+      return rect.hr + rect.vr
+    return 0
+
+  @classmethod
+  def _nestRects(cls, first: Rect, second: Rect) -> tuple[Rect, Rect]:
+    """
+    The '_nestRects' method returns the two rects as '(outer, inner)'. Two
+    rects with the same edges each contain the other; then the less rounded
+    one, covering more area, is the outer one. Deciding this once, rather
+    than swapping and asking again, is what keeps equal rects from
+    swapping forever.
+    """
+    firstHolds = True if second in first else False
+    secondHolds = True if first in second else False
+    if firstHolds and secondHolds:
+      if cls._cornerRadii(first) <= cls._cornerRadii(second):
+        return first, second
+      return second, first
+    if firstHolds:
+      return first, second
+    if secondHolds:
+      return second, first
+    infoSpec = """'%s.fillBetween' needs one rect to contain the other, but
+    received: '%s' and '%s'!"""
+    info = infoSpec % (cls.__name__, str(first), str(second))
+    raise ValueError(textFmt(info))
+
+  @staticmethod
+  def _rectPath(rect: Rect) -> QPainterPath:
+    """
+    The '_rectPath' method returns the outline of 'rect' as a path, with
+    its corner radii when it is a 'RoundedRect'.
+    """
+    path = QPainterPath()
+    if isinstance(rect, RoundedRect):
+      path.addRoundedRect(rect.Q, rect.hr, rect.vr)
+    elif isinstance(rect, Rect):
+      path.addRoundedRect(rect.Q, 0, 0)
+    else:  # pragma: no cover  # 'in' has already refused a non-'Rect'
+      raise TypeException('rect', rect, Rect, RoundedRect)
+    return path
 
   def fillPath(self, path: Path, color: Color = None) -> None:
     """
