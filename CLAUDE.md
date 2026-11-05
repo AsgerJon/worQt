@@ -31,6 +31,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.qtest tests.test_utils.
 PYTHONDONTWRITEBYTECODE=1 python main.py
 ```
 
+```bash
+# Run EZWord, the word processor worQt's document model is worked out on
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m worQt.ezword
+```
+
 `roll_version.py` bumps the version in `current_version.json` / `current_tag.txt`.
 
 ## Architecture
@@ -77,9 +82,10 @@ lazily constructing its splash screen and main window on first access.
   built `splash` and `window` (a concrete app sets `__window_class__`),
   routes exceptions raised in slots and event filters from `notify()` to the
   `handleException()` hook (only `Exception`; `KeyboardInterrupt`/`SystemExit`
-  propagate), and guards exit: `confirmExit()` offers Save/Discard/Cancel when
-  `hasUnsavedChanges()`, and the window title carries a ` *` marker while
-  there are unsaved changes. Usage:
+  propagate), and guards exit: `confirmExit()` asks `askToSave()`
+  (Save/Discard/Cancel) when `hasUnsavedChanges()`. An unsaved-changes marker
+  in the title belongs to the future document layer, through Qt's own `[*]`
+  placeholder and `setWindowModified()`. Usage:
 
   ```python
   with MyApp(*sys.argv) as app:
@@ -87,6 +93,55 @@ lazily constructing its splash screen and main window on first access.
   ```
 
 ### The rest of the package
+
+- `ezword` — EZWord, the concrete word processor the general document model
+  is worked out on. Its text model is Qt-free: `Char` (caseless letters) →
+  `Word` → `Clause` (split on whitespace) → `Sentence` (clauses split on
+  commas, ended by its `punctuation`, a run of `PunctNum` marks) →
+  `Paragraph` (split behind punctuation; it decides case) → `Chapter` (split
+  on blank lines) → `Part` → `Memoir`, after LaTeX's memoir. `str()` of any
+  level is the file format, and each level reads that text back. No
+  contractions, digits or other characters: write "do not". `ezword.gui` is
+  the app: `PageWidget` (a `Vidget` taking only what the format holds and
+  showing the case its punctuation decides; it knows its `filePath`),
+  `EZWordWindow` (a `FileBrowser` of `.ezw` files on the left taking the
+  spare width; on the right a `TabBar` over the pages, one `PageWidget` a
+  tab, at 80 columns; `page`/`filePath` mean the current tab; a file
+  already open shows in its tab, another opens in a blank or new tab;
+  `gt gT :tabnew :tabn :tabp` and Ctrl+PageUp/Down switch; `:q`/`:wq`
+  close the tab, the last starting over; a modified tab's cross asks)
+  and `EZWordApp` (exit guard over every tab, and a dark Fusion palette
+  so the window and menus match).
+
+- `tabs` — the `TabBar`, a painted row of tabs: titles, a dot for unsaved
+  changes or a cross to close, the current one accented; `currentChanged`
+  and `closeRequested(index)` on clicks; it takes no focus and decides
+  nothing.
+
+- `browser` — the `FileBrowser`, a slim painted tree of a folder like an
+  IDE's project view: folders first, suffix filter, click/arrow/double
+  click and Vi keys (`jkhl o`), `fileActivated(path)`, `reveal`,
+  `markedPath`, `refresh`. `FileNode` is the Qt-free tree node;
+  `PaintFileTree` paints it.
+
+- `vidget` — the `Vidget`, worQt's own text editing widget instead of Qt's
+  text edits, editing the way Vim does: `ViMode` NORMAL/INSERT/COMMAND;
+  counts; motions `hjkl wbe WBE 0^$ gg G {} f t F T ; , n N * # H M L`;
+  operators `d c y` with any motion or doubled (`dw ct. yj dG dd cc yy`)
+  and `x X D C s S Y r J p P`; `u`/Ctrl+R; `.` repeats the last change
+  (recorded keys, replayed); `i a I A o O`; `/` `?` search; ex commands
+  `:w :q :wq :x :q! :N :$` and `ZZ ZQ`, emitted as `writeRequested`/
+  `quitRequested` for the window; scrolling (cursor followed, Ctrl+E/Y/D/
+  U/F/B, `zt zz zb`, the wheel). Line numbers always shown in a gutter.
+  Dark and monospaced by default; never narrower than 80 columns
+  (`minimumSizeHint`).
+  Vim as it is, but no trap: clicks place the cursor in any mode and the
+  focus moves away as anywhere else. `viMotions` holds the motions as pure
+  functions of a text. `VidgetBase` holds the text, cursor, history,
+  register and scroll; it paints through `PaintBoxModel`,
+  `PaintStatusLine` (bottom), `PaintLineNumbers` (left) and `PaintViText`;
+  its hooks `accepts`, `shownText` (and the Vidget's `matchable`, for
+  searches) let a subclass restrict and present the text.
 
 - `windows` — `AbstractWindow` (build the UI once on the first `show()`;
   `closeEvent` consults the app's exit guard) → `BaseWindow` (menu bar) →
@@ -101,7 +156,6 @@ lazily constructing its splash screen and main window on first access.
 - `layouts` — `GridLayout` with `LayoutCell`/`LayoutIndex`.
 - `waitaminute` — exceptions raised by widgets during event handling.
 - `utils` — value types (geometry, `Color`), enums, fonts, `WPainter`.
-- `src/moreworktoy` — `errorFmt`, utilities that may move to worktoy.
 
 `qtest` also provides `WidgetTest` (an `AppTest` with gestures: `showLive`,
 `click`, `hold`, `key`, `typeText`, signal spies and waiters) and the
@@ -142,5 +196,4 @@ harness's own tests; their `_` names keep them out of discovery.
 
 Retired code and notes live in `archive/` at the repo root: gitignored, local
 only, paths mirroring where each file used to live (see `archive/README.md`).
-Never import from it. The active source is under `src/worQt` and
-`src/moreworktoy`.
+Never import from it. The active source is exclusively under `src/worQt`.

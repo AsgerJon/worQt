@@ -19,6 +19,7 @@ from worQt.qtest import testMeBro
 ic.configureOutput(includeContext=True)
 
 from worQt.app import App
+from worQt.ezword.gui import EZWordApp
 from yolo import yolo, runTests
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -33,5 +34,12 @@ def tester00(*args, ) -> int:
   return 0
 
 
+def ezWord(*args, ) -> int:
+  """Opens EZWord and returns its exit code once its window closes."""
+  with EZWordApp(*sys.argv) as app:
+    app.window.show()
+  return app.returnCode
+
+
 if __name__ == '__main__':
-  yolo(testMeBro, )
+  yolo(testMeBro, ezWord, )
