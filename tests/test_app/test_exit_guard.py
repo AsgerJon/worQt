@@ -1,9 +1,8 @@
 """
 TestExitGuard covers the unsaved-changes guard of 'App': 'confirmExit' with
 each answer to the save question, the main window's 'closeEvent' honouring
-it, the defaults of the 'hasUnsavedChanges'/'saveChanges' hooks, and the
-' *' marker in the window title. The app answers 'askToSave' itself, so no
-modal dialog ever opens.
+it, and the defaults of the 'hasUnsavedChanges'/'saveChanges' hooks. The
+app answers 'askToSave' itself, so no modal dialog ever opens.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -71,10 +70,6 @@ class TestExitGuard(AppTest):
     app.askCount, app.saveCount = 0, 0
     app.__main_window__ = None
 
-  def tearDown(self) -> None:
-    self.app.__main_window__ = None  # the title watch must not find it
-    super().tearDown()
-
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONFIRM EXIT   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -131,34 +126,3 @@ class TestExitGuard(AppTest):
     event = QCloseEvent()
     self.app.window.closeEvent(event)
     self.assertFalse(event.isAccepted())
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  TITLE MARKER   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def test_title_marks_unsaved_changes(self) -> None:
-    """The title gains one ' *' while there are unsaved changes, however
-    often it is refreshed, and loses it once they are gone."""
-    window = self.app.window
-    window.setWindowTitle('Document')
-    self.app.dirty = True
-    self.app._refreshTitle()
-    self.app._refreshTitle()
-    self.assertEqual(window.windowTitle(), 'Document *')
-    self.app.dirty = False
-    self.app._refreshTitle()
-    self.assertEqual(window.windowTitle(), 'Document')
-
-  def test_title_refresh_without_window(self) -> None:
-    """Refreshing the title before any window exists does nothing."""
-    self.app._refreshTitle()
-    self.assertIsNone(self.app.__main_window__)
-
-  def test_title_watch_starts_once(self) -> None:
-    """Building the window starts the title watch, and starting it again
-    keeps the one timer rather than adding another."""
-    _ = self.app.window
-    timer = self.app.__title_timer__
-    self.assertTrue(timer.isActive())
-    self.app._startTitleWatch()
-    self.assertIs(self.app.__title_timer__, timer)

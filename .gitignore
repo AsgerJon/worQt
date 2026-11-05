@@ -183,3 +183,8 @@ archive/
 
 # Draft commit message
 /commit_message.txt
+
+# Local scratch files: EZWord notes and memes
+/example.ezw
+/not_monospace_wtf.ezw
+/lol_kennedy.png

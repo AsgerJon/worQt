@@ -4,8 +4,7 @@ App is the worQt application: a 'QApplication' fused with worktoy (via
 alongside Qt. It owns the lazily-built, app-scoped handles every worQt app
 shares - the return code, the splash screen and the main window - routes
 slot/event-filter exceptions to 'handleException', guards exit on unsaved
-changes, keeps the window title's unsaved marker current, and runs the Qt
-event loop as a context manager.
+changes, and runs the Qt event loop as a context manager.
 
 The window *type* is app-specific, so a concrete subclass declares it with
 '__window_class__'. Because the 'QApplication' is reachable from any
@@ -22,7 +21,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QSplashScreen, QMessageBox
 from worktoy.desc import Field
 from worktoy.utilities import maybe
@@ -41,8 +39,8 @@ class App(ApplicationMixin):
   """
   The worQt application. Owns the shared lazily-built handles ('returnCode',
   'splash', 'window'), the exception hook ('handleException'), the exit guard
-  ('hasUnsavedChanges'/'saveChanges'/'confirmExit') and the title star, and
-  runs the Qt event loop on a clean exit as a context manager:
+  ('hasUnsavedChanges'/'saveChanges'/'confirmExit'), and runs the Qt event
+  loop on a clean exit as a context manager:
 
       with MyApp(*sys.argv) as app:
         app.window.show()
@@ -57,14 +55,11 @@ class App(ApplicationMixin):
 
   #  Fallback Variables
   __window_class__ = None  # the QMainWindow subclass built for 'window'
-  __fallback_title_interval__ = 500  # ms; poll interval for the title star
-  __unsaved_marker__ = ' *'  # appended to the window title when dirty
 
   #  Private Variables
   __return_code__ = None  # the exec() exit code, set on a clean __exit__
   __splash_screen__ = None  # the lazily-built splash screen
   __main_window__ = None  # the lazily-built main window
-  __title_timer__ = None  # polls 'hasUnsavedChanges' to drive the title star
 
   #  Public Variables
   returnCode: Field[int] = Field()
@@ -100,7 +95,6 @@ class App(ApplicationMixin):
 
   def _createWindow(self, ) -> None:
     self.__main_window__ = self.getWindowClass()()
-    self._startTitleWatch()
 
   @window.GET
   def _getWindow(self, **kwargs) -> QMainWindow:
@@ -223,40 +217,6 @@ class App(ApplicationMixin):
         QMessageBox.StandardButton.Save
         | QMessageBox.StandardButton.Discard
         | QMessageBox.StandardButton.Cancel)
-
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  TITLE STAR   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-  def _startTitleWatch(self) -> None:
-    """
-    The '_startTitleWatch' method starts keeping the window title's
-    unsaved-changes marker current, once, when the window is built. There
-    is no 'unsaved changes changed' notification yet, so it polls
-    'hasUnsavedChanges' every '__fallback_title_interval__' milliseconds;
-    the document layer is the place for that notification.
-    """
-    if self.__title_timer__ is not None:
-      return
-    self.__title_timer__ = QTimer(self)
-    self.__title_timer__.setInterval(self.__fallback_title_interval__)
-    self.__title_timer__.timeout.connect(self._refreshTitle)
-    self.__title_timer__.start()
-
-  def _refreshTitle(self) -> None:
-    """Append '__unsaved_marker__' to the window title when there are unsaved
-    changes and strip it when there are none. Idempotent: it always rebuilds
-    from the marker-free base title, so the marker never accumulates."""
-    window = self.__main_window__
-    if window is None:
-      return
-    marker = self.__unsaved_marker__
-    base = window.windowTitle()
-    if base.endswith(marker):
-      base = base[:-len(marker)]
-    target = '%s%s' % (base, marker) if self.hasUnsavedChanges() else base
-    if target != window.windowTitle():
-      window.setWindowTitle(target)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
