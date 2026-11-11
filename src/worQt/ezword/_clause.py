@@ -15,7 +15,7 @@ from worktoy.waitaminute import MissingVariable, TypeException
 
 from . import Word
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, Iterator, Self
 
 

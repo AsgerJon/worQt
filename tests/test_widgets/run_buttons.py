@@ -21,7 +21,7 @@ from worQt.utils.geom import Point2D
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -81,12 +81,16 @@ class RunButtons(WidgetTest):
   def run_signal_dicts(self) -> None:
     """Each signal dictionary maps the five mouse buttons."""
     button = ClickButton()
-    for getter in (button.singleClickDict, button.singleHoldDict,
-                   button.doubleClickDict, button.doubleHoldDict):
-      self.assertEqual(set(getter), {
-        MouseButtonNum.LEFT, MouseButtonNum.RIGHT, MouseButtonNum.MIDDLE,
-        MouseButtonNum.FORWARD, MouseButtonNum.BACK,
-      })
+    for getter in (
+        button.singleClickDict, button.singleHoldDict,
+        button.doubleClickDict, button.doubleHoldDict
+    ):
+      self.assertEqual(
+        set(getter), {
+            MouseButtonNum.LEFT, MouseButtonNum.RIGHT, MouseButtonNum.MIDDLE,
+            MouseButtonNum.FORWARD, MouseButtonNum.BACK,
+          }
+        )
 
   def run_register_click(self) -> None:
     """Registering a button records it; clearing empties the sequence."""
@@ -104,7 +108,8 @@ class RunButtons(WidgetTest):
       button._registerClick(MouseButtonNum.NULL)
 
   def run_register_second_invalidates(self) -> None:
-    """A second registration of a DIFFERENT button invalidates the sequence."""
+    """A second registration of a DIFFERENT button invalidates the
+    sequence."""
     button = ClickButton()
     button._registerClick(MouseButtonNum.LEFT)
     button._registerClick(MouseButtonNum.RIGHT)

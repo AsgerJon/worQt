@@ -20,7 +20,7 @@ from worQt.app import App
 from worQt.qtest import AppTest
 from worQt.windows import AbstractWindow
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -54,7 +54,8 @@ class TestApp(AppTest):
   __application_type__ = _App
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  HANDLES   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  HANDLES   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_return_code_default(self) -> None:

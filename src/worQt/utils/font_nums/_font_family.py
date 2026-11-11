@@ -16,7 +16,7 @@ from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication
 from worktoy.mcls import BaseObject
 from worktoy.utilities import textFmt
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
 

@@ -16,7 +16,7 @@ from worktoy.waitaminute import TypeException
 from .geom import Rect, RoundedRect
 from ..mixin import MixinBase
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, TypeAlias, Union
 
 

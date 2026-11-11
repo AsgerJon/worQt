@@ -22,7 +22,7 @@ from worQt.utils.geom import Rect, RoundedRect
 
 from . import UtilsAppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Callable
 
 _WHITE = '#ffffff'
@@ -47,8 +47,11 @@ class RunPainter(UtilsAppTest):
 
   def run_fill_between_paints_only_the_ring(self) -> None:
     """The ring between the rects is filled; the inner rect is not."""
-    image = self._paintOnWhite(lambda painter: painter.fillBetween(
-        Rect(0, 0, 100, 100), Rect(20, 20, 80, 80), Color(0, 0, 0)))
+    image = self._paintOnWhite(
+      lambda painter: painter.fillBetween(
+          Rect(0, 0, 100, 100), Rect(20, 20, 80, 80), Color(0, 0, 0)
+      )
+      )
     self.assertEqual(image.pixelColor(10, 10).name(), _BLACK)
     self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
@@ -56,8 +59,11 @@ class RunPainter(UtilsAppTest):
     """Equal rects have nothing between them, so nothing is painted - and
     'fillBetween' returns instead of swapping them forever."""
     rect = Rect(20, 20, 80, 80)
-    image = self._paintOnWhite(lambda painter: painter.fillBetween(
-        rect, Rect(rect), Color(0, 0, 0)))
+    image = self._paintOnWhite(
+      lambda painter: painter.fillBetween(
+          rect, Rect(rect), Color(0, 0, 0)
+      )
+      )
     self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
     self.assertEqual(image.pixelColor(30, 30).name(), _WHITE)
 
@@ -66,8 +72,11 @@ class RunPainter(UtilsAppTest):
     only the corners between them, and those are filled."""
     square = Rect(0, 0, 100, 100)
     rounded = RoundedRect(Rect(0, 0, 100, 100), 30, 30)
-    image = self._paintOnWhite(lambda painter: painter.fillBetween(
-        square, rounded, Color(0, 0, 0)))
+    image = self._paintOnWhite(
+      lambda painter: painter.fillBetween(
+          square, rounded, Color(0, 0, 0)
+      )
+      )
     self.assertEqual(image.pixelColor(2, 2).name(), _BLACK)
     self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
@@ -76,8 +85,11 @@ class RunPainter(UtilsAppTest):
     corners are filled whichever order the two come in."""
     square = Rect(0, 0, 100, 100)
     rounded = RoundedRect(Rect(0, 0, 100, 100), 30, 30)
-    image = self._paintOnWhite(lambda painter: painter.fillBetween(
-        rounded, square, Color(0, 0, 0)))
+    image = self._paintOnWhite(
+      lambda painter: painter.fillBetween(
+          rounded, square, Color(0, 0, 0)
+      )
+      )
     self.assertEqual(image.pixelColor(2, 2).name(), _BLACK)
     self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
@@ -96,10 +108,12 @@ class RunPainter(UtilsAppTest):
   def run_path_rounded_variants(self) -> None:
     """'addRoundedRect' accepts 'Rect', 'RoundedRect', 'QRect' and
     'QRectF'."""
-    for rect in (Rect(0, 0, 10, 10),
-                 RoundedRect(Rect(0, 0, 10, 10), 4, 4),
-                 QRect(0, 0, 10, 10),
-                 QRectF(0, 0, 10, 10)):
+    for rect in (
+        Rect(0, 0, 10, 10),
+        RoundedRect(Rect(0, 0, 10, 10), 4, 4),
+        QRect(0, 0, 10, 10),
+        QRectF(0, 0, 10, 10)
+    ):
       path = WPainterPath()
       path.addRoundedRect(rect, 2, 2)
       self.assertGreater(path.elementCount(), 0)
@@ -149,19 +163,26 @@ class RunPainter(UtilsAppTest):
     painter = WPainter()
     painter.begin(pixmap)
     try:
-      painter.fillBetween(Rect(0, 0, 100, 100),
-                          Rect(10, 10, 90, 90),
-                          Color(0, 0, 0))
-      painter.fillBetween(RoundedRect(Rect(0, 0, 100, 100), 8, 8),
-                          RoundedRect(Rect(10, 10, 90, 90), 4, 4),
-                          Color(255, 0, 0))
+      painter.fillBetween(
+        Rect(0, 0, 100, 100),
+        Rect(10, 10, 90, 90),
+        Color(0, 0, 0)
+        )
+      painter.fillBetween(
+        RoundedRect(Rect(0, 0, 100, 100), 8, 8),
+        RoundedRect(Rect(10, 10, 90, 90), 4, 4),
+        Color(255, 0, 0)
+        )
     finally:
       painter.end()
 
   def run_fill_between_swaps_args(self) -> None:
     """Passing the inner rect first paints the same ring, not an error."""
-    image = self._paintOnWhite(lambda painter: painter.fillBetween(
-        Rect(20, 20, 80, 80), Rect(0, 0, 100, 100), Color(0, 0, 0)))
+    image = self._paintOnWhite(
+      lambda painter: painter.fillBetween(
+          Rect(20, 20, 80, 80), Rect(0, 0, 100, 100), Color(0, 0, 0)
+      )
+      )
     self.assertEqual(image.pixelColor(10, 10).name(), _BLACK)
     self.assertEqual(image.pixelColor(50, 50).name(), _WHITE)
 
@@ -172,9 +193,11 @@ class RunPainter(UtilsAppTest):
     painter.begin(pixmap)
     try:
       with self.assertRaises(ValueError):
-        painter.fillBetween(Rect(0, 0, 50, 50),
-                            Rect(25, 25, 75, 75),
-                            Color(0, 0, 0))
+        painter.fillBetween(
+          Rect(0, 0, 50, 50),
+          Rect(25, 25, 75, 75),
+          Color(0, 0, 0)
+          )
     finally:
       painter.end()
 

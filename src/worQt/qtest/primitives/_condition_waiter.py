@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QEventLoop, QTimer
 from worktoy.mcls import BaseObject
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Callable, Optional, TypeAlias
 
   Predicate: TypeAlias = Callable[[], bool]

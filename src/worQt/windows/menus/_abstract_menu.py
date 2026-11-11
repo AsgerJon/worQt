@@ -17,7 +17,7 @@ from worktoy.waitaminute import TypeException, SubclassException
 from ...mixin import MixinBase
 from . import AbstractAction
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias, Optional
 
   Actions: TypeAlias = dict[str, AbstractAction]

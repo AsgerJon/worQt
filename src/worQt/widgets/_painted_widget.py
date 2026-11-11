@@ -38,7 +38,7 @@ from ..utils.geom import Size, Rect, Color
 from ..utils.geom import InSets
 from . import AbstractWidget
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Union, Iterator, Optional, Type
 
   from ..paint_ops import AbstractPaintOp
@@ -597,7 +597,11 @@ class PaintedWidget(AbstractWidget):
         painter.save()
         try:
           paintOp.prepare(painter)
-          self.__paint_view__ = paintOp.paint(painter, self.paintView, paintE)
+          self.__paint_view__ = paintOp.paint(
+            painter,
+            self.paintView,
+            paintE
+            )
           if not isinstance(self.__paint_view__, Rect):
             raise TypeException('__paint_view__', self.__paint_view__, Rect)
           paintOp.reset(painter)

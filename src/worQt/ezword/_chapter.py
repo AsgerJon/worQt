@@ -15,7 +15,7 @@ from worktoy.waitaminute import MissingVariable, TypeException
 
 from . import Paragraph
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, Iterator, Self
 
 #  A blank line: a line break, any whitespace (further blank lines

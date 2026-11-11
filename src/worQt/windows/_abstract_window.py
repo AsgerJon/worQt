@@ -23,7 +23,7 @@ from worktoy.utilities import textFmt
 
 from ..mixin import MixinBase
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Callable
 
   from PySide6.QtGui import QCloseEvent

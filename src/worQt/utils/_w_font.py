@@ -34,7 +34,7 @@ from .font_nums import FontStyleNum, FontLineFlags
 from .geom import Size
 from .qee_num import ColorNum
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Optional, TypeAlias, Union
 
   FamilyLike: TypeAlias = Union[GenericFamilyNum, str]
@@ -233,9 +233,11 @@ class WFont(QFont, MixinBase):
       return 'color'
     if isinstance(arg, int) and not isinstance(arg, bool):
       return 'fontSize'
-    raise TypeException('arg', arg, QFont, GenericFamilyNum, str,
-                        FontWeightNum, FontStyleNum, FontLineFlags, Color,
-                        int)
+    raise TypeException(
+      'arg', arg, QFont, GenericFamilyNum, str,
+      FontWeightNum, FontStyleNum, FontLineFlags, Color,
+      int
+      )
 
   @classmethod
   def _sortAspects(cls, *args: Any) -> Aspects:

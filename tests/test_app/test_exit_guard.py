@@ -18,7 +18,7 @@ from worQt.app import App
 from worQt.qtest import AppTest
 from worQt.windows import AbstractWindow
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 _SAVE = QMessageBox.StandardButton.Save

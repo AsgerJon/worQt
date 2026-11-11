@@ -19,7 +19,7 @@ from worktoy.keenum import KeeNum, Kee
 
 from . import FontFamily
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias
 
   Families: TypeAlias = tuple[str, ...]
@@ -36,7 +36,8 @@ _WIDER_SERIF = (
   'IosevkaTermSlab',
 )
 _PREFERRED_SANS = (
-  'Montserrat', 'Adwaita Sans', 'Noto Sans', 'Roboto', 'Ubuntu',)
+  'Montserrat', 'Adwaita Sans', 'Noto Sans', 'Roboto', 'Ubuntu',
+)
 _WIDER_SANS = (
   'Adwaita Sans',
   'Arimo',
@@ -56,7 +57,8 @@ _WIDER_SANS = (
   'Ubuntu',
 )
 _PREFERRED_MONO = (
-  'JetBrainsMono', 'FiraMono', 'IosevkaTerm', 'Cascadia Code', 'Hack',)
+  'JetBrainsMono', 'FiraMono', 'IosevkaTerm', 'Cascadia Code', 'Hack',
+)
 _WIDER_MONO = (
   'Adwaita Mono', 'Agave', 'AnonymicePro', 'AtkynsonMono',
   'BigBlueTermPlus', 'BitstromWera', 'BlexMono', 'Cascadia Code',
@@ -82,8 +84,8 @@ _WIDER_MONO = (
 #  the style hint for asking Qt when none of them is installed.
 _KINDS = {
   'serif': (_PREFERRED_SERIF, _WIDER_SERIF, QFont.StyleHint.Serif),
-  'sans': (_PREFERRED_SANS, _WIDER_SANS, QFont.StyleHint.SansSerif),
-  'mono': (_PREFERRED_MONO, _WIDER_MONO, QFont.StyleHint.Monospace),
+  'sans' : (_PREFERRED_SANS, _WIDER_SANS, QFont.StyleHint.SansSerif),
+  'mono' : (_PREFERRED_MONO, _WIDER_MONO, QFont.StyleHint.Monospace),
 }
 
 

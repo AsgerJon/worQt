@@ -18,7 +18,7 @@ from worQt.windows.menus import MainMenuBar
 
 from . import WindowsAppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

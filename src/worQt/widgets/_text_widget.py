@@ -21,7 +21,7 @@ from ..utils.font_nums import GenericFamilyNum, FontWeightNum
 from ..utils.geom import Size, InSets
 from ..utils.qee_num import Alignum
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Optional, Union
 
   WFontBox: TypeAlias = Union[WFont, AttriBox]
@@ -48,10 +48,10 @@ class TextWidget(LabelWidget):
 
   #  Public Variables
   font: WFontBox = AttriBox[WFont](
-    GenericFamilyNum.MONO,
-    FontWeightNum.NORMAL,
-    10,
-    )
+      GenericFamilyNum.MONO,
+      FontWeightNum.NORMAL,
+      10,
+  )
 
   #  Virtual Variables
   reqHeight: FloatField = Field()

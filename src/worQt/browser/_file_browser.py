@@ -22,7 +22,7 @@ from ..utils.geom import InSets, Size
 from ..widgets import PaintedWidget
 from . import FileNode, PaintFileTree
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
   from PySide6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent, QFocusEvent
@@ -96,10 +96,10 @@ class FileBrowser(PaintedWidget):
   boxModelOp = PaintBoxModel()
   treeOp = PaintFileTree()
   font = AttriBox[WFont](
-    GenericFamilyNum.SANS,
-    FontWeightNum.NORMAL,
-    10,
-    Color(200, 200, 200),
+      GenericFamilyNum.SANS,
+      FontWeightNum.NORMAL,
+      10,
+      Color(200, 200, 200),
   )
   rootPath: Field[str] = Field()
   suffixes: Field[tuple] = Field()

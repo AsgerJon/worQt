@@ -12,7 +12,7 @@ from worktoy.desc import AttriBox, Field
 from worktoy.mcls import BaseObject
 from worktoy.waitaminute import MissingVariable, TypeException
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, Iterator, Self
 
 
@@ -117,8 +117,8 @@ class FileNode(BaseObject):
       return []
     #  Folders sort before files, each by name regardless of case.
     order = sorted(
-      (not entry.is_dir(), str.lower(entry.name), entry.path)
-      for entry in entries
+        (not entry.is_dir(), str.lower(entry.name), entry.path)
+        for entry in entries
     )
     out, depth, suffixes = [], self.depth + 1, self.__node_suffixes__
     for _, _, path in order:

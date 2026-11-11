@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from worktoy.mcls.space_hooks import AbstractSpaceHook
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from worktoy.mcls.space_hooks import SpaceDesc
   from . import SpaceTest
 

@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QPixmap, QPaintEvent, QFont, QPainter
 from PySide6.QtCore import QRect
-from worktoy.waitaminute import TypeException, MissingVariable, VariableNotNone
+from worktoy.waitaminute import TypeException, \
+  MissingVariable, \
+  VariableNotNone
 
 from worQt.paint_ops import AbstractPaintOp, PaintBoxModel, PaintLabel
 from worQt.waitaminute.events import EventException
@@ -22,7 +24,7 @@ from worQt.utils.geom import Rect
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

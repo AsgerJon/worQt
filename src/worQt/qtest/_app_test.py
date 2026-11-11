@@ -21,7 +21,7 @@ from worktoy.work_test import BaseTest
 
 from . import MetaTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Optional, Type, Any, Callable
 
   AppType: TypeAlias = Type[QApplication]

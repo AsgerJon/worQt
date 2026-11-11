@@ -24,7 +24,7 @@ from worQt.qtest import AppTest, AppTestRun, AppTestSuite, RenderMode
 
 from . import QTestTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 _FIXTURES = 'tests.test_qtest.fixtures.'

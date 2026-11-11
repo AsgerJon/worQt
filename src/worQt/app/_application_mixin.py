@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QApplication
 from ..mixin import MixinBase
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 

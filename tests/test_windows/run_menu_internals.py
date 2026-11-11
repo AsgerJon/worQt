@@ -14,12 +14,12 @@ from PySide6.QtGui import QIcon, QKeySequence
 from worktoy.waitaminute import TypeException
 
 from worQt.windows.menus import (AbstractMenu, AbstractMenuBar,
-                                AbstractAction, MenuSeparator)
+                                 AbstractAction, MenuSeparator)
 from worQt.windows.menus.file_menu import NewAction, File
 
 from . import WindowsAppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

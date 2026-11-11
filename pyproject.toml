@@ -1,5 +1,5 @@
 [build-system]
-requires = ['setuptools>=69.5.1']
+requires = ['setuptools>=77.0.3']
 build-backend = 'setuptools.build_meta'
 
 
@@ -12,8 +12,10 @@ authors = [
 description = "Collection of Utilities for Qt for Python"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
-    "worktoy>=1.0.0rc8",
+    "worktoy>=1.1.0",
     "PySide6>=6.5",
 ]
 classifiers = [
@@ -23,8 +25,8 @@ classifiers = [
     'Programming Language :: Python :: 3.12',
     'Programming Language :: Python :: 3.13',
     'Programming Language :: Python :: 3.14',
+    'Programming Language :: Python :: 3.15',
     "Programming Language :: Python :: Implementation :: CPython",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -52,9 +54,10 @@ source = ["worQt"]
 
 [tool.coverage.report]
 skip_covered = false
-# Keep the default '# pragma: no cover' and also exclude the standard
-# '__main__' entry guards (their error branches are only reachable by
-# feeding the runner bad input, which cannot happen in a green suite).
+# Keep the default '# pragma: no cover' (which '# pragma: no cover, no
+# mutate' still matches) and also exclude the standard '__main__' entry
+# guards (their error branches are only reachable by feeding the runner
+# bad input, which cannot happen in a green suite).
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",

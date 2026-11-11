@@ -21,7 +21,7 @@ from worktoy.utilities import wordWrap
 
 from . import AppTestRun
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import IO, TypeAlias, Optional, Iterator
 
   MaybeStr: TypeAlias = Optional[str]
@@ -284,14 +284,24 @@ class AppTestSuite(BaseObject):
       self._log(2, '%s: %s' % (label, name))
     self._log(2, '-' * 60)
 
-  def _runOne(self, name: str) -> bool:
+  @staticmethod
+  def _countOf(index: int, total: int) -> str:
     """
-    The '_runOne' method runs the test module 'name' in its child, reports
-    the outcome and returns whether it passed. A failure of the harness
+    The '_countOf' method returns where 'index' is among 'total', as
+    'index/total', the index padded with noughts to the width of the
+    total, such as '069/420', so the status lines stay lined up.
+    """
+    return '%0*d/%d' % (len(str(total)), index, total)
+
+  def _runOne(self, name: str, count: str) -> bool:
+    """
+    The '_runOne' method runs the test module 'name' in its child, its
+    status line saying 'count', where it is in the run; reports the
+    outcome and returns whether it passed. A failure of the harness
     itself while supervising is reported as an error of that module rather
     than ending the whole suite.
     """
-    self._log(2, 'RUN: %s' % (name,))
+    self._log(2, 'RUN %s: %s' % (count, name))
     testRun = AppTestRun(name)
     try:
       code, output = testRun.run()
@@ -324,11 +334,16 @@ class AppTestSuite(BaseObject):
     """
     stamp = time.strftime('%Y-%m-%d %H:%M:%S')
     self._write('worQt.qtest run started %s' % (stamp,))
-    failedNames = [name for name in names if not self._runOne(name)]
+    total = len(names)
+    failedNames = [name for index, name in enumerate(names, 1)
+                   if not self._runOne(name, self._countOf(index, total))]
     failures = len(failedNames)
     passed = len(names) - failures
-    self._log(1, '%d passed, %d failed of %d test classes' % (
-        passed, failures, len(names)))
+    self._log(
+      1, '%d passed, %d failed of %d test classes' % (
+        passed, failures, len(names)
+      )
+      )
     if failedNames:
       failedList = ',\n'.join('  %s' % (name,) for name in failedNames)
       self._echo(1, 'Failed:\n%s' % (failedList,))
@@ -361,7 +376,8 @@ class AppTestSuite(BaseObject):
     here = os.path.dirname(os.path.abspath(__file__))
     while not os.path.isdir(os.path.join(here, 'tests')):
       parent = os.path.dirname(here)
-      if parent == here:  # pragma: no cover  # reached the filesystem root
+      if parent == here:  # pragma: no cover, no mutate  # reached the
+        # filesystem root
         return os.getcwd()
       here = parent
     return here

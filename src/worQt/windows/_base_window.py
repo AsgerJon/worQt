@@ -14,7 +14,7 @@ from worktoy.desc import AttriBox
 from . import AbstractWindow
 from .menus import MainMenuBar
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

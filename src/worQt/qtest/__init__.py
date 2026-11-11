@@ -31,7 +31,7 @@ from ._app_test_run import AppTestRun
 from ._app_test_suite import AppTestSuite
 from ._test_me_bro import testMeBro
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
   from ._widget_test import WidgetTest

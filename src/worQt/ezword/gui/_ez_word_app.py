@@ -12,7 +12,7 @@ from PySide6.QtGui import QPalette, QColor
 from ...app import App
 from . import EZWordWindow
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias
 
   RGB: TypeAlias = tuple[int, int, int]

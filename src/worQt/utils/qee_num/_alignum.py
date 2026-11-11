@@ -15,7 +15,7 @@ from worktoy.keenum import KeeNum, Kee
 from . import VAlignum, HAlignum
 from ..geom import Rect, Size, Point2D
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 QTop = Qt.AlignmentFlag.AlignTop
@@ -79,14 +79,14 @@ class Alignum(KeeNum):
     for v in VAlignum:
       if self.value & v.value:
         return v
-    raise ValueError  # pragma: no cover
+    raise ValueError  # pragma: no cover, no mutate
 
   @horizontal.GET
   def _getHorizontal(self, ) -> HAlignum:
     for h in HAlignum:
       if self.value & h.value:
         return h
-    raise ValueError  # pragma: no cover
+    raise ValueError  # pragma: no cover, no mutate
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -120,7 +120,7 @@ class Alignum(KeeNum):
       left = int(round(staticRect.center.x - movingRect.width / 2))
     elif self.horizontal is HAlignum.RIGHT:
       left = staticRect.right - movingRect.width
-    else:  # pragma: no cover
+    else:  # pragma: no cover, no mutate
       raise ValueError
     return Rect(Point2D(left, top), movingRect.size)
 
@@ -132,7 +132,7 @@ class Alignum(KeeNum):
       top = int(round(staticRect.center.y - movingRect.height / 2))
     elif self.vertical is VAlignum.BOTTOM:
       top = staticRect.bottom - movingRect.height
-    else:  # pragma: no cover
+    else:  # pragma: no cover, no mutate
       raise ValueError
     return Rect(Point2D(left, top), movingRect.size)
 
@@ -147,4 +147,4 @@ class Alignum(KeeNum):
     for alignum in cls:
       if alignum.vertical is vertical and alignum.horizontal is horizontal:
         return alignum
-    raise ValueError  # pragma: no cover
+    raise ValueError  # pragma: no cover, no mutate

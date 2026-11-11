@@ -19,7 +19,7 @@ from worktoy.waitaminute.desc import WriteOnceError
 
 from . import LayoutCell
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Iterator, Union, Optional, TypeAlias, Self, Type
 
   Spans: TypeAlias = tuple[int, int]

@@ -23,7 +23,7 @@ from worktoy.mcls import BaseObject
 from worQt.mixin import MixinBase
 from worQt.qtest import AppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -52,7 +52,10 @@ class RunMixinBase(AppTest):
     """'src'/'root'/'etc' resolve to the expected directories."""
     base = MixinBase()
     self.assertEqual(os.path.basename(base.src), 'src')
-    self.assertEqual(base.root, os.path.abspath(os.path.join(base.src, '..')))
+    self.assertEqual(
+      base.root,
+      os.path.abspath(os.path.join(base.src, '..'))
+      )
     self.assertEqual(base.etc, os.path.join(base.src, 'etc'))
 
   def run_eps(self) -> None:

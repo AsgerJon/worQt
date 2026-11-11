@@ -12,7 +12,7 @@ from . import PaintButton, ClickButton
 from ..utils import ButtonStateFlags as BSFlags, Color
 from ..utils.geom import InSets
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, TypeAlias, Union, Optional, Type
 
   StateDims: TypeAlias = dict[BSFlags, InSets]
@@ -48,7 +48,7 @@ class PushButton(ClickButton):
     __disabled_state__  : InSets(2, 2, 2, 2, ),
     __disabled_hovered__: InSets(1, 1, 1, 1, ),
     __disabled_pressed__: InSets(1, 1, 1, 1, ),
-    }
+  }
   __state_margins_color__: StateColor = {
     __base_state__      : Color(255, 255, 255),
     __hovered_state__   : Color(255, 255, 255),
@@ -56,7 +56,7 @@ class PushButton(ClickButton):
     __disabled_state__  : Color(255, 255, 255),
     __disabled_hovered__: Color(255, 255, 255),
     __disabled_pressed__: Color(255, 255, 255),
-    }
+  }
   __state_borders_dims__: StateDims = {
     __base_state__      : InSets(1, 1, 1, 1, ),
     __hovered_state__   : InSets(2, 2, 2, 2, ),
@@ -64,7 +64,7 @@ class PushButton(ClickButton):
     __disabled_state__  : InSets(1, 1, 1, 1, ),
     __disabled_hovered__: InSets(2, 2, 2, 2, ),
     __disabled_pressed__: InSets(2, 2, 2, 2, ),
-    }
+  }
   __state_borders_color__: StateColor = {
     __base_state__      : Color(0, 0, 0),
     __hovered_state__   : Color(0, 0, 0),
@@ -72,7 +72,7 @@ class PushButton(ClickButton):
     __disabled_state__  : Color(0, 0, 0),
     __disabled_hovered__: Color(0, 0, 0),
     __disabled_pressed__: Color(0, 0, 0),
-    }
+  }
   __state_content_dims__: StateDims = {
     __base_state__      : InSets(2, 2, 2, 2, ),
     __hovered_state__   : InSets(2, 2, 2, 2, ),
@@ -80,7 +80,7 @@ class PushButton(ClickButton):
     __disabled_state__  : InSets(2, 2, 2, 2, ),
     __disabled_hovered__: InSets(2, 2, 2, 2, ),
     __disabled_pressed__: InSets(2, 2, 2, 2, ),
-    }
+  }
   __state_content_color__: StateColor = {
     __base_state__      : Color(223, 223, 223),
     __hovered_state__   : Color(223, 223, 223),
@@ -88,7 +88,7 @@ class PushButton(ClickButton):
     __disabled_state__  : Color(223, 223, 223),
     __disabled_hovered__: Color(255, 255, 255),
     __disabled_pressed__: Color(255, 255, 255),
-    }
+  }
 
   #  Private Variables
 

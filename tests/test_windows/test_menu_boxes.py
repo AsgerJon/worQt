@@ -15,11 +15,11 @@ from PySide6.QtWidgets import QMenu
 from worktoy.waitaminute import TypeException, SubclassException
 
 from worQt.windows.menus import (AbstractMenu, AbstractMenuBar, ActionBox,
-                                MenuBox, MenuSeparator)
+                                 MenuBox, MenuSeparator)
 
 from . import WindowsTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -31,7 +31,8 @@ class TestMenuBoxes(WindowsTest):
   """Tests for the box and registry guards."""
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  ACTION BOX  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  ACTION BOX  # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_action_box_subscript_guards(self) -> None:
@@ -52,7 +53,8 @@ class TestMenuBoxes(WindowsTest):
       box.__set_name__(_NotAQt, 'x')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  MENU BOX  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  MENU BOX  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_menu_box_subscript_guards(self) -> None:

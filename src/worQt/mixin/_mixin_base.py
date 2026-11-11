@@ -19,7 +19,7 @@ from worktoy.utilities import textFmt
 
 from . import MixinMeta
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, Never
 
 

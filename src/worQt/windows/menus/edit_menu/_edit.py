@@ -12,7 +12,7 @@ from .. import AbstractMenu, ActionBox
 from . import UndoAction, RedoAction, CutAction, CopyAction, PasteAction
 from . import SelectAllAction, DeleteAction
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

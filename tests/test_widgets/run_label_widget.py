@@ -19,7 +19,7 @@ from worQt.utils.geom import Size
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -55,8 +55,10 @@ class RunLabelWidget(WidgetTest):
 
   def run_recursion_guards(self) -> None:
     """Each lazy getter guards against a failed build."""
-    getters = ('_getText', '_getCornerXRadius', '_getCornerYRadius',
-               '_getMinWidth', '_getMinHeight')
+    getters = (
+      '_getText', '_getCornerXRadius', '_getCornerYRadius',
+      '_getMinWidth', '_getMinHeight'
+    )
     for name in getters:
       widget = LabelWidget()
       with self.assertRaises(RecursionError):
@@ -64,11 +66,13 @@ class RunLabelWidget(WidgetTest):
 
   def run_type_guards(self) -> None:
     """Each getter rejects a corrupt backing slot."""
-    specs = (('__current_text__', '_getText'),
-             ('__x_radius__', '_getCornerXRadius'),
-             ('__y_radius__', '_getCornerYRadius'),
-             ('__min_width__', '_getMinWidth'),
-             ('__min_height__', '_getMinHeight'))
+    specs = (
+      ('__current_text__', '_getText'),
+      ('__x_radius__', '_getCornerXRadius'),
+      ('__y_radius__', '_getCornerYRadius'),
+      ('__min_width__', '_getMinWidth'),
+      ('__min_height__', '_getMinHeight')
+    )
     for slot, getter in specs:
       widget = LabelWidget()
       setattr(widget, slot, object())

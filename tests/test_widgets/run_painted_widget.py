@@ -21,7 +21,7 @@ from worQt.utils.geom import Rect, Size, InSets, Color
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -113,10 +113,12 @@ class RunPaintedWidget(WidgetTest):
 
   def run_box_recursion_guards(self) -> None:
     """Each lazy getter guards against a failed build."""
-    getters = ('_getAlignment', '_getMarginsDims', '_getBordersDims',
-               '_getPaddingsDims', '_getMarginsColor', '_getBordersColor',
-               '_getPaddingsColor', '_getWrapMode', '_getTextAlignum',
-               '_getHorizontalMode', '_getVerticalMode')
+    getters = (
+      '_getAlignment', '_getMarginsDims', '_getBordersDims',
+      '_getPaddingsDims', '_getMarginsColor', '_getBordersColor',
+      '_getPaddingsColor', '_getWrapMode', '_getTextAlignum',
+      '_getHorizontalMode', '_getVerticalMode'
+    )
     for name in getters:
       widget = PaintedWidget()
       with self.assertRaises(RecursionError):
@@ -124,17 +126,19 @@ class RunPaintedWidget(WidgetTest):
 
   def run_box_type_guards(self) -> None:
     """Each getter rejects a corrupt backing slot."""
-    specs = (('__alignment_flag__', '_getAlignment'),
-             ('__margins_dims__', '_getMarginsDims'),
-             ('__borders_dims__', '_getBordersDims'),
-             ('__paddings_dims__', '_getPaddingsDims'),
-             ('__margins_color__', '_getMarginsColor'),
-             ('__borders_color__', '_getBordersColor'),
-             ('__paddings_color__', '_getPaddingsColor'),
-             ('__wrap_mode__', '_getWrapMode'),
-             ('__text_align__', '_getTextAlignum'),
-             ('__horizontal_mode__', '_getHorizontalMode'),
-             ('__vertical_mode__', '_getVerticalMode'))
+    specs = (
+      ('__alignment_flag__', '_getAlignment'),
+      ('__margins_dims__', '_getMarginsDims'),
+      ('__borders_dims__', '_getBordersDims'),
+      ('__paddings_dims__', '_getPaddingsDims'),
+      ('__margins_color__', '_getMarginsColor'),
+      ('__borders_color__', '_getBordersColor'),
+      ('__paddings_color__', '_getPaddingsColor'),
+      ('__wrap_mode__', '_getWrapMode'),
+      ('__text_align__', '_getTextAlignum'),
+      ('__horizontal_mode__', '_getHorizontalMode'),
+      ('__vertical_mode__', '_getVerticalMode')
+    )
     for slot, getter in specs:
       widget = PaintedWidget()
       setattr(widget, slot, 'bad')

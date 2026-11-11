@@ -23,7 +23,7 @@ from worQt.utils.geom import Point2D
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 _LEFT = Qt.MouseButton.LeftButton

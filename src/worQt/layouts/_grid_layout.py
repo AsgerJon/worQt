@@ -16,7 +16,7 @@ from worktoy.waitaminute import TypeException
 from . import BaseLayout, LayoutIndex
 from ..widgets import AbstractWidget
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Type, TypeAlias, Optional, Union
 
   IndexDict: TypeAlias = dict[LayoutIndex, AbstractWidget]
@@ -118,7 +118,7 @@ class GridLayout(BaseLayout):
       _ = QGridLayout.takeAt(self, 0)
       newCount = QGridLayout.count(self, )
       if newCount:
-        if newCount == oldCount:  # pragma: no cover
+        if newCount == oldCount:  # pragma: no cover, no mutate
           raise RecursionError  # 'takeAt' always shrinks the layout
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

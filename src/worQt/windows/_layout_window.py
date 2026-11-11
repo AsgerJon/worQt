@@ -16,7 +16,7 @@ from . import BaseWindow
 from ..layouts import BaseLayout
 from ..widgets import AbstractWidget
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

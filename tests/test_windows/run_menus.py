@@ -18,7 +18,7 @@ from worQt.windows.menus.file_menu import File, NewAction
 
 from . import WindowsAppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -29,8 +29,10 @@ class RunMenus(WindowsAppTest):
     """The bar materialises one menu per registered type."""
     bar = MainMenuBar()
     menus = bar.getMenus()
-    self.assertEqual(set(menus),
-                     {'fileMenu', 'editMenu', 'viewMenu', 'helpMenu'})
+    self.assertEqual(
+      set(menus),
+      {'fileMenu', 'editMenu', 'viewMenu', 'helpMenu'}
+      )
     for menu in menus.values():
       self.assertIsInstance(menu, AbstractMenu)
 

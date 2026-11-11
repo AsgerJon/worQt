@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QGridLayout
 
 from . import LayoutMixin
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

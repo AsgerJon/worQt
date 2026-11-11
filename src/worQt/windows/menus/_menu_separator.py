@@ -12,7 +12,7 @@ from PySide6.QtGui import QAction
 
 from . import AbstractAction
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

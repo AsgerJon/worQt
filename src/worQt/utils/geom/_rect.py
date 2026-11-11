@@ -21,7 +21,7 @@ from worktoy.mcls import BaseObject
 from ._point_2d import Point2D
 from ._size import Size
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self
 
 
@@ -117,13 +117,13 @@ class Rect(BaseObject):
   def __init__(self, size: Size) -> None:
     self.right, self.bottom = size.width, size.height
 
-  @overload(QRect, strict=True)
+  @overload(QRect, )
   def __init__(self, rect: QRect) -> None:
     self.left, self.top = rect.x(), rect.y()
     self.right = rect.x() + rect.width()
     self.bottom = rect.y() + rect.height()
 
-  @overload(QRectF, strict=True)
+  @overload(QRectF, )
   def __init__(self, rect: QRectF) -> None:
     self.left, self.top = round(rect.left()), round(rect.top())
     self.right, self.bottom = round(rect.right()), round(rect.bottom())
@@ -155,6 +155,7 @@ class Rect(BaseObject):
 
   def __str__(self) -> str:
     return 'Rect(%d, %d, %d, %d)' % (
-        self.left, self.top, self.right, self.bottom)
+      self.left, self.top, self.right, self.bottom
+    )
 
   __repr__ = __str__

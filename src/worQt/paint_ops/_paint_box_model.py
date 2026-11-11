@@ -16,7 +16,7 @@ from ..utils.qee_num import ColorNum, SizingMode
 from ..waitaminute.events import InvalidSizePolicy
 from . import AbstractPaintOp
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Union
   from ..utils import WPainter
 
@@ -87,7 +87,7 @@ class PaintBoxModel(AbstractPaintOp):
     rectDict: dict[SizingMode, Rects] = {
       SizingMode.INTRINSIC: intrinsicRects,
       SizingMode.EXTRINSIC: extrinsicRects,
-      }
+    }
     lefts = (*(r.left for r in rectDict[self.widget.hMode]),)
     tops = (*(r.top for r in rectDict[self.widget.vMode]),)
     rights = (*(r.right for r in rectDict[self.widget.hMode]),)

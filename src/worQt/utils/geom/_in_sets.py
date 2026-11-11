@@ -21,7 +21,7 @@ from worktoy.mcls import BaseObject
 from ._rect import Rect
 from ._size import Size
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self
 
 
@@ -95,37 +95,50 @@ class InSets(BaseObject):
   @overload(Rect)
   def __radd__(self, rect: Rect) -> Rect:
     """'rect + insets' grows the rect outward by the insets."""
-    return Rect(rect.left - self.left, rect.top - self.top,
-                rect.right + self.right, rect.bottom + self.bottom)
+    return Rect(
+      rect.left - self.left, rect.top - self.top,
+      rect.right + self.right, rect.bottom + self.bottom
+      )
 
   @overload(Rect)
   def __rsub__(self, rect: Rect) -> Rect:
     """'rect - insets' shrinks the rect inward by the insets."""
-    return Rect(rect.left + self.left, rect.top + self.top,
-                rect.right - self.right, rect.bottom - self.bottom)
+    return Rect(
+      rect.left + self.left, rect.top + self.top,
+      rect.right - self.right, rect.bottom - self.bottom
+      )
 
   @overload(Size)
   def __radd__(self, size: Size) -> Size:
-    return Size(self.left + size.width + self.right,
-                self.top + size.height + self.bottom)
+    return Size(
+      self.left + size.width + self.right,
+      self.top + size.height + self.bottom
+      )
 
   @overload(Size)
   def __rsub__(self, size: Size) -> Size:
-    return Size(size.width - self.left - self.right,
-                size.height - self.top - self.bottom)
+    return Size(
+      size.width - self.left - self.right,
+      size.height - self.top - self.bottom
+      )
 
   @overload(THIS)
   def __add__(self, other: Self) -> Self:
-    return InSets(self.left + other.left, self.top + other.top,
-                  self.right + other.right, self.bottom + other.bottom)
+    return InSets(
+      self.left + other.left, self.top + other.top,
+      self.right + other.right, self.bottom + other.bottom
+      )
 
   @overload(THIS)
   def __sub__(self, other: Self) -> Self:
-    return InSets(self.left - other.left, self.top - other.top,
-                  self.right - other.right, self.bottom - other.bottom)
+    return InSets(
+      self.left - other.left, self.top - other.top,
+      self.right - other.right, self.bottom - other.bottom
+      )
 
   def __str__(self) -> str:
     return 'InSets(%d, %d, %d, %d)' % (
-        self.left, self.top, self.right, self.bottom)
+      self.left, self.top, self.right, self.bottom
+    )
 
   __repr__ = __str__

@@ -15,7 +15,7 @@ from worQt.qtest import AppTest
 
 from . import QTestTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -80,5 +80,7 @@ class TestMetaTest(QTestTest):
 
     methods = RunDerived.testMethods
     self.assertEqual([*methods], ['run_shared'])
-    self.assertEqual(methods['run_shared'].__qualname__.split('.')[-2],
-                     'RunDerived')
+    self.assertEqual(
+        methods['run_shared'].__qualname__.split('.')[-2],
+        'RunDerived'
+        )

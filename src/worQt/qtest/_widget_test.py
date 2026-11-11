@@ -30,7 +30,7 @@ from .primitives import SignalSpy, SignalWaiter, ConditionWaiter, LiveWindow
 from ..utils import MouseButtonNum
 from ..utils.geom import Point2D
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Callable, TypeAlias, Union
 
   from PySide6.QtCore import SignalInstance

@@ -23,7 +23,7 @@ from worktoy.work_test import BaseTest
 from worQt.ezword.gui import EZWordApp, EZWordWindow, PageWidget
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 _CANCEL = QMessageBox.StandardButton.Cancel

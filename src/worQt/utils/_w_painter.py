@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, QRect, Qt
 from PySide6.QtGui import (QPainter,
-  QPainterPath,
-  QColor,
-  QBrush,
-  QFont,
-  QTextOption, QPaintDevice)
+                           QPainterPath,
+                           QColor,
+                           QBrush,
+                           QFont,
+                           QTextOption, QPaintDevice)
 from worktoy.utilities import textFmt
 from worktoy.waitaminute import TypeException
 from worktoy.desc import Field
@@ -25,7 +25,7 @@ from ..mixin import MixinBase
 from .geom import Rect, RoundedRect, Color
 from . import WPainterPath
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Union
 
   from ..widgets import PaintedWidget
@@ -116,7 +116,7 @@ class WPainter(QPainter, MixinBase):
       outer: RectLike,
       inner: RectLike,
       color: Color,
-      ) -> None:
+  ) -> None:
     """
     The 'fillBetween' method fills the area between two nested rects with
     'color' - the ring a box model paints for a border or a padding. The
@@ -174,7 +174,8 @@ class WPainter(QPainter, MixinBase):
       path.addRoundedRect(rect.Q, rect.hr, rect.vr)
     elif isinstance(rect, Rect):
       path.addRoundedRect(rect.Q, 0, 0)
-    else:  # pragma: no cover  # 'in' has already refused a non-'Rect'
+    else:  # pragma: no cover, no mutate  # 'in' has already refused a
+      # non-'Rect'
       raise TypeException('rect', rect, Rect, RoundedRect)
     return path
 

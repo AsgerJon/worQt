@@ -14,7 +14,7 @@ from worktoy.waitaminute import TypeException
 
 from . import HookTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, Union, TypeAlias
 
   Bases: TypeAlias = tuple[type, ...]

@@ -14,7 +14,7 @@ from worktoy.dispatch import overload
 from . import WidgetMixin
 from ..utils import EmptyBrush, EmptyPen
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 
@@ -35,7 +35,7 @@ class AbstractWidget(QWidget, WidgetMixin):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @overload(QWidget, strict=True)
+  @overload(QWidget, )
   def __init__(self, parent: QWidget, **kwargs) -> None:
     QWidget.__init__(self, parent)
 

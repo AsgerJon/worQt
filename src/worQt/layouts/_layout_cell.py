@@ -14,7 +14,7 @@ from worktoy.mcls import BaseObject
 from worktoy.waitaminute import TypeException
 from worktoy.waitaminute.desc import WriteOnceError
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Optional, Union, TypeAlias, Self, Type, Iterator
 
   MaybeInt: TypeAlias = Optional[int]
@@ -48,9 +48,9 @@ class LayoutCell(BaseObject):
   __fallback_row__: int = 0
   __fallback_col__: int = 0
   __key_fallbacks__: KeyDefaults = dict(
-    row=__fallback_row__,
-    col=__fallback_col__,
-    )
+      row=__fallback_row__,
+      col=__fallback_col__,
+  )
 
   #  Private Variables
   __row_value__: MaybeInt = None
@@ -156,7 +156,7 @@ class LayoutCell(BaseObject):
       resolved = cls(other)
     except (TypeError, ValueError):
       return NotImplemented
-    else:  # pragma: no cover
+    else:  # pragma: no cover, no mutate
       #  'LayoutCell' has no single-argument constructor, so a non-cell
       #  'other' never resolves here; the except above always fires.
       return resolved

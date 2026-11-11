@@ -15,7 +15,7 @@ from worktoy.waitaminute import TypeException
 
 from worQt.utils.qee_num import SizingMode
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias
 
   MaybeSizingMode: TypeAlias = Optional[SizingMode]

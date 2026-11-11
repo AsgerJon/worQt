@@ -61,6 +61,7 @@ class TestBoxEnums(UtilsTest):
   def test_vertex_num(self) -> None:
     """'VertexNum' enumerates the corners clockwise from the top-left."""
     self.assertEqual([m.name for m in VertexNum],
-                     ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_RIGHT', 'BOTTOM_LEFT'])
+                     ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_RIGHT',
+                      'BOTTOM_LEFT'])
     self.assertEqual(VertexNum.TOP_LEFT.value, 0)
     self.assertIs(VertexNum(2), VertexNum.BOTTOM_RIGHT)

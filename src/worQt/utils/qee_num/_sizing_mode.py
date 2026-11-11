@@ -15,7 +15,7 @@ Q_EXT = QSizePolicy.Policy.Maximum
 Q_INT = QSizePolicy.Policy.MinimumExpanding
 POL = QSizePolicy.Policy
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Union, Optional, TypeAlias
 
   from . import SizingMode as SELF

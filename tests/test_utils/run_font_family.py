@@ -31,8 +31,10 @@ class RunFontFamily(UtilsAppTest):
     respelled = str.replace(str.upper(family), ' ', '_')
     resolved = FontFamily.resolve(respelled)
     self.assertIn(resolved, FontFamily.installed())
-    self.assertEqual(FontFamily.normalize(resolved),
-                     FontFamily.normalize(family))
+    self.assertEqual(
+      FontFamily.normalize(resolved),
+      FontFamily.normalize(family)
+      )
 
   def run_resolve_unknown_raises(self) -> None:
     """A family that is not installed is refused, not substituted."""
@@ -41,8 +43,10 @@ class RunFontFamily(UtilsAppTest):
 
   def run_hinted_always_answers(self) -> None:
     """Qt names a family for every style hint, the generic last resort."""
-    for hint in (QFont.StyleHint.Serif, QFont.StyleHint.SansSerif,
-                 QFont.StyleHint.Monospace):
+    for hint in (
+        QFont.StyleHint.Serif, QFont.StyleHint.SansSerif,
+        QFont.StyleHint.Monospace
+    ):
       self.assertTrue(FontFamily.hinted(hint))
 
   def run_generic_family_is_real(self) -> None:
@@ -54,7 +58,8 @@ class RunFontFamily(UtilsAppTest):
       self.assertIsInstance(family, str)
       if member.familyAmong(installed) is not None:
         self.assertIn(family, installed)
-      else:  # pragma: no cover  # only on a machine without any candidate
+      else:  # pragma: no cover, no mutate  # only on a machine without
+        # any candidate
         self.assertTrue(family)
 
   def run_generic_apply(self) -> None:

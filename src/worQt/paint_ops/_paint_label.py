@@ -19,7 +19,7 @@ from ..utils import WFont, WPainter, Color
 from ..utils.geom import Rect
 from . import AbstractPaintOp
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Union, Optional, Callable
   from abc import ABC
 

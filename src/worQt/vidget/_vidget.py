@@ -14,7 +14,7 @@ from worktoy.waitaminute.control_flow import SkipSet
 
 from . import ViMode, VidgetBase, viMotions
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias, Union
 
   from PySide6.QtGui import QMouseEvent
@@ -142,8 +142,10 @@ class Vidget(VidgetBase):
     'gt': '_nextTab',
     'gT': '_previousTab',
   }
-  __changes__ = ('x', 'X', 'D', 'C', 's', 'S', 'p', 'P', 'J', 'i', 'a',
-                 'I', 'A', 'o', 'O')  # the commands '.' repeats
+  __changes__ = (
+    'x', 'X', 'D', 'C', 's', 'S', 'p', 'P', 'J', 'i', 'a',
+    'I', 'A', 'o', 'O'
+  )  # the commands '.' repeats
   __char_commands__ = {'r': '_replaceChars'}  # each taking a character
   __ctrl_commands__ = {
     Qt.Key.Key_R: 'redo',
@@ -155,11 +157,11 @@ class Vidget(VidgetBase):
     Qt.Key.Key_B: '_viewUp',
   }
   __ex_commands__ = {
-    'w' : '_exWrite',
-    'q' : '_exQuit',
-    'wq': '_exWriteQuit',
-    'x' : '_exWriteQuit',
-    'q!': '_exForceQuit',
+    'w'          : '_exWrite',
+    'q'          : '_exQuit',
+    'wq'         : '_exWriteQuit',
+    'x'          : '_exWriteQuit',
+    'q!'         : '_exForceQuit',
     'tabnew'     : '_exNewTab',
     'tabn'       : '_exNextTab',
     'tabnext'    : '_exNextTab',

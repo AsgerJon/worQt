@@ -19,7 +19,7 @@ from . import LabelWidget
 from ..utils import ButtonStateFlags, MouseButtonNum
 from ..utils.geom import Point2D
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Optional, Union
 
   MaybeBool: TypeAlias = Optional[bool]
@@ -102,8 +102,10 @@ class PaintButton(LabelWidget):
       return Point2D(-1, -1)
     cursor = self.assignedRectPosition
     if cursor in self.paintView:
-      return Point2D(cursor.x - self.paintView.left,
-                     cursor.y - self.paintView.top)
+      return Point2D(
+        cursor.x - self.paintView.left,
+        cursor.y - self.paintView.top
+        )
     return Point2D(-1, -1)
 
   @hovered.GET

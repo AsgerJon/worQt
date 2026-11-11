@@ -17,7 +17,7 @@ from worktoy.mcls import BaseObject
 from worktoy.utilities import stringList
 from worktoy.waitaminute import TypeException
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, TypeAlias, Iterator, Self, Union
 
   ColorField: TypeAlias = Union[QColor, Field]

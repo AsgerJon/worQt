@@ -28,7 +28,7 @@ from worktoy.waitaminute import MissingVariable, TypeException
 
 from . import ApplicationMixin
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
   from PySide6.QtCore import QObject, QEvent
@@ -203,7 +203,9 @@ class App(ApplicationMixin):
       return True
     return False  # Cancel
 
-  def askToSave(self) -> QMessageBox.StandardButton:  # pragma: no cover
+  def askToSave(
+      self
+      ) -> QMessageBox.StandardButton:  # pragma: no cover, no mutate
     """
     The 'askToSave' method asks whether to save the unsaved changes before
     exiting, and returns the button chosen: Save, Discard or Cancel. It is
@@ -216,7 +218,8 @@ class App(ApplicationMixin):
         'There are unsaved changes. Save before exiting?',
         QMessageBox.StandardButton.Save
         | QMessageBox.StandardButton.Discard
-        | QMessageBox.StandardButton.Cancel)
+        | QMessageBox.StandardButton.Cancel
+    )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  Python API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

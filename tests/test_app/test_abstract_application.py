@@ -17,7 +17,7 @@ from worQt.mixin import MixinMeta
 from worQt.qtest import AppTest
 from worQt.windows import AbstractWindow
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Type
 
 

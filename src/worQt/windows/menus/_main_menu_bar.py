@@ -16,7 +16,7 @@ from .edit_menu import Edit
 from .view_menu import View
 from .help_menu import Help
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

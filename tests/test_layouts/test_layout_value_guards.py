@@ -18,7 +18,7 @@ from worQt.layouts import LayoutCell, LayoutIndex
 
 from . import LayoutTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -71,7 +71,8 @@ class TestLayoutValueGuards(LayoutTest):
       LayoutCell(row='x')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  LAYOUT INDEX  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  LAYOUT INDEX  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_index_lazy_defaults(self) -> None:
@@ -112,11 +113,16 @@ class TestLayoutValueGuards(LayoutTest):
     self.assertIn('(1, 2)', str(LayoutIndex(1, 2)))
     self.assertEqual(repr(LayoutIndex(1, 2)), 'LayoutIndex(1, 2)')
     self.assertIn('rows', str(LayoutIndex(1, 2, 3, 4)))
-    self.assertEqual(repr(LayoutIndex(1, 2, 3, 4)), 'LayoutIndex(1, 2, 3, 4)')
+    self.assertEqual(
+      repr(LayoutIndex(1, 2, 3, 4)),
+      'LayoutIndex(1, 2, 3, 4)'
+      )
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  LAZY / RECURSION / TYPE GUARDS  # # # # # # # # # # # # # # # # # # # # #
-  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  LAZY / RECURSION / TYPE GUARDS  # # # # # # # # # # # # # # # # # # #
+  # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # #
 
   def test_cell_getter_lazy_fallback(self) -> None:
     """Reading row/col with a cleared backing slot repopulates the
@@ -147,9 +153,11 @@ class TestLayoutValueGuards(LayoutTest):
 
   def test_index_getter_type_guards(self) -> None:
     """Each index getter rejects a corrupt backing slot."""
-    specs = (('__col_value__', 'col'),
-             ('__rowSpan_value__', 'rowSpan'),
-             ('__colSpan_value__', 'colSpan'))
+    specs = (
+      ('__col_value__', 'col'),
+      ('__rowSpan_value__', 'rowSpan'),
+      ('__colSpan_value__', 'colSpan')
+    )
     for slot, attr in specs:
       index = LayoutIndex()
       setattr(index, slot, 'bad')
@@ -165,5 +173,7 @@ class TestLayoutValueGuards(LayoutTest):
     """'_resolveOther' returns an index unchanged and coerces a cell."""
     index = LayoutIndex(1, 2)
     self.assertIs(LayoutIndex._resolveOther(index), index)
-    self.assertIsInstance(LayoutIndex._resolveOther(LayoutCell(1, 2)),
-                          LayoutIndex)
+    self.assertIsInstance(
+      LayoutIndex._resolveOther(LayoutCell(1, 2)),
+      LayoutIndex
+      )

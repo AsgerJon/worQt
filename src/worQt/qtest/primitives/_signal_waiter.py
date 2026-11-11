@@ -15,7 +15,7 @@ from worktoy.desc import Field
 from worktoy.mcls import BaseObject
 from worktoy.utilities import maybe
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Optional, Self, TypeAlias, Union
 
   from PySide6.QtCore import SignalInstance

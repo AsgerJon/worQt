@@ -21,7 +21,7 @@ from ...windows import MainWindow
 from .. import Chapter
 from . import PageWidget
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
   from PySide6.QtGui import QKeyEvent
@@ -365,7 +365,7 @@ class EZWordWindow(MainWindow):
     changes."""
     return [page for page in self.pages if page.modified]
 
-  def askOpenPath(self, ) -> str:  # pragma: no cover
+  def askOpenPath(self, ) -> str:  # pragma: no cover, no mutate
     """
     The 'askOpenPath' method asks which file to open, and returns its
     path, or an empty string when cancelled. It is a hook of its own so a
@@ -375,7 +375,7 @@ class EZWordWindow(MainWindow):
     path, _ = QFileDialog.getOpenFileName(self, title, '', filters)
     return path
 
-  def askSavePath(self, ) -> str:  # pragma: no cover
+  def askSavePath(self, ) -> str:  # pragma: no cover, no mutate
     """
     The 'askSavePath' method asks where to save, and returns the path,
     given the EZWord suffix, or an empty string when cancelled. Like

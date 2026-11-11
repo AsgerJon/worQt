@@ -14,7 +14,7 @@ from worktoy.waitaminute import TypeException, SubclassException
 
 T = TypeVar('T')
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self, TypeAlias
   from . import AbstractMenu as Menu
   from . import AbstractMenuBar as MenuBar

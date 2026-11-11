@@ -16,7 +16,7 @@ from worktoy.desc import AttriBox, Field
 from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self
 
 
@@ -59,11 +59,11 @@ class Point2D(BaseObject):
   def __init__(self, x: float, y: float) -> None:
     self.x, self.y = round(x), round(y)
 
-  @overload(QPoint, strict=True)
+  @overload(QPoint, )
   def __init__(self, point: QPoint) -> None:
     self.x, self.y = point.x(), point.y()
 
-  @overload(QPointF, strict=True)
+  @overload(QPointF, )
   def __init__(self, point: QPointF) -> None:
     self.x, self.y = round(point.x()), round(point.y())
 

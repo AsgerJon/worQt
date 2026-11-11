@@ -14,7 +14,7 @@ from worktoy.dispatch import overload
 
 from ._rect import Rect
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 

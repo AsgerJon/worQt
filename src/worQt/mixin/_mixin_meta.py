@@ -13,7 +13,7 @@ from worktoy.mcls import BaseMeta
 
 from . import MixinSpace
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Type, TypeAlias
 
   Bases: TypeAlias = tuple[type, ...]

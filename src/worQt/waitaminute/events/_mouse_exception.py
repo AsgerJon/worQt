@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QWidget
 
 from . import EventException
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

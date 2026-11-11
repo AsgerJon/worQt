@@ -16,7 +16,7 @@ from worQt.qtest._space_test import SpaceTest, DuplicateException
 
 from . import QTestTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -40,7 +40,8 @@ class TestSpaceTest(QTestTest):
     self.assertIn('k', str(DuplicateException('k')))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  GET TEST METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  GET TEST METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_get_none_is_empty(self) -> None:

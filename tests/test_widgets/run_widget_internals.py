@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING
 from worktoy.waitaminute import TypeException
 
 from worQt.widgets import (PaintedWidget, LabelWidget, TextWidget,
-                          PaintButton, ScratchWidget)
+                           PaintButton, ScratchWidget)
 from worQt.utils.geom import Color, Size
 from worQt.utils.qee_num import SizingMode, HAlignum, VAlignum
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -28,7 +28,8 @@ class RunWidgetInternals(WidgetTest):
   """Tests for the widget accessor/setter internals."""
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PAINTED WIDGET  # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  PAINTED WIDGET  # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def run_axis_align_setters_unsupported(self) -> None:
@@ -42,8 +43,10 @@ class RunWidgetInternals(WidgetTest):
   def run_setter_type_guards(self) -> None:
     """The mode/colour/align setters reject wrong types."""
     widget = PaintedWidget()
-    for attr in ('hMode', 'vMode', 'marginsColor', 'bordersColor',
-                 'paddingsColor', 'align'):
+    for attr in (
+        'hMode', 'vMode', 'marginsColor', 'bordersColor',
+        'paddingsColor', 'align'
+    ):
       with self.assertRaises(TypeException):
         setattr(widget, attr, 1)
 
@@ -89,20 +92,24 @@ class RunWidgetInternals(WidgetTest):
     self.assertEqual((size.width, size.height), (200, 200))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  PAINT BUTTON  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  PAINT BUTTON  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def run_paint_button_default_positions(self) -> None:
     """With no event point, the cursor positions are the sentinel and the
     state is the null state."""
     button = PaintButton()
-    for point in (button.cursorPosition, button.assignedRectPosition,
-                  button.contentRectPosition):
+    for point in (
+        button.cursorPosition, button.assignedRectPosition,
+        button.contentRectPosition
+    ):
       self.assertEqual((point.x, point.y), (-1, -1))
     self.assertFalse(button.button)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-  #  LABEL WIDGET  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  LABEL WIDGET  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def run_label_copy_and_notify(self) -> None:
@@ -118,4 +125,5 @@ class RunWidgetInternals(WidgetTest):
     self.assertEqual(copy.text, 'changed')
     self.assertEqual(
         (copy.minSize.width, copy.minSize.height),
-        (copy.minWidth, copy.minHeight))
+        (copy.minWidth, copy.minHeight)
+    )

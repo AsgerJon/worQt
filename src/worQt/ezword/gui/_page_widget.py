@@ -15,7 +15,7 @@ from ...utils.geom import InSets
 from ...vidget import Vidget
 from .. import Char, PunctNum
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
 

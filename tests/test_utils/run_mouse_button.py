@@ -17,7 +17,7 @@ from worQt.utils import MouseButtonNum
 
 from . import UtilsAppTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -30,20 +30,24 @@ class RunMouseButton(UtilsAppTest):
 
   def run_from_event_single(self) -> None:
     """'fromEvent' resolves the single held button."""
-    event = QMouseEvent(QEvent.Type.MouseButtonPress,
-                        QPointF(0, 0),
-                        Qt.MouseButton.LeftButton,
-                        Qt.MouseButton.LeftButton,
-                        Qt.KeyboardModifier.NoModifier)
+    event = QMouseEvent(
+      QEvent.Type.MouseButtonPress,
+      QPointF(0, 0),
+      Qt.MouseButton.LeftButton,
+      Qt.MouseButton.LeftButton,
+      Qt.KeyboardModifier.NoModifier
+      )
     self.assertIs(MouseButtonNum.fromEvent(event), MouseButtonNum.LEFT)
 
   def run_from_event_unresolvable(self) -> None:
     """A combination matching no single member raises 'ValueError'."""
     both = Qt.MouseButton.LeftButton | Qt.MouseButton.RightButton
-    event = QMouseEvent(QEvent.Type.MouseButtonPress,
-                        QPointF(0, 0),
-                        Qt.MouseButton.LeftButton,
-                        both,
-                        Qt.KeyboardModifier.NoModifier)
+    event = QMouseEvent(
+      QEvent.Type.MouseButtonPress,
+      QPointF(0, 0),
+      Qt.MouseButton.LeftButton,
+      both,
+      Qt.KeyboardModifier.NoModifier
+      )
     with self.assertRaises(ValueError):
       MouseButtonNum.fromEvent(event)

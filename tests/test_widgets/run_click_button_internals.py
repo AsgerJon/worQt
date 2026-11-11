@@ -18,7 +18,7 @@ from worQt.utils import MouseButtonNum
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 _L = MouseButtonNum.LEFT

@@ -19,7 +19,7 @@ from worktoy.mcls import BaseObject
 
 from ._point_2d import Point2D
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self
 
 
@@ -70,7 +70,7 @@ class Vector2D(BaseObject):
   def __init__(self, x: float, y: float) -> None:
     self.x, self.y = round(x), round(y)
 
-  @overload(QVector2D, strict=True)
+  @overload(QVector2D, )
   def __init__(self, vector: QVector2D) -> None:
     self.x, self.y = round(vector.x()), round(vector.y())
 

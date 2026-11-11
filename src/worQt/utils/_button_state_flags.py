@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from worktoy.keenum import KeeFlags, KeeFlag
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 

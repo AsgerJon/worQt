@@ -24,7 +24,7 @@ from ..utils.geom import InSets, Size
 from ..widgets import PaintedWidget
 from . import PaintStatusLine, PaintLineNumbers, PaintViText
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias
 
   from PySide6.QtGui import QMouseEvent, QFocusEvent, QWheelEvent
@@ -94,10 +94,10 @@ class VidgetBase(PaintedWidget):
   numbersOp = PaintLineNumbers()
   textOp = PaintViText()
   font = AttriBox[WFont](
-    GenericFamilyNum.MONO,
-    FontWeightNum.NORMAL,
-    12,
-    Color(212, 212, 212),
+      GenericFamilyNum.MONO,
+      FontWeightNum.NORMAL,
+      12,
+      Color(212, 212, 212),
   )
   modified = AttriBox[bool](False)
   registerLines = AttriBox[bool](False)  # the register holds whole lines

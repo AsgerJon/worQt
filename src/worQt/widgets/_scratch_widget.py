@@ -14,7 +14,7 @@ from ..utils.geom import Size
 from . import PaintedWidget
 from ..paint_ops import PaintBoxModel
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 

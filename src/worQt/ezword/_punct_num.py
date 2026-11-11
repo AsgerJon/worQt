@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from worktoy.desc import Field
 from worktoy.keenum import Kee, KeeNum
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
 

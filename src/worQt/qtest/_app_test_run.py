@@ -38,7 +38,7 @@ from worktoy.waitaminute import SubclassException
 
 from . import MetaTest, RenderMode
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import IO, TypeAlias, Type
 
   TestType: TypeAlias = Type[unittest.TestCase]
@@ -226,7 +226,8 @@ class AppTestRun(BaseObject):
     self.deadline = deadline
     try:
       os.killpg(os.getpgid(child.pid), SIGKILL)
-    except ProcessLookupError:  # pragma: no cover  # exited just in time
+    except ProcessLookupError:  # pragma: no cover, no mutate  # exited
+      # just in time
       pass
     child.wait()
 

@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt
 from ..paint_ops import AbstractPaintOp
 from ..utils.geom import Rect
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QPaintEvent
 
   from ..utils import WPainter

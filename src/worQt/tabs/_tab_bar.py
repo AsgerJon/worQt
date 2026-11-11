@@ -21,7 +21,7 @@ from ..utils.geom import InSets, Size
 from ..widgets import PaintedWidget
 from . import PaintTabBar
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional
 
   from PySide6.QtGui import QMouseEvent
@@ -68,10 +68,10 @@ class TabBar(PaintedWidget):
   boxModelOp = PaintBoxModel()
   tabsOp = PaintTabBar()
   font = AttriBox[WFont](
-    GenericFamilyNum.SANS,
-    FontWeightNum.NORMAL,
-    10,
-    Color(212, 212, 212),
+      GenericFamilyNum.SANS,
+      FontWeightNum.NORMAL,
+      10,
+      Color(212, 212, 212),
   )
   currentIndex: Field[int] = Field()
 

@@ -17,7 +17,7 @@ from worktoy.desc import AttriBox, Field
 from worktoy.dispatch import overload
 from worktoy.mcls import BaseObject
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self
 
 
@@ -65,19 +65,19 @@ class Size(BaseObject):
   def __init__(self, width: float, height: float) -> None:
     self.width, self.height = round(width), round(height)
 
-  @overload(QSize, strict=True)
+  @overload(QSize, )
   def __init__(self, size: QSize) -> None:
     self.width, self.height = size.width(), size.height()
 
-  @overload(QSizeF, strict=True)
+  @overload(QSizeF, )
   def __init__(self, size: QSizeF) -> None:
     self.width, self.height = round(size.width()), round(size.height())
 
-  @overload(QRect, strict=True)
+  @overload(QRect, )
   def __init__(self, rect: QRect) -> None:
     self.width, self.height = rect.width(), rect.height()
 
-  @overload(QRectF, strict=True)
+  @overload(QRectF, )
   def __init__(self, rect: QRectF) -> None:
     self.width, self.height = round(rect.width()), round(rect.height())
 

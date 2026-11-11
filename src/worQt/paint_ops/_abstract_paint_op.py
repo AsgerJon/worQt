@@ -36,7 +36,7 @@ from ..utils.geom import Rect
 
 # from ..widgets import WPainter, PaintedWidget
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Type, TypeAlias, Union, Optional
   from ..widgets import PaintedWidget
   from ..utils import WPainter

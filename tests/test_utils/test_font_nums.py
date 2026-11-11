@@ -75,22 +75,28 @@ class TestFontNums(UtilsTest):
 
   def test_normalize(self) -> None:
     """Spellings of one family normalize to the same key."""
-    self.assertEqual(FontFamily.normalize('JetBrains Mono'),
-                     FontFamily.normalize('jetbrains_mono'))
+    self.assertEqual(
+      FontFamily.normalize('JetBrains Mono'),
+      FontFamily.normalize('jetbrains_mono')
+      )
     self.assertEqual(FontFamily.normalize('Noto-Sans'), 'notosans')
 
   def test_pick_returns_installed_spelling(self) -> None:
     """'pick' finds a family however it is spelled, and returns the
     installed spelling."""
     installed = ('DejaVu Sans', 'JetBrains Mono')
-    self.assertEqual(FontFamily.pick(installed, 'JetBrainsMono'),
-                     'JetBrains Mono')
+    self.assertEqual(
+      FontFamily.pick(installed, 'JetBrainsMono'),
+      'JetBrains Mono'
+      )
 
   def test_pick_follows_the_order_asked(self) -> None:
     """The first name asked for that is installed wins."""
     installed = ('Hack', 'Fira Mono')
-    self.assertEqual(FontFamily.pick(installed, 'FiraMono', 'Hack'),
-                     'Fira Mono')
+    self.assertEqual(
+      FontFamily.pick(installed, 'FiraMono', 'Hack'),
+      'Fira Mono'
+      )
 
   def test_pick_none_installed(self) -> None:
     """With none of the names installed, 'pick' returns 'None'."""
@@ -98,28 +104,34 @@ class TestFontNums(UtilsTest):
 
   def test_installed_needs_an_application(self) -> None:
     """The installed families are unknown before a 'QApplication'."""
-    if QApplication.instance() is not None:  # pragma: no cover
+    if QApplication.instance() is not None:  # pragma: no cover, no mutate
       self.skipTest('a QApplication is running in this process')
     with self.assertRaises(RuntimeError):
       FontFamily.installed()
 
   def test_generic_members(self) -> None:
     """'GenericFamilyNum' enumerates serif, sans and mono."""
-    self.assertEqual([member.name for member in GenericFamilyNum],
-                     ['SERIF', 'SANS', 'MONO'])
+    self.assertEqual(
+        [member.name for member in GenericFamilyNum],
+        ['SERIF', 'SANS', 'MONO']
+        )
 
   def test_generic_prefers_the_preferred(self) -> None:
     """A preferred family beats an acceptable one, whatever the order of
     the installed list."""
     installed = ('Arimo', 'Noto Sans', 'Montserrat')
-    self.assertEqual(GenericFamilyNum.SANS.familyAmong(installed),
-                     'Montserrat')
+    self.assertEqual(
+      GenericFamilyNum.SANS.familyAmong(installed),
+      'Montserrat'
+      )
 
   def test_generic_falls_back_to_acceptable(self) -> None:
     """With no preferred family installed, an acceptable one is used."""
     installed = ('Comic Sans MS', 'Inconsolata')
-    self.assertEqual(GenericFamilyNum.MONO.familyAmong(installed),
-                     'Inconsolata')
+    self.assertEqual(
+      GenericFamilyNum.MONO.familyAmong(installed),
+      'Inconsolata'
+      )
 
   def test_generic_finds_nothing(self) -> None:
     """With none of its families installed a member finds none, which
@@ -129,8 +141,12 @@ class TestFontNums(UtilsTest):
   def test_generic_kinds_do_not_mix(self) -> None:
     """Each member chooses only from its own kind."""
     installed = ('Noto Serif', 'Noto Sans', 'Hack')
-    self.assertEqual(GenericFamilyNum.SERIF.familyAmong(installed),
-                     'Noto Serif')
-    self.assertEqual(GenericFamilyNum.SANS.familyAmong(installed),
-                     'Noto Sans')
+    self.assertEqual(
+      GenericFamilyNum.SERIF.familyAmong(installed),
+      'Noto Serif'
+      )
+    self.assertEqual(
+      GenericFamilyNum.SANS.familyAmong(installed),
+      'Noto Sans'
+      )
     self.assertEqual(GenericFamilyNum.MONO.familyAmong(installed), 'Hack')

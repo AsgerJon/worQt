@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from worQt.mixin import MixinBase
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, TypeAlias, Union
 
 

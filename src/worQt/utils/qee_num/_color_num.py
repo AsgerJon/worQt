@@ -11,7 +11,7 @@ from worktoy.keenum import KeeNum, Kee
 
 from .. import Color
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Type, TypeAlias, Any
 
 
@@ -24,7 +24,7 @@ class ColorNum(KeeNum):
   EGG_SHELL = Kee[Color](252, 230, 201)
   SILVER = Kee[Color](192, 192, 192)
   CHARCOAL = Kee[Color](54, 69, 79)
-  
+
   BLACK = Kee[Color](0, 0, 0)
 
   RED = Kee[Color](255, 0, 0)

@@ -12,17 +12,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from worQt.widgets import (PaintedWidget,
-  LabelWidget,
-  TextWidget,
-  PaintButton,
-  ClickButton,
-  PushButton)
+                           LabelWidget,
+                           TextWidget,
+                           PaintButton,
+                           ClickButton,
+                           PushButton)
 from worQt.widgets import ScratchWidget
 from worQt.utils.geom import Rect
 
 from worQt.qtest import WidgetTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

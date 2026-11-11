@@ -28,7 +28,7 @@ from ..utils import Color, WFont
 from ..utils.geom import Size
 from ..utils.qee_num import SizingMode
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Optional, Union, Self
 
   MaybeStr: TypeAlias = Optional[str]
@@ -218,23 +218,23 @@ class LabelWidget(PaintedWidget):
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  @overload(QWidget, strict=True)
+  @overload(QWidget, )
   def __init__(self, parent: QWidget, ) -> None:
     PaintedWidget.__init__(self, parent, )
 
-  @overload(QWidget, str, strict=True)
+  @overload(QWidget, str, )
   def __init__(self, parent: QWidget, text: str, ) -> None:
     PaintedWidget.__init__(self, parent, )
     self.text = text
 
-  @overload(QWidget, str, int, int, strict=True)
+  @overload(QWidget, str, int, int, )
   def __init__(self, parent: QWidget, text: str, xr: int, yr: int, ) -> None:
     PaintedWidget.__init__(self, parent, )
     self.text = text
     self.cornerXRadius = xr
     self.cornerYRadius = yr
 
-  @overload(THIS, strict=True)
+  @overload(THIS, )
   def __init__(self, other: Self, ) -> None:
     parent = Widget.parent(other, )
     if parent is None:

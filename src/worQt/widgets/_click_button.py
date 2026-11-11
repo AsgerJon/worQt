@@ -18,7 +18,7 @@ from ..utils import MouseButtonNum
 from ..utils.geom import Point2D, Vector2D
 from . import PaintButton
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import TypeAlias, Optional, Union, Mapping
 
   MaybeBool: TypeAlias = Optional[bool]
@@ -207,7 +207,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleClick,
       MouseButtonNum.FORWARD: self.forwardClick,
       MouseButtonNum.BACK   : self.backClick,
-      }
+    }
 
   @singleHoldDict.GET
   def _getSingleHoldDict(self, ) -> ClickDict:
@@ -217,7 +217,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleHold,
       MouseButtonNum.FORWARD: self.forwardHold,
       MouseButtonNum.BACK   : self.backHold,
-      }
+    }
 
   @doubleClickDict.GET
   def _getDoubleClickDict(self, ) -> ClickDict:
@@ -227,7 +227,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleDoubleClick,
       MouseButtonNum.FORWARD: self.forwardDoubleClick,
       MouseButtonNum.BACK   : self.backDoubleClick,
-      }
+    }
 
   @doubleHoldDict.GET
   def _getDoubleHoldDict(self, ) -> ClickDict:
@@ -237,7 +237,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleDoubleHold,
       MouseButtonNum.FORWARD: self.forwardDoubleHold,
       MouseButtonNum.BACK   : self.backDoubleHold,
-      }
+    }
 
   @tripleClickDict.GET
   def _getTripleClickDict(self, ) -> ClickDict:
@@ -247,7 +247,7 @@ class ClickButton(PaintButton):
       MouseButtonNum.MIDDLE : self.middleTripleClick,
       MouseButtonNum.FORWARD: self.forwardTripleClick,
       MouseButtonNum.BACK   : self.backTripleClick,
-      }
+    }
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  SETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -359,7 +359,7 @@ class ClickButton(PaintButton):
       1: self.singleClickDict,
       2: self.doubleClickDict,
       3: self.tripleClickDict,
-      }
+    }
     clickDict = clickDicts[len(self.clickSequence)]
     clickDict[firstButton].emit()
     return self._invalidateClicks()

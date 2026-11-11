@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF
 
 from ..paint_ops import AbstractPaintOp
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QPaintEvent
 
   from ..utils import WPainter
@@ -70,13 +70,17 @@ class PaintTabBar(AbstractPaintOp):
       line = QRectF(box.left(), box.top(), box.width() - 1, 2)
       painter.fillRect(line, bar.accentColor.fillBrush)
     closeBox = bar.closeRect(box)
-    textBox = QRectF(box.left(), box.top(), closeBox.left() - box.left(),
-                     box.height()).adjusted(bar.tabPadding, 0, 0, 0)
+    textBox = QRectF(
+      box.left(), box.top(), closeBox.left() - box.left(),
+      box.height()
+      ).adjusted(bar.tabPadding, 0, 0, 0)
     color = bar.currentTextColor if current else bar.textColor
     painter.setFont(bar.font)
     painter.setPen(color.Q)
-    title = bar.font.metrics.elidedText(bar.titleAt(index), _ELIDE,
-                                        int(max(textBox.width(), 0)))
+    title = bar.font.metrics.elidedText(
+      bar.titleAt(index), _ELIDE,
+      int(max(textBox.width(), 0))
+      )
     painter.drawText(textBox, _CENTER, title)
     if bar.isModified(index):
       self._paintDot(painter, closeBox, color)
@@ -93,7 +97,11 @@ class PaintTabBar(AbstractPaintOp):
     half = box.width() * 0.18
     center = box.center()
     painter.setPen(color.solidPen)
-    painter.drawLine(center + QPointF(-half, -half),
-                     center + QPointF(half, half))
-    painter.drawLine(center + QPointF(-half, half),
-                     center + QPointF(half, -half))
+    painter.drawLine(
+      center + QPointF(-half, -half),
+      center + QPointF(half, half)
+      )
+    painter.drawLine(
+      center + QPointF(-half, half),
+      center + QPointF(half, -half)
+      )

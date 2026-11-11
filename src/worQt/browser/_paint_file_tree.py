@@ -13,7 +13,7 @@ from PySide6.QtGui import QFont, QPainterPath
 
 from ..paint_ops import AbstractPaintOp
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QPaintEvent
 
   from ..utils import WPainter

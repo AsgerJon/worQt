@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Never
 
 from worktoy.waitaminute.desc import ReadOnlyError, ProtectedError
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Self, Any
 
 
@@ -45,7 +45,7 @@ class Eps:
   def __delete__(self, instance: Any) -> Never:
     try:
       oldValue = self.__get__(instance, type(instance), )
-    except Exception as exception:  # pragma: no cover
+    except Exception as exception:  # pragma: no cover, no mutate
       raise ProtectedError(instance, self) from exception  # __get__ is total
     else:
       raise ProtectedError(instance, self, oldValue)

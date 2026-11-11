@@ -16,7 +16,7 @@ from worktoy.desc import Field
 from worktoy.mcls import BaseObject
 from worktoy.waitaminute import MissingVariable, TypeException
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Optional, TypeAlias, Union
 
   MaybeWidget: TypeAlias = Optional[QWidget]

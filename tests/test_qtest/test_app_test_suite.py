@@ -21,7 +21,7 @@ from worQt.qtest import AppTestRun, AppTestSuite
 
 from . import QTestTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
 
 _FIXTURES = 'tests.test_qtest.fixtures.'
@@ -132,6 +132,19 @@ class TestAppTestSuite(QTestTest):
     self.assertIn('the harness failed', printed)
     self.assertIn('the harness broke', printed)
 
+  def test_run_lines_are_counted(self) -> None:
+    """Each 'RUN' line says where the module is in the run, its number
+    padded to the width of the count."""
+    suite = AppTestSuite()
+    names = ['module.%02d' % k for k in range(12)]
+    with mock.patch.object(AppTestRun, 'run', _quietRun):
+      status, printed = self._capture(suite, *names)
+    self.assertEqual(status, 0)
+    self.assertIn('RUN 01/12: module.00', printed)
+    self.assertIn('RUN 12/12: module.11', printed)
+    self.assertEqual(AppTestSuite._countOf(69, 420), '069/420')
+    self.assertEqual(AppTestSuite._countOf(1, 1), '1/1')
+
   def test_verbosity_zero_is_silent(self) -> None:
     """At verbosity 0 nothing is printed."""
     suite = AppTestSuite()
@@ -158,8 +171,14 @@ class TestAppTestSuite(QTestTest):
     """By default the log is 'latest.log' in the project root."""
     logPath = AppTestSuite().logPath
     self.assertEqual(os.path.basename(logPath), 'latest.log')
-    self.assertTrue(os.path.isdir(os.path.join(os.path.dirname(logPath),
-                                               'tests')))
+    self.assertTrue(
+      os.path.isdir(
+        os.path.join(
+          os.path.dirname(logPath),
+          'tests'
+          )
+        )
+      )
 
   def test_log_records_the_whole_run(self) -> None:
     """A top-level run logs everything, whatever the console verbosity."""

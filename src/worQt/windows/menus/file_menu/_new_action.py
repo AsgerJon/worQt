@@ -13,7 +13,7 @@ from worktoy.desc import FixBox, Field
 
 from .. import AbstractAction
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, Optional
 
 
@@ -31,4 +31,3 @@ class NewAction(AbstractAction):
   __icon_reference__: str = 'document-new'
   __action_title__: str = 'New'
   __key_bind__: str = 'Ctrl+N'
-

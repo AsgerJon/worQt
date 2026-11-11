@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from worktoy.work_test import BaseTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 

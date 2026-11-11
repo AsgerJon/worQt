@@ -18,14 +18,14 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from worQt.waitaminute.events import (EventException,
-  KeyboardException,
-  MouseException,
-  PaintException,
-  InvalidSizePolicy)
+                                      KeyboardException,
+                                      MouseException,
+                                      PaintException,
+                                      InvalidSizePolicy)
 
 from . import WaitTest
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -50,47 +50,57 @@ class RunEvents(WaitTest):
     """A 'KeyboardException' pulls out a widget-holder, event and message."""
     widget = QWidget()
     holder = SimpleNamespace(widget=widget)
-    event = QKeyEvent(QEvent.Type.KeyPress,
-                      Qt.Key.Key_A,
-                      Qt.KeyboardModifier.NoModifier)
+    event = QKeyEvent(
+      QEvent.Type.KeyPress,
+      Qt.Key.Key_A,
+      Qt.KeyboardModifier.NoModifier
+      )
     exc = KeyboardException(holder, event, 'boom')
     self.assertIs(exc.widget, widget)
     self.assertIs(exc.event, event)
 
   def run_keyboard_exception_ignores_extra(self) -> None:
     """Arguments matching nothing are passed through to 'Exception'."""
-    event = QKeyEvent(QEvent.Type.KeyPress,
-                      Qt.Key.Key_A,
-                      Qt.KeyboardModifier.NoModifier)
+    event = QKeyEvent(
+      QEvent.Type.KeyPress,
+      Qt.Key.Key_A,
+      Qt.KeyboardModifier.NoModifier
+      )
     exc = KeyboardException(event, 'boom', 123)
     self.assertIs(exc.event, event)
 
   def run_keyboard_exception_no_message(self) -> None:
     """Without a message the no-message constructor branch is taken."""
-    event = QKeyEvent(QEvent.Type.KeyPress,
-                      Qt.Key.Key_A,
-                      Qt.KeyboardModifier.NoModifier)
+    event = QKeyEvent(
+      QEvent.Type.KeyPress,
+      Qt.Key.Key_A,
+      Qt.KeyboardModifier.NoModifier
+      )
     exc = KeyboardException(event)
     self.assertIs(exc.event, event)
 
   def run_mouse_exception_no_message(self) -> None:
     """Without a message (and without a widget) the bare branches run."""
-    event = QMouseEvent(QEvent.Type.MouseButtonPress,
-                        QPointF(1, 1),
-                        Qt.MouseButton.LeftButton,
-                        Qt.MouseButton.LeftButton,
-                        Qt.KeyboardModifier.NoModifier)
+    event = QMouseEvent(
+      QEvent.Type.MouseButtonPress,
+      QPointF(1, 1),
+      Qt.MouseButton.LeftButton,
+      Qt.MouseButton.LeftButton,
+      Qt.KeyboardModifier.NoModifier
+      )
     exc = MouseException(event)
     self.assertIs(exc.event, event)
 
   def run_mouse_exception(self) -> None:
     """A 'MouseException' pulls out the widget and the mouse event."""
     widget = QWidget()
-    event = QMouseEvent(QEvent.Type.MouseButtonPress,
-                        QPointF(1, 1),
-                        Qt.MouseButton.LeftButton,
-                        Qt.MouseButton.LeftButton,
-                        Qt.KeyboardModifier.NoModifier)
+    event = QMouseEvent(
+      QEvent.Type.MouseButtonPress,
+      QPointF(1, 1),
+      Qt.MouseButton.LeftButton,
+      Qt.MouseButton.LeftButton,
+      Qt.KeyboardModifier.NoModifier
+      )
     exc = MouseException(widget, event, 'boom')
     self.assertIs(exc.widget, widget)
     self.assertIs(exc.event, event)
@@ -135,8 +145,10 @@ class RunEvents(WaitTest):
 
   def run_all_are_event_exceptions(self) -> None:
     """Every subclass is an 'EventException'."""
-    for cls in (KeyboardException, MouseException, PaintException,
-                InvalidSizePolicy):
+    for cls in (
+        KeyboardException, MouseException, PaintException,
+        InvalidSizePolicy
+    ):
       self.assertTrue(issubclass(cls, EventException))
 
   def run_mouse_exception_unmatched_arg(self) -> None:

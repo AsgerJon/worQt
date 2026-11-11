@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from worktoy.keenum import KeeNum, Kee
 from worktoy.utilities import textFmt
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any, TypeAlias, Union, Optional, Self
 
   MaybeApp: TypeAlias = Optional[QApplication]

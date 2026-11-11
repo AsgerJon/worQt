@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from ._class_body_template import ClassBodyTemplate
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
   from . import mixin

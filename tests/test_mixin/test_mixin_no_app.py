@@ -17,7 +17,7 @@ from worktoy.work_test import BaseTest
 
 from worQt.mixin import MixinBase
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Any
 
 
@@ -26,7 +26,7 @@ class TestMixinNoApp(BaseTest):
 
   def test_app_without_running_application(self) -> None:
     """Reading 'app' with no 'QApplication' raises 'RuntimeError'."""
-    if QApplication.instance() is not None:  # pragma: no cover
+    if QApplication.instance() is not None:  # pragma: no cover, no mutate
       self.skipTest('a QApplication is running in this process')
     with self.assertRaises(RuntimeError):
       _ = MixinBase().app
