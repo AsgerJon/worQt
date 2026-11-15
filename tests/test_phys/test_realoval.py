@@ -166,11 +166,12 @@ class TestRealOval(PhysTest):
         self.assertIsNone(on)
 
   def test_bends(self) -> None:
-    """The near look's bound on a terrain's bend: nought on a plane; on
+    """The near look's bound on a terrain's bend (float32: a city's grid
+    is millions of cells): nought on a plane (to float32's rounding); on
     a crease (level, then rising 1 in 2), the jump (0.5) in the cells
     about it, nought further off."""
     plane = numpy.array(_slope(math.radians(20.0)).heights)
-    self.assertLess(_bendsOf(plane, 0.5).max(), 1e-9)
+    self.assertLess(_bendsOf(plane, 0.5).max(), 1e-5)
     xs = numpy.arange(21) * 0.5
     crease = numpy.repeat(numpy.maximum(0.0, 0.5 * (xs - 5.0))[:, None],
                           21, 1)

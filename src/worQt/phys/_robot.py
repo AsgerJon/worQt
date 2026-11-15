@@ -50,9 +50,8 @@ import numpy
 from ._car import CORNERS, STEER_LOCK, WHEELBASE, CarBuild, camberOf
 from ._car import carBuilt, carPlaced, drive, ovalWorld, speedOf, steer
 from ._car import steeringOf, toeOf, wheelSpinOf
-from ._laps import LINE
-from ._terrain import OVAL_LENGTH, ovalAcross, ovalAt, ovalPlaceOf
-from ._terrain import ovalShapeAt
+from ._course import OVAL
+from ._terrain import OVAL_LENGTH
 from ._vectors import conjugate, dot, minus, rotated
 from ._world import FULL, LIVE, Fidelity
 
@@ -71,6 +70,8 @@ DECIDES = 0.01
 #  The most a robot's hands trim the column against a lasting error off
 #  its line, rad (see 'RACE_TRIM'); only ever outward, up the banking.
 TRIM_MOST = 0.05
+#  The most a PID steering robot's integral holds, m s ('_pidWanted').
+PID_I_MOST = 3.0
 #  Stuck (on the throttle but under 'STUCK_SPEED' m/s for 'STUCK' s:
 #  nose in the wall), the robot backs out for 'BACKING' s on the
 #  opposite lock, swinging its nose toward its line; making no
@@ -97,17 +98,29 @@ class RobotDriver:
   m, how the car answers its column ('answer': the column a curve asks,
   over the curve times the wheelbase, first + second x speed), the most
   the column turns either way ('lock', rad) and how fast the hands turn
-  it ('hands', rad/s), and how much of the column a radian of its own
+  it ('hands', rad/s; 'handsAccel', rad/s², how fast its hands speed up
+  and slow down: None, at once), how it steers ('steering': 'pursuit',
+  pure pursuit with its counter-steer, damping and trim; 'pid', a PID on
+  the line ahead, 'kp', 'ki', 'kd': '_pidWanted'), and how much of the
+  column a radian of its own
   gains ask for ('scale': the counter-steer, the damping and the trim
-  were found on the old car's column, 1.33 to its wheels).
+  were found on the old car's column, 1.33 to its wheels); and the
+  'course' it drives round ('_course': the oval by default); how near
+  it looks ahead at least ('least', m: 'LOOK_LEAST').
   """
 
-  def __init__(self, car: CarBuild, speed: float, out: float) -> None:
+  least, handsAccel = LOOK_LEAST, None
+  steering, kp, ki, kd = 'pursuit', 1.0, 0.0, 0.0
+
+  def __init__(self, car: CarBuild, speed: float, out: float,
+               course: object = None) -> None:
     self.car, self.speed, self.out = car, speed, out
+    self.course = OVAL if course is None else course
     if car is not None:
       self.chassis, self.wheels = car.chassis, car.wheels
     self.wheelbase, self.answer, self.lock = WHEELBASE, _ANSWER, STEER_LOCK
-    self.hands, self.scale = HANDS_RATE, 1.0
+    self.hands, self.scale, self.turning = HANDS_RATE, 1.0, 0.0
+    self.integral, self.lastError = 0.0, None
     self.look, self.braking, self.counter = LOOK_TIME, BRAKE_GAIN, 0.0
     self.trimming, self.trim, self.damping = 0.0, 0.0, 0.0
     self.column, self.throttle = 0.0, 0.0
@@ -125,17 +138,41 @@ class RobotDriver:
     'seconds', the car being in 'states'."""
     chassis = states[self.chassis]
     x, y = chassis.place[0], chassis.place[1]
-    out, round_ = ovalPlaceOf(x, y)
+    course = self.course
+    out, round_ = course.placeOf(x, y)
     if self._round is not None:
       moved = round_ - self._round
-      moved -= OVAL_LENGTH * round(moved / OVAL_LENGTH)
+      moved -= course.length * round(moved / course.length)
       self.along += moved
     self._round, self.off = round_, out - self.lineAt(round_)
     speed = self.speedOf(states)
     ahead = rotated(chassis.turn, (1.0, 0.0, 0.0))
     heading = math.atan2(ahead[1], ahead[0])
-    reach = max(LOOK_LEAST, self.look * abs(speed))
-    aimX, aimY, _ = ovalAt(round_ + reach, self.lineAt(round_ + reach))
+    if self.steering == 'pid':
+      wanted = self._pidWanted(chassis, round_, speed, heading, seconds)
+    else:
+      wanted = self._pursued(chassis, round_, speed, heading, seconds)
+    wanted = max(-self.lock, min(self.lock, wanted))
+    if self.backing > 0.0:
+      wanted = -self.lock if wanted > 0.0 else self.lock
+    self.column += self._turned(wanted, seconds)
+    under = self.wantedAt(round_, speed) - speed
+    gain = SPEED_GAIN if under > 0.0 else self.braking
+    self.throttle = max(-1.0, min(1.0, gain * under))
+    self.throttle = min(self.throttle, self.liftFor(states))
+    self._unstuck(speed, seconds)
+    self.act(states, seconds)
+
+  def _pursued(self, chassis: object, round_: float, speed: float,
+               heading: float, seconds: float) -> float:
+    """Returns the column pure pursuit asks for: the curve to the line's
+    point 'look' s ahead (no nearer than 'least') as the car answers it,
+    and its counter-steer, damping and trim ('counter', 'damping',
+    'trimming')."""
+    course = self.course
+    x, y = chassis.place[0], chassis.place[1]
+    reach = max(self.least, self.look * abs(speed))
+    aimX, aimY, _ = course.at(round_ + reach, self.lineAt(round_ + reach))
     angle = math.atan2(aimY - y, aimX - x) - heading
     angle = (angle + math.pi) % (2.0 * math.pi) - math.pi
     curve = 2.0 * math.sin(angle) / max(math.hypot(aimX - x, aimY - y),
@@ -146,7 +183,7 @@ class RobotDriver:
       local = rotated(conjugate(chassis.turn), chassis.velocity)
       wanted += scale * self.counter * math.atan2(local[1], abs(local[0]))
     if self.damping and abs(speed) > 5.0:
-      line = ovalAt(round_, self.lineAt(round_))[2]
+      line = course.at(round_, self.lineAt(round_))[2]
       wanted += scale * self.damping * (
         chassis.velocity[0] * math.sin(line)
         - chassis.velocity[1] * math.cos(line))
@@ -154,17 +191,66 @@ class RobotDriver:
       self.trim = max(-TRIM_MOST, min(0.0, self.trim + self.trimming
                                       * self.off * seconds))
       wanted += scale * self.trim
-    wanted = max(-self.lock, min(self.lock, wanted))
-    if self.backing > 0.0:
-      wanted = -self.lock if wanted > 0.0 else self.lock
-    step = self.hands * seconds
-    self.column += max(-step, min(step, wanted - self.column))
-    under = self.wantedAt(round_, speed) - speed
-    gain = SPEED_GAIN if under > 0.0 else self.braking
-    self.throttle = max(-1.0, min(1.0, gain * under))
-    self.throttle = min(self.throttle, self.liftFor(states))
-    self._unstuck(speed, seconds)
-    self.act(states, seconds)
+    return wanted
+
+  def _pidWanted(self, chassis: object, round_: float, speed: float,
+                 heading: float, seconds: float) -> float:
+    """Returns the column a PID asks for (user, 2026-11-15: "Implement
+    PID. Start D at 0 and only let it rise if abs necessary and only by a
+    small bit"): the error how far right of its line the car would be
+    'look' s ahead (no nearer than 'least') going on as it points, in
+    the line's own frame here: its offset ('off') less the reach times
+    its heading's angle to the line (ahead, so that a P alone holds: the
+    offset alone answers the column twice over, an undamped swing; the
+    chassis' heading, so a slide counter-steers itself); fed forward the
+    line's own bend over that reach as the car answers it ('answer');
+    then 'kp' times the error, 'ki' its integral ('integral', m s,
+    within 'PID_I_MOST'), 'kd' its rate, each in the column pure pursuit
+    would give a m of it at that reach (P one: pursuit's own). (First
+    the error was where the point straight ahead lies from the line's
+    point at that reach: on a curve that holds the line's own bend, so
+    the bend was asked twice, the car cut in metres at each corner and
+    swung out after: 1.1 m off on the mean, pursuit 0.64; now 0.68.
+    The bend over the whole reach turns in early, cutting a corner by
+    1.3 to 2.3 m; fed at a point 0, 0.15 or 0.3 s ahead, the street
+    corners' sharp bends came in whole and late: slides of 34 to 67
+    degrees, 5 to 7 m off.)"""
+    course = self.course
+    reach = max(self.least, self.look * abs(speed))
+    lineWay = course.at(round_ + reach, self.lineAt(round_ + reach))[2]
+    hereWay = course.at(round_, self.lineAt(round_))[2]
+    turned = (heading - hereWay + math.pi) % (2.0 * math.pi) - math.pi
+    error = self.off - reach * math.sin(turned)
+    bend = ((lineWay - hereWay + math.pi) % (2.0 * math.pi) - math.pi) / (
+      reach)
+    answer = self.answer
+    feed = bend * self.wheelbase * (answer[0] + answer[1] * abs(speed))
+    gain = 2.0 * self.wheelbase * answer[0] / (reach * reach)
+    self.integral = max(-PID_I_MOST, min(PID_I_MOST, self.integral
+                                         + error * seconds))
+    rate = 0.0 if self.lastError is None else (
+      error - self.lastError) / max(seconds, 1e-9)
+    self.lastError = error
+    return feed + gain * (self.kp * error + self.ki * self.integral
+                          + self.kd * rate)
+
+  def _turned(self, wanted: float, seconds: float) -> float:
+    """Returns how far the hands turn the column toward 'wanted' in
+    'seconds': as far as 'hands' lets; with 'handsAccel' (smooth hands:
+    user, 2026-11-15, "put a limit on how hard the ai changes inputs.
+    Like put a penalty on jerky driving") their speed ('turning', rad/s)
+    changing no faster than it, and no faster than lets them stop at
+    'wanted' (the quickest smooth turn: no overshoot)."""
+    left = wanted - self.column
+    if self.handsAccel is None:
+      step = self.hands * seconds
+      return max(-step, min(step, left))
+    accel = self.handsAccel
+    aim = math.copysign(min(self.hands, math.sqrt(2.0 * accel * abs(left)),
+                            abs(left) / max(seconds, 1e-9)), left)
+    change = accel * seconds
+    self.turning += max(-change, min(change, aim - self.turning))
+    return self.turning * seconds
 
   def speedOf(self, states: tuple) -> float:
     """The 'speedOf' method returns how fast the car goes forward, m/s
@@ -272,29 +358,35 @@ class RacingRobot(RobotDriver):
   the car slips ('liftFor'); a pace for each part of the oval ('paces',
   'partOf': all one; 'LearningRacer' learns them), 'partDone' told as
   it leaves each (its number, how long it took, s, the slip and the
-  time on the apron met there, the speed it came in at).
+  time on the apron met there, the speed it came in at); its line's
+  curve measured through its points 'span' m either side ('shapeAt');
+  how hard its plan brakes, m/s² ('decel': 'RACE_BRAKING').
   """
 
-  def __init__(self, car: CarBuild) -> None:
-    RobotDriver.__init__(self, car, math.inf, 0.0)
+  span, decel = 6.0, RACE_BRAKING
+
+  def __init__(self, car: CarBuild, course: object = None) -> None:
+    RobotDriver.__init__(self, car, math.inf, 0.0, course)
     self.look, self.braking, self.counter = (RACE_LOOK, RACE_BRAKE,
                                              RACE_COUNTER)
     self.trimming, self.damping = RACE_TRIM, RACE_DAMPING
-    self.paces = [1.0] * max(1, int(round(OVAL_LENGTH / RACE_PART)))
+    length = self.course.length
+    self.paces = [1.0] * max(1, int(round(length / RACE_PART)))
     self.slip, self.apron, self._part, self._entered = 0.0, 0.0, None, 0.0
     self._clock, self._worst, self._speed = 0.0, 0.0, 0.0
-    count = int(round(OVAL_LENGTH / _PLANNED))
-    self._shapes = [self.shapeAt(k * OVAL_LENGTH / count)
+    count = int(round(length / _PLANNED))
+    self._shapes = [self.shapeAt(k * length / count)
                     for k in range(count)]
-    self._caps = [self.capAt(k * OVAL_LENGTH / count)
+    self._caps = [self.capAt(k * length / count)
                   for k in range(count)]
 
   def partOf(self, along: float) -> int:
     """The 'partOf' method returns which part of the oval 'along' m
     round lies in, counted from the start line."""
     count = len(self.paces)
-    return min(count - 1, int(((along - LINE) % OVAL_LENGTH)
-                              * count / OVAL_LENGTH))
+    course = self.course
+    return min(count - 1, int(((along - course.start) % course.length)
+                              * count / course.length))
 
   def take(self, states: tuple, seconds: float) -> None:
     """The 'take' method races on for the next 'seconds' ('RobotDriver.
@@ -323,7 +415,7 @@ class RacingRobot(RobotDriver):
     apron (or below it), its middle inside the racing surface's edge."""
     for wheel in self.wheels:
       place = states[wheel].place
-      if ovalAcross(place[0], place[1])[0] < 0.0:
+      if self.course.inside(place[0], place[1]) < 0.0:
         return True
     return False
 
@@ -347,7 +439,7 @@ class RacingRobot(RobotDriver):
     """The 'paced' method lays the plan anew over 'part' at its pace."""
     count = len(self._caps)
     for k in range(count):
-      if self.partOf(k * OVAL_LENGTH / count) == part:
+      if self.partOf(k * self.course.length / count) == part:
         self._caps[k] = self.paces[part] * _capOf(*self._shapes[k],
                                                   RACE_GRIP)
 
@@ -355,19 +447,20 @@ class RacingRobot(RobotDriver):
     """The 'lineAt' method returns how far out from the middle line the
     racing line runs 'along' m round: 'RACE_MARGIN' over the inside
     edge."""
-    return RACE_MARGIN - 0.5 * ovalShapeAt(along)[0]
+    return RACE_MARGIN - 0.5 * self.course.shapeAt(along)[0]
 
   def shapeAt(self, along: float) -> tuple:
     """The 'shapeAt' method returns the racing line's curve 'along' m
     round (through its points 6 m either side), 1/m, and the banking
     there, rad."""
-    points = [ovalAt(along + way, self.lineAt(along + way))[:2]
-              for way in (-6.0, 0.0, 6.0)]
+    span = self.span
+    points = [self.course.at(along + way, self.lineAt(along + way))[:2]
+              for way in (-span, 0.0, span)]
     (ax, ay), (bx, by), (cx, cy) = points
     twice = abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))
     sides = (math.hypot(bx - ax, by - ay) * math.hypot(cx - bx, cy - by)
              * math.hypot(cx - ax, cy - ay))
-    return 2.0 * twice / sides, ovalShapeAt(along)[1]
+    return 2.0 * twice / sides, self.course.shapeAt(along)[1]
 
   def capAt(self, along: float) -> float:
     """The 'capAt' method returns the fastest the racing line can be
@@ -386,7 +479,7 @@ class RacingRobot(RobotDriver):
     for step in range(int(RACE_PLAN / _PLANNED) + 1):
       cap = self._caps[(first + step) % count]
       if cap < math.inf:
-        best = min(best, math.sqrt(cap ** 2 + 2.0 * RACE_BRAKING
+        best = min(best, math.sqrt(cap ** 2 + 2.0 * self.decel
                                    * step * _PLANNED))
     return best
 
@@ -532,7 +625,7 @@ class LearningRacer(RacingRobot):
     count, window = len(self.paces), 2 * LEARN_REACH + 1
     self.passes = (self.passes + [(part, score, speed)])[-window:]
     if (len(self.passes) < window or self.passes[0][2] < LEARN_FROM
-            or self.along < OVAL_LENGTH):
+            or self.along < self.course.length):
       return
     for (first, _, _), (then, _, _) in zip(self.passes, self.passes[1:]):
       if then != (first + 1) % count:
@@ -576,12 +669,14 @@ class LearningRacer(RacingRobot):
     if lanes is None:
       return RacingRobot.lineAt(self, along)
     count = len(lanes)
-    where = ((along - LINE) % OVAL_LENGTH) * count / OVAL_LENGTH - 0.5
+    course = self.course
+    where = ((along - course.start) % course.length) * count / (
+      course.length) - 0.5
     first = math.floor(where)
     share = where - first
     lane = ((1.0 - share) * lanes[first % count]
             + share * lanes[(first + 1) % count])
-    return lane - 0.5 * ovalShapeAt(along)[0]
+    return lane - 0.5 * self.course.shapeAt(along)[0]
 
 
 #  Where a learning racer's brain is kept between runs (gitignored).

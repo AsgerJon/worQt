@@ -25,13 +25,16 @@ from PySide6.QtGui import QColor
 from .._carcass import BELT_FROM, rubberAt, tyreSection
 from .._vectors import Vector, cross, matrixOf, minus, norm, plus, scaled
 
+#  How many faces round a rod is drawn with ('rodQuads').
+ROD_SIDES = 10
+
 
 class LegsDress:
   """
-  LegsDress draws the actuators of 'assembly' as square bars 'thick' m
-  across, from the point on their first body (or the world) to the one
-  on their second, as 'states' have them; but not those to the bodies
-  in 'hidden'. Its quads are under the key 'legs'.
+  LegsDress draws the actuators of 'assembly' as round rods 'thick' m
+  across ('rodQuads'), from the point on their first body (or the
+  world) to the one on their second, as 'states' have them; but not
+  those to the bodies in 'hidden'. Its quads are under the key 'legs'.
   """
 
   around = None
@@ -40,8 +43,8 @@ class LegsDress:
     self.assembly, self.hidden, self.thick = assembly, set(hidden), thick
 
   def quads(self, states: tuple) -> dict[str, numpy.ndarray]:
-    """The 'quads' method returns the bars as 'states' have the bodies:
-    four quads a bar, a corner a row of its place and normal."""
+    """The 'quads' method returns the rods as 'states' have the bodies:
+    'ROD_SIDES' quads a rod, a corner a row of its place and normal."""
     bodies = self.assembly.bodies
     out = []
     for leg in self.assembly.actuators:
@@ -51,7 +54,7 @@ class LegsDress:
                                         leg.secondPoint)
       foot = leg.firstPoint if leg.first is None else bodies[
         leg.first].placeOf(states[leg.first], leg.firstPoint)
-      out.extend(barQuads(foot, head, 0.5 * self.thick))
+      out.extend(rodQuads(foot, head, 0.5 * self.thick))
     if not out:
       return {}
     return {'legs': numpy.array(out, numpy.float64).reshape(-1, 4, 6)}
@@ -268,11 +271,13 @@ class SkinDress:
             for key, faces in out.items() if faces}
 
 
-def barQuads(a: Vector, b: Vector, half: float) -> list:
-  """The 'barQuads' function returns a square bar from 'a' to 'b',
-  'half' m from its line to each side, as its four sides: quads, each
-  corner its place and the side's normal, anticlockwise seen from
-  outside; none for a bar of no length."""
+def rodQuads(a: Vector, b: Vector, half: float, sides: int = ROD_SIDES
+             ) -> list:
+  """The 'rodQuads' function returns a round rod from 'a' to 'b' of
+  radius 'half' (user, 2026-11-15: "make it look proper, not these
+  blocky things"), as its 'sides' faces round: quads, each corner its
+  place and its own way out from the rod's line (smooth shaded),
+  anticlockwise seen from outside; none for a rod of no length."""
   along = minus(b, a)
   length = norm(along)
   if length == 0.0:
@@ -282,15 +287,15 @@ def barQuads(a: Vector, b: Vector, half: float) -> list:
   u = cross(way, helper)
   u = scaled(u, 1.0 / norm(u))
   v = cross(way, u)
-  corners = [plus(scaled(u, half * x), scaled(v, half * y))
-             for x, y in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
-  normals = (v, scaled(u, -1.0), scaled(v, -1.0), u)
+  rounds = [plus(scaled(u, math.cos(angle)), scaled(v, math.sin(angle)))
+            for angle in (2.0 * math.pi * k / sides for k in range(sides))]
   out = []
-  for k in range(4):
-    one, two = corners[k], corners[(k + 1) % 4]
-    normal = normals[k]
-    out.append([plus(a, one) + normal, plus(a, two) + normal,
-                plus(b, two) + normal, plus(b, one) + normal])
+  for k in range(sides):
+    one, two = rounds[k], rounds[(k + 1) % sides]
+    out.append([plus(a, scaled(one, half)) + one,
+                plus(a, scaled(two, half)) + two,
+                plus(b, scaled(two, half)) + two,
+                plus(b, scaled(one, half)) + one])
   return out
 
 

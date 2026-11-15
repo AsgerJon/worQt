@@ -2,10 +2,12 @@
 TunePanel is the tune-up menu (user, 2026-11-14: "a tune-up menu where
 the tire pressure of each wheel can be adjusted. Along with camber,
 toe"; then "do the tune-up menu"): a small window of each wheel's tyre
-pressure, camber and toe ('_rig.WheelSetup'), 'As built', telling the
-setups a moment after the sliders stop ('changed'), for the window to
-set its car (now the tyre rig's corner) up anew with them, as a
-mechanic sets a car up stopped.
+pressure, camber and toe ('_rig.WheelSetup'), and of a car with an
+engine its flywheel's mass (user, 2026-11-15: "the flywheel weight must
+be adjustable. If it's too heavy. the engine speed falls too slowly"),
+'As built', telling the setups a moment after the sliders stop
+('changed'), for the window to set its car (now the tyre rig's corner)
+up anew with them, as a mechanic sets a car up stopped.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -24,6 +26,8 @@ from .._rig import WheelSetup
 #  move the setups are told, ms (a rebuild each: not while dragging).
 PRESSURES, CAMBERS, TOES = (1.5, 3.5), (-4.0, 2.0), (-1.0, 1.0)
 SETTLE = 400
+#  The flywheel's range, kg.
+FLYWHEELS = (4.0, 25.0)
 
 
 class TunePanel(QWidget):
@@ -31,18 +35,20 @@ class TunePanel(QWidget):
   TunePanel is a small window of each wheel's tune-up, its wheels named
   'names' (the car's corners, kept as 'names'; the rig's one): for
   each its tyre's
-  pressure (bar), its camber and its toe (degrees), and 'As built';
+  pressure (bar), its camber and its toe (degrees), the flywheel's mass
+  (kg: 'built' its as built; None, no engine to set), and 'As built';
   'changed' tells the setups (a tuple of 'WheelSetup', in the wheels'
-  order) a moment after a change; 'setSetups' sets the sliders without
-  telling.
+  order) a moment after a change (the flywheel's: 'flywheel');
+  'setSetups', 'setFlywheel' set the sliders without telling.
   """
 
   changed = Signal(tuple)
 
-  def __init__(self, names: tuple, parent: QWidget = None) -> None:
+  def __init__(self, names: tuple, parent: QWidget = None,
+               built: float = None) -> None:
     QWidget.__init__(self, parent, Qt.WindowType.Tool)
     self.setWindowTitle('Tune-up')
-    self.names, self.sliders = tuple(names), []
+    self.names, self.sliders, self.built = tuple(names), [], built
     layout = QGridLayout()
     for column, name in enumerate(names):
       layout.addWidget(QLabel(name), 0, column)
@@ -67,11 +73,23 @@ class TunePanel(QWidget):
         layout.addWidget(slider, 1 + at, column)
         row.append(slider)
       self.sliders.append(row)
-    built = QPushButton('As built')
-    built.setToolTip('Every wheel back as built: 2.30 bar, no camber, '
-                     'no toe')
-    built.clicked.connect(self._asBuilt)
-    layout.addWidget(built, 4, 0)
+    self.flywheelSlider = None
+    if built is not None:
+      slider = QuantitySlider()
+      slider.text = 'Flywheel'
+      slider.setScale(*FLYWHEELS, 'kg', 1)
+      slider.setToolTip('How heavy the engine\'s flywheel is: the '
+                        'lighter, the quicker the revs rise and fall '
+                        '(%.1f kg as built)' % built)
+      slider.setMinimumWidth(280)
+      slider.quantityChanged.connect(self._moved)
+      layout.addWidget(slider, 4, 1)
+      self.flywheelSlider = slider
+    asBuilt = QPushButton('As built')
+    asBuilt.setToolTip('Every wheel back as built: 2.30 bar, no camber, '
+                       'no toe; the flywheel as built')
+    asBuilt.clicked.connect(self._asBuilt)
+    layout.addWidget(asBuilt, 4, 0)
     self.setLayout(layout)
     self.timer = QTimer()
     self.timer.setSingleShot(True)
@@ -86,6 +104,21 @@ class TunePanel(QWidget):
                             math.radians(row[1].quantity),
                             math.radians(row[2].quantity))
                  for row in self.sliders)
+
+  @property
+  def flywheel(self, ) -> float | None:
+    """The flywheel's mass the slider says, kg (None: none to set)."""
+    if self.flywheelSlider is None:
+      return None
+    return self.flywheelSlider.quantity
+
+  def setFlywheel(self, kilograms: float) -> None:
+    """The 'setFlywheel' method sets the flywheel's slider to
+    'kilograms', not telling."""
+    if self.flywheelSlider is not None and kilograms is not None:
+      self.flywheelSlider.blockSignals(True)
+      self.flywheelSlider.quantity = kilograms
+      self.flywheelSlider.blockSignals(False)
 
   def setSetups(self, setups: tuple) -> None:
     """The 'setSetups' method sets the sliders to 'setups', not
@@ -107,6 +140,7 @@ class TunePanel(QWidget):
     self.changed.emit(self.setups)
 
   def _asBuilt(self, ) -> None:
-    """Every wheel back as built, told at once."""
+    """Every wheel back as built, and the flywheel, told at once."""
     self.setSetups(tuple(WheelSetup() for _ in self.sliders))
+    self.setFlywheel(self.built)
     self._told()

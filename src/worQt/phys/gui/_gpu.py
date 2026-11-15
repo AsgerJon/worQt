@@ -29,6 +29,7 @@ from ._meshes import AXES, SCALE, bodyRows, finishedRows, groundMesh
 from ._souffle import badgePicture, leatherPicture, sidewallPicture
 from ._meshes import pieceRows
 from ._meshes import quadIndices, stripedRows
+from ._meshes import crgBase, crgMesh
 from ._meshes import quadRows, sceneOf, sceneTurnOf, terrainMesh
 from ._meshes import ovalTrackMesh, wallMesh
 from ._wheel import MouseHands
@@ -126,7 +127,10 @@ class GpuView(QWidget):
   'palette', (colour, metalness, roughness[, casts shadows]): a colour
   less than opaque blends), all within 'around' m of the first body
   where a dress says so; the ground (a 'terrain', or flat; none at
-  all in the 'void'), dirt
+  all in the 'void'; on a terrain the oval's surfaces where 'oval', a
+  road's along its rows where 'crg' (a '_crg.CrgTrack': asphalt,
+  pavement, ground, over the terrain coarsened: 'crgMesh', 'crgBase')),
+  dirt
   ('_dirtFiles': its colours and its bumps), a picture to two of
   'tiles["ground"]'. The bodies in 'hidden' are not drawn; a tone
   changed is drawn from the next frame, the part only recoloured; a
@@ -167,12 +171,12 @@ class GpuView(QWidget):
     self.loaded, self.drawn, self.asked = False, False, None
     self.assembly, self.states, self.pushed = None, (), None
     self.tones, self.looks, self.bands = {}, {}, {}
-    self.glass, self.finishes = {}, {}
+    self.glass, self.finishes, self.seeThrough = {}, {}, {}
     self.pieces, self.palette, self.dresses = {}, {}, []
     self.terrain, self.tiles, self.dressed = None, {}, {}
     self.riding = None
     self.void = False
-    self.wall, self.oval = None, False
+    self.wall, self.oval, self.crg = None, False, None
     self.yaw, self.pitch, self.distance = 0.6, 0.28, 6.5
     self.target = (0.0, 0.0, 0.4)
     self.keys, self.around, self.heading = set(), 0.0, None
@@ -420,6 +424,8 @@ class GpuView(QWidget):
     self._pushParts(root)
     self.dressed = {}
     root.setProperty('dressed', [])
+    self.seeThrough['dressed'] = False
+    self._pushGlass(root)
     self._pushGround(root)
     self.pushed = self.assembly
 
@@ -488,6 +494,8 @@ class GpuView(QWidget):
     root.setProperty('colours', [])
     root.setProperty('parts', parts)
     self._pushColours(root)
+    self.seeThrough['parts'] = _seeThrough(parts)
+    self._pushGlass(root)
 
   def _finishedParts(self, index: int, body: object) -> list[dict]:
     """Returns the parts of the body at 'index' drawn in its finish
@@ -554,6 +562,15 @@ class GpuView(QWidget):
         rows = terrainMesh(terrain._replace(paved=None), tile, covered)
         self.meshes[key] = (Mesh(rows[0], rows[1]),) + tuple(
           Mesh(vertices, indices) for indices in (ground, road, apron))
+      shape, track, paved, asphalt = self.meshes[key]
+    elif terrain is not None and self.crg is not None:
+      key = ('crg', id(terrain.heights), id(self.crg), tile)
+      if key not in self.meshes:
+        coarse, dropped = crgBase(terrain, self.crg)
+        base = terrainMesh(coarse, tile, dropped)
+        self.meshes[key] = (Mesh(base[0], base[1]),) + tuple(
+          Mesh(vertices, indices)
+          for vertices, indices in crgMesh(self.crg, terrain, tile))
       shape, track, paved, asphalt = self.meshes[key]
     elif terrain is not None:
       key = ('terrain', id(terrain.heights), tile)
@@ -647,6 +664,22 @@ class GpuView(QWidget):
                         'metal': look[1], 'rough': look[2],
                         'casts': look[3] if len(look) > 3 else True})
       root.setProperty('dressed', dressed)
+      self.seeThrough['dressed'] = _seeThrough(dressed)
+      self._pushGlass(root)
+
+  def _pushGlass(self, root: object) -> None:
+    """Tells the scene how to draw what is seen through: blended by
+    weight while anything drawn is ('seeThrough'), else not at all (the
+    drawing shares the GPU with the physics: the glass' pass cost the
+    real car's kernel 6 to 12 us a step; the user, 2026-11-15: "if Qt
+    can't do transparency, it's fine. We can make shit opaque")."""
+    root.setProperty('glass', 1 if any(self.seeThrough.values()) else 0)
+
+
+def _seeThrough(entries: list) -> bool:
+  """Returns whether any of the scene's 'entries' (parts or dress, each
+  its 'colour') is drawn less than opaque."""
+  return any(entry['colour'].alpha() < 255 for entry in entries)
 
 
 def _cameraOf(target: tuple, yaw: float, pitch: float,

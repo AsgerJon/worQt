@@ -697,22 +697,32 @@ def addCorners(corners: tuple, setups: tuple, shocks: tuple, chassis: int,
     connections += list(parts)
 
 
+def columnTopOf(length: float, rise: float) -> Vector:
+  """The 'columnTopOf' function returns where the steering wheel's
+  middle is, in the car's frame, its column 'length' m from its pinion
+  ('COLUMN_FOOT') up and back at 'rise' rad (the soapbox's)."""
+  return plus(COLUMN_FOOT, scaled((-math.cos(rise), 0.0, math.sin(rise)),
+                                  length))
+
+
 def addSteering(chassis: int, rack: int, column: int, steer: object,
-                length: float, rise: float, world: object, state: object,
+                foot: Vector, top: Vector, world: object, state: object,
                 carTurn: tuple, bodies: list, states: list,
                 connections: list) -> None:
   """The 'addSteering' function adds a car's steering to 'bodies',
   'states' and 'connections': the rack (body 'rack') sliding across the
   chassis (body 'chassis') between its stops, the column and steering
-  wheel (body 'column', 'length' m from its pinion up and back at
-  'rise' rad to the wheel) turning on it, the pinion meshing the rack,
+  wheel (body 'column', straight from its pinion's middle 'foot' on the
+  rack to the wheel's middle 'top', in the car's frame) turning on it
+  (its own x the driver's right, level), the pinion meshing the rack,
   the hands on the wheel ('steer', a fourth wall point)."""
   axis = (0.0, 0.0, 1.0)
-  top = plus(COLUMN_FOOT, scaled((-math.cos(rise), 0.0, math.sin(rise)),
-                                 length))
-  way = scaled(minus(top, COLUMN_FOOT), 1.0 / length)
+  length = norm(minus(top, foot))
+  way = scaled(minus(top, foot), 1.0 / length)
+  right = plus((0.0, -1.0, 0.0), scaled(way, way[1]))
+  right = scaled(right, 1.0 / norm(right))
   wheel, bar = columnBody(length), rackBody()
-  lean = _frame((0.0, -1.0, 0.0), (way[2], 0.0, -way[0]), way)
+  lean = _frame(right, cross(way, right), way)
   bodies += [bar, wheel]
   states += [state(bar.centre), State(plus(world(top), rotated(
     product(carTurn, lean), wheel.centre)), product(carTurn, lean))]
@@ -761,9 +771,9 @@ def soapbox(controls: SoapboxControls, start: tuple = None,
   addCorners(CORNERS, setups, (FRONT_SHOCK, REAR_SHOCK), CHASSIS,
              FIRST_CORNER, RACK, controls.line, TRACK, world, state, carTurn,
              bodies, states, connections)
-  addSteering(CHASSIS, RACK, COLUMN, controls.steer, columnLength(),
-              COLUMN_RISE, world, state, carTurn, bodies, states,
-              connections)
+  addSteering(CHASSIS, RACK, COLUMN, controls.steer, COLUMN_FOOT,
+              columnTopOf(columnLength(), COLUMN_RISE), world, state,
+              carTurn, bodies, states, connections)
   connections += [
     Contact(CHASSIS, TRACK, *(_STEEL_ON_WOOD + (CHASSIS_SPACING, False))),
     Contact(0, TRACK, *_WALKER_ON_WOOD),

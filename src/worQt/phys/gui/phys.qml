@@ -77,6 +77,17 @@ Item {
   property quaternion cameraTurn: Qt.quaternion(1, 0, 0, 0)
   property quaternion sunTurn: Qt.quaternion(1, 0, 0, 0)
   property quaternion skyTurn: Qt.quaternion(1, 0, 0, 0)
+  //  What the drawing spends the GPU on, each to be set (the physics
+  //  shares the GPU with it, taking turns: 'main.gpuDiagnosis' times
+  //  the steps at each): samples a pixel (4, 2 or 1: none), the glass
+  //  (2 sorted per pixel, 1 blended by weight, 0 as plain blending), the
+  //  sun's shadows (3 their sharpest, 2 high, 1 medium). On the RTX
+  //  5060, 2026-11-15, the real car's one-block kernel 116 us a step at
+  //  4 2 3, 98 at 2 1 2 and at 1 0 1 (67 headless); in town 129, 125,
+  //  119: light, 2 1 2.
+  property int aaSamples: 2
+  property int glass: 1
+  property int shadows: 2
 
   View3D {
     id: view
@@ -89,15 +100,19 @@ Item {
     environment: ExtendedSceneEnvironment {
       backgroundMode: SceneEnvironment.Color
       clearColor: "#56657a"
-      antialiasingMode: SceneEnvironment.MSAA
-      antialiasingQuality: SceneEnvironment.High
+      antialiasingMode: root.aaSamples > 1 ? SceneEnvironment.MSAA
+                                           : SceneEnvironment.NoAA
+      antialiasingQuality: root.aaSamples > 2 ? SceneEnvironment.High
+                                              : SceneEnvironment.Medium
       tonemapMode: SceneEnvironment.TonemapModeFilmic
       ditheringEnabled: true
       //  Glass sorted per pixel, every layer in its true order (user,
       //  2026-11-13: QtQuick was "not having consistent transparent
       //  rendering"); plain blending sorts whole models by their
       //  centres and draws a model's own faces in index order
-      oitMethod: SceneEnvironment.OITLinkedList
+      oitMethod: root.glass > 1 ? SceneEnvironment.OITLinkedList
+                 : root.glass > 0 ? SceneEnvironment.OITWeightedBlended
+                 : SceneEnvironment.OITNone
     }
 
     PerspectiveCamera {
@@ -114,7 +129,9 @@ Item {
       color: "#fff3e0"
       brightness: 1.5
       castsShadow: true
-      shadowMapQuality: Light.ShadowMapQualityVeryHigh
+      shadowMapQuality: root.shadows > 2 ? Light.ShadowMapQualityVeryHigh
+                        : root.shadows > 1 ? Light.ShadowMapQualityHigh
+                        : Light.ShadowMapQualityMedium
       shadowFactor: 70
       shadowMapFar: 8000
       shadowBias: 5

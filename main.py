@@ -414,9 +414,12 @@ def warpTests(*args, ) -> int:
 #  there is one) and the readings' dock window. The rest of the phys
 #  suite: 'physTests'.
 SHOW_TESTS = WARP_TESTS + ('tests.test_phys.test_realoval',
+                           'tests.test_phys.test_city',
+                           'tests.test_phys.test_car_geometry',
                            'tests.test_phys.run_walk_keys',
                            'tests.test_phys.run_readings',
-                           'tests.test_phys.run_oval')
+                           'tests.test_phys.run_oval',
+                           'tests.test_phys.run_city')
 
 
 def showTests(*args, ) -> int:
@@ -455,15 +458,22 @@ def preloadGpu(*args, ) -> int:
             flush=True)
       preloaded(device)
       print('[preload] the small steps\' kernels ready on %s (%.0f s)' % (
-        device, time.perf_counter() - began), flush=True)
+          device, time.perf_counter() - began), flush=True)
       voiceReady()
       print('[preload] the V12\'s voice ready (%.0f s)' % (
-        time.perf_counter() - began), flush=True)
+          time.perf_counter() - began), flush=True)
       from worQt.phys._realoval import ovalGround, parkedCar
       ovalGround()
       parkedCar()
       print('[preload] the oval and the old car parked on it ready (%.0f '
             's)' % (time.perf_counter() - began), flush=True)
+      import os
+      from worQt.phys._city import CITY_TRACK, cityCourse, cityGround
+      if os.path.isfile(os.path.normpath(CITY_TRACK)):
+        cityGround()
+        cityCourse()
+        print('[preload] the city lap ready (%.0f s)' % (
+            time.perf_counter() - began), flush=True)
     except Exception as error:
       print('[preload] failed: %s: %s' % (type(error).__name__, error),
             flush=True)
@@ -474,16 +484,194 @@ def preloadGpu(*args, ) -> int:
   return 0
 
 
+def gpuDiagnosis(*args, ) -> int:
+  """Finds where the walk window's time goes on the GPU (2026-11-15: the
+  window 71 % of real time on the RTX 5060, the CPU 100 %): the step part
+  by part ('gpuProfile'), then the walk window at the real car (driven
+  off in first, its screen shown) timed call by call for eight seconds:
+  the kernel (its launch to its states read back), the Python round it,
+  the window's tick, the frames the view drew, the kernel's time a step;
+  at the window's 0.2 ms lock switch ('SWITCH_INTERVAL'), drawn as it
+  is now (phys.qml's 'aaSamples' 2 and 'shadows' 2; its 'glass' as the
+  view decides: none while nothing drawn is see-through), at the real
+  car, then in town (the city driver driving), then in town with the
+  3D view hidden. The drawing shares the GPU with the physics, taking
+  turns (2026-11-15, the real car's kernel: 116 us a step drawn at 4 2
+  3, 98 at 2 1 2 or 1 0 1, 86 hidden, 67 headless; in town 129, 125,
+  108-119, 91 hidden, 71-75 headless; the ground casting no shadows
+  made no odds). A few minutes; prints as
+  it goes, into previews/gpu-diagnosis.log as well (for me to read).
+  Returns 0."""
+  terminal = sys.stdout
+  log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          'previews', 'gpu-diagnosis.log'), 'w')
+
+  class Both:
+    """Writes to the terminal and the log alike."""
+
+    def write(self, text: str) -> int:
+      """Writes 'text' to both, at once."""
+      terminal.write(text)
+      log.write(text)
+      log.flush()
+      return len(text)
+
+    def flush(self, ) -> None:
+      """Flushes both."""
+      terminal.flush()
+      log.flush()
+
+  sys.stdout = Both()
+  try:
+    return _gpuDiagnosed()
+  finally:
+    sys.stdout = terminal
+    log.close()
+
+
+def _gpuDiagnosed() -> int:
+  """Runs 'gpuDiagnosis' (its output as it finds it). Returns 0."""
+  import threading
+  import time
+  from collections import defaultdict
+  gpuProfile()
+  _preloadWaited()
+  from PySide6.QtCore import QEvent, Qt, QTimer
+  from PySide6.QtGui import QKeyEvent
+  from worQt.phys import _small_steps as ss
+  from worQt.phys import norm
+  from worQt.phys.gui import WalkApp
+  from worQt.phys.gui import _walk
+  from worQt.phys.gui._walk import PLACES, WalkWindow
+  spent, calls, lock = defaultdict(float), defaultdict(int), threading.Lock()
+
+  def timed(owner: object, name: str, label: str) -> None:
+    """Wraps 'owner.name' to add its time under 'label'."""
+    inner = getattr(owner, name)
+
+    def wrapper(*inputs):
+      began = time.perf_counter()
+      try:
+        return inner(*inputs)
+      finally:
+        with lock:
+          spent[label] += time.perf_counter() - began
+          calls[label] += 1
+
+    setattr(owner, name, wrapper)
+
+  timed(WalkWindow, 'tick', 'gui tick')
+  timed(WalkWindow, '_step', 'physics call')
+  timed(ss.SmallSteps, 'advancedAll', '  advancedAll')
+  timed(ss._Packed, 'states', '    states (waits for the GPU)')
+  timed(ss._Packed, 'drive', '    drive (copies in)')
+  timed(ss._Packed, 'load', '    load')
+  with WalkApp(*sys.argv) as app:
+    window = app.window
+    window.placeBox.setCurrentIndex([place.name for place in PLACES].index(
+        'The real car'))
+    window.reset()
+    window.resize(1600, 900)
+    window.show()
+    state = {'phase': 0, 'began': time.perf_counter(), 'mark': None,
+             'frames': 0}
+    settings = ('aaSamples', 'shadows')
+    passes = (('The real car', 'drawn as it is', (2, 2)),
+              ('Copenhagen', 'drawn as it is', (2, 2)),
+              ('Copenhagen', 'the view hidden', None))
+
+    def drawn() -> None:
+      """Counts a frame the view drew."""
+      state['frames'] += 1
+
+    window.view.quick.frameSwapped.connect(drawn)
+    plan = [(0.0, Qt.Key.Key_0, True, True),
+            (1.0, Qt.Key.Key_1, True, True),
+            (2.0, Qt.Key.Key_1, False, True),
+            (2.1, Qt.Key.Key_W, True, False),
+            (2.5, Qt.Key.Key_0, False, True)]
+
+    def key(code: object, held: bool, pad: bool) -> None:
+      """Sends a key to the view as the system does."""
+      kind = QEvent.Type.KeyPress if held else QEvent.Type.KeyRelease
+      mods = Qt.KeyboardModifier.KeypadModifier if pad else (
+          Qt.KeyboardModifier.NoModifier)
+      app.sendEvent(window.view.quick, QKeyEvent(kind, code, mods))
+
+    def poll() -> None:
+      """Drives, then times each run of eight seconds and reports."""
+      now = time.perf_counter()
+      if window.failed is not None:
+        print('FAILED', window.failed, flush=True)
+        app.quit()
+        return
+      if window.clock < 1.0:
+        state['began'] = now
+        return
+      passed = now - state['began']
+      while plan and state['phase'] == 0 and passed >= plan[0][0]:
+        key(*plan.pop(0)[1:])
+      if state['mark'] is None and passed > 4.0:
+        sys.setswitchinterval(_walk.SWITCH_INTERVAL)
+        root, levels = window.view.quick.rootObject(), passes[
+          state['phase']][2]
+        if levels is None:
+          window.view.box.hide()
+        else:
+          for name, level in zip(settings, levels):
+            root.setProperty(name, level)
+        with lock:
+          spent.clear()
+          calls.clear()
+        state['mark'] = (now, window.clock)
+        state['frames'] = 0
+      if state['mark'] is not None and now - state['mark'][0] > 8.0:
+        wall = now - state['mark'][0]
+        sim = window.clock - state['mark'][1]
+        waited = spent['    states (waits for the GPU)']
+        print('%s, %s (glass %s): %.0f %% of real time, %.1f m/s, '
+              '%.0f frames drawn a second, the kernel %.0f us a step' % (
+                passes[state['phase']][0], passes[state['phase']][1],
+                window.view.quick.rootObject().property('glass'),
+                100.0 * sim / wall, norm(window.states[
+                  _walk._realcar.CHASSIS].velocity), state['frames'] / wall,
+                1e6 * waited * window.place.small / max(sim, 1e-9)),
+              flush=True)
+        with lock:
+          for label in sorted(spent):
+            print('  %-30s %6d calls %7.2f ms a call %5.1f %% of wall' % (
+                label, calls[label], 1000.0 * spent[label] / calls[label],
+                100.0 * spent[label] / wall), flush=True)
+        state['phase'] += 1
+        state['mark'] = None
+        state['began'] = now - 4.0
+        if state['phase'] == len(passes):
+          window.close()
+          app.quit()
+        elif passes[state['phase']][0] != window.place.name:
+          key(Qt.Key.Key_W, False, False)
+          names = [place.name for place in PLACES]
+          window.placeBox.setCurrentIndex(names.index(
+            passes[state['phase']][0]))
+          window.reset()
+
+    timer = QTimer()
+    timer.timeout.connect(poll)
+    timer.start(50)
+  return 0
+
+
 def gpuProfile(*args, ) -> int:
   """Times the real car's steps on the GPU (the CPU if there is none)
-  as the walk window steps it, part by part (user, 2026-11-14: "the
-  physics are still tooo slow"): built, its engine idling a second,
-  then driven off in first for two seconds of its own time, in one
-  block ('Whole GPU' off: every part's share of the step, by the
-  device's own clock, 'SmallSteps.profiled'), then again spread over
-  the whole GPU ('Whole GPU' on: the step alone); each with its share of
-  real time. A minute or two (after 'preloadGpu' is done). Returns
-  0."""
+  as the walk window steps them, in one block, part by part, by the
+  device's own clock ('SmallSteps.profileOf'; user, 2026-11-14: "the
+  physics are still tooo slow"): on the yard, its engine idling a
+  second, then driven off in first, two seconds of its own time timed;
+  and in town (the square, the CRG road's terrain), the city driver
+  driving it, three seconds, then two timed. ('Whole GPU', the steps
+  spread over the GPU, took twice as long a step each time: 122-125 us
+  against 67-69, so it is not timed now.) A minute or two (after
+  'preloadGpu' is done). Returns 0."""
   import time
   _preloadWaited()
   from worQt.phys import BrakeLine, FourthWall, SmallSteps
@@ -491,32 +679,43 @@ def gpuProfile(*args, ) -> int:
   from worQt.phys._drivetrain import DrivetrainControls, drivetrainWorked
   from worQt.phys._realcar import Antilock, CORNERS, RealCarControls
   from worQt.phys._realcar import realCar
+  from worQt.phys._realdriver import CityDriver
   from worQt.phys._rig import TuneUp, WheelSetup
   from worQt.phys._small_steps import THREADS, preloaded
   from worQt.phys._hinges import HINGE_GREASE
   from worQt.phys.gui._walk import RIG_STEP
   from worQt.phys._carcass import TYRE_YARD
+  from worQt.phys._city import CITY_TRACK, cityCourse, cityGround
+  from worQt.phys._city import realCarInCity
   device = gpuDevice() or 'cpu'
   print('the real car on %s: loading its kernels' % device, flush=True)
   preloaded(device)
   frame = 1.0 / 60.0
-  for spread in (False, True):
-    if spread and device == 'cpu':
-      continue
+  scenes = ('the yard', 'town') if os.path.isfile(os.path.normpath(
+    CITY_TRACK)) else ('the yard',)
+  for scene in scenes:
     controls = RealCarControls(BrakeLine(0.0), FourthWall(0.0), TuneUp(
-      (WheelSetup(),) * len(CORNERS)), DrivetrainControls(), Antilock())
-    assembly, states = realCar(controls)
-    world = SmallSteps((0.0, 0.0, -9.81), TYRE_YARD, RIG_STEP, 1,
-                       HINGE_GREASE, device, THREADS, spread, 0.0, 0.05, 0,
-                       not spread)
+        (WheelSetup(),) * len(CORNERS)), DrivetrainControls(), Antilock())
+    if scene == 'town':
+      assembly, states = realCarInCity(controls)
+      ground = cityGround()
+      driver = CityDriver(assembly, controls, cityCourse())
+    else:
+      assembly, states = realCar(controls)
+      ground, driver = TYRE_YARD, None
+    world = SmallSteps((0.0, 0.0, -9.81), ground, RIG_STEP, 1,
+                       HINGE_GREASE, device, THREADS, False, 0.0, 0.05, 0,
+                       True)
     clock = 0.0
 
     def ran(seconds: float) -> float:
-      """Steps the car 'seconds' of its own time; returns the wall
-      clock's seconds it took."""
+      """Steps the car 'seconds' of its own time (the city driver
+      driving, in town); returns the wall clock's seconds it took."""
       nonlocal states, clock
       began = time.perf_counter()
       for _ in range(round(seconds / frame)):
+        if driver is not None:
+          driver.take(states, frame)
         drivetrainWorked(controls.drive, states, frame)
         controls.brakes.worked(controls.line.pressure, assembly, states,
                                frame)
@@ -524,29 +723,31 @@ def gpuProfile(*args, ) -> int:
         clock += frame
       return time.perf_counter() - began
 
-    how = 'the whole GPU' if spread else 'one block'
-    print('  %s: idling a second (warming up)' % how, flush=True)
-    ran(1.0)
-    drive = controls.drive
-    drive.pedal, drive.asked = 1.0, '1'
-    ran(0.6)
-    drive.throttle = 0.5
-    ran(0.4)
-    drive.pedal = 0.0
+    print('  %s: warming up' % scene, flush=True)
+    if driver is None:
+      ran(1.0)
+      drive = controls.drive
+      drive.pedal, drive.asked = 1.0, '1'
+      ran(0.6)
+      drive.throttle = 0.5
+      ran(0.4)
+      drive.pedal = 0.0
+    else:
+      ran(3.0)
     world.profileOf(assembly)
-    print('  %s: driving two seconds' % how, flush=True)
+    print('  %s: driving two seconds' % scene, flush=True)
     took = ran(2.0)
     steps = 2.0 / RIG_STEP
-    print('  %s: %.0f us a step, %.0f %% of real time' % (
-      how, 1e6 * took / steps, 100.0 * 2.0 / took), flush=True)
-    if spread:
-      continue
+    print('  %s, one block: %.0f us a step, %.0f %% of real time' % (
+        scene, 1e6 * took / steps, 100.0 * 2.0 / took), flush=True)
     parts = world.profileOf(assembly)
     total = max(1, sum(parts.values()))
     for name, cycles in parts.items():
       if cycles > 0:
         print('    %-18s %5.1f %%  %6.1f us a step' % (
-          name, 100.0 * cycles / total, 1e6 * took / steps * cycles / total))
+            name,
+            100.0 * cycles / total,
+            1e6 * took / steps * cycles / total))
   return 0
 
 
@@ -560,7 +761,7 @@ def _preloadWaited() -> None:
       thread.join(10.0)
       if thread.is_alive():
         print('[preload] the show waits for the GPU (%.0f s)' % (
-          time.perf_counter() - began), flush=True)
+            time.perf_counter() - began), flush=True)
 
 
 def realCarTests(*args, ) -> int:
@@ -1332,7 +1533,7 @@ def realCarShow(*args, ) -> int:
   return app.returnCode
 
 
-def ovalShow(*args, ) -> int:
+def realOvalShow(*args, ) -> int:
   """Opens the walk at the oval (user, 2026-11-15: "park the old car by
   inside the grass on the Dover track, put this car there instead, have
   an AI driver take the wheel"): the real car on the start line, the
@@ -1351,6 +1552,30 @@ def ovalShow(*args, ) -> int:
     window = app.window
     window.placeBox.setCurrentIndex([place.name for place in PLACES].index(
         'The oval'))
+    window.reset()
+    window.resize(1920, 1080)
+    window.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    window.show()
+  return app.returnCode
+
+
+def cityShow(*args, ) -> int:
+  """Opens the walk in town (user, 2026-11-15: uncannyball's lap of
+  central Copenhagen, previews/royal_race.crg): the real car at the
+  lap's start by Amalienborg Slotsplads (its palaces and Frederik V on
+  horseback stand there), the walker sat in it, the city driver at its
+  wheel at the 50 km/h limit ('Robot hands' on; off, you drive it as in
+  'realCarShow'). The height data's credit is in the readings. Shown
+  without taking the focus. Returns the exit code once its window
+  closes. Waits first for 'preloadGpu', if it runs."""
+  _preloadWaited()
+  from PySide6.QtCore import Qt
+  from worQt.phys.gui import WalkApp
+  from worQt.phys.gui._walk import PLACES
+  with WalkApp(*sys.argv) as app:
+    window = app.window
+    window.placeBox.setCurrentIndex([place.name for place in PLACES].index(
+        'Copenhagen'))
     window.reset()
     window.resize(1920, 1080)
     window.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -1571,4 +1796,5 @@ def trainRacer(*args, ) -> int:
 
 
 if __name__ == '__main__':
-  yolo(preloadGpu, showTests, ovalShow, )
+  # yolo(preloadGpu, showTests, cityShow, )
+  yolo(cityShow, )

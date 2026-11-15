@@ -374,26 +374,30 @@ def _joined(shapes: tuple) -> Shape:
   return shape
 
 
-def flywheelPieces() -> tuple[tuple[str, Shape], ...]:
-  """The 'flywheelPieces' function returns the flywheel by its parts:
-  ('flywheel', its disc, 28 cm across, with the crank's snout),
-  ('cover', the clutch's cover over the pressure plate, on it)."""
-  disc = _cylinderX(0.14, FLYWHEEL_AT - 0.015, FLYWHEEL_AT + 0.015,
-                    SHAFT_HEIGHT)
-  snout = _cylinderX(0.03, FLYWHEEL_AT + 0.015, FLYWHEEL_AT + 0.06,
-                     SHAFT_HEIGHT)
-  cover = _cylinderX(0.13, CLUTCH_AT - 0.025, CLUTCH_AT - 0.008,
-                     SHAFT_HEIGHT)
+def flywheelPieces(reach: float = 0.0) -> tuple[tuple[str, Shape], ...]:
+  """The 'flywheelPieces' function returns the flywheel by its parts,
+  'reach' m further ahead than on the bench (a car's engine ahead of its
+  gearbox: 'addDrivetrain'): ('flywheel', its disc, 28 cm across, with
+  the crank's snout), ('cover', the clutch's cover over the pressure
+  plate, on it)."""
+  at, clutch = FLYWHEEL_AT + reach, CLUTCH_AT + reach
+  disc = _cylinderX(0.14, at - 0.015, at + 0.015, SHAFT_HEIGHT)
+  snout = _cylinderX(0.03, at + 0.015, at + 0.06, SHAFT_HEIGHT)
+  cover = _cylinderX(0.13, clutch - 0.025, clutch - 0.008, SHAFT_HEIGHT)
   return ('flywheel', _joined((disc, snout))), ('cover', cover)
 
 
-def inputPieces() -> tuple[tuple[str, Shape], ...]:
-  """The 'inputPieces' function returns the input shaft by its parts:
-  ('shaft', the shaft from the flywheel's pilot back through the box),
-  ('lining', the clutch's disc), ('gear', its gears cut on it: first to
-  fifth, reverse)."""
-  shaft = _cylinderX(0.0125, -0.12, FLYWHEEL_AT - 0.016, SHAFT_HEIGHT)
-  disc = _cylinderX(CLUTCH_OUTER, CLUTCH_AT - 0.004, CLUTCH_AT + 0.004,
+def inputPieces(reach: float = 0.0) -> tuple[tuple[str, Shape], ...]:
+  """The 'inputPieces' function returns the input shaft by its parts,
+  reaching 'reach' m further ahead than on the bench to its clutch (a
+  car's propshaft, the engine ahead of the gearbox): ('shaft', the shaft
+  from the flywheel's pilot back through the box), ('lining', the
+  clutch's disc), ('gear', its gears cut on it: first to fifth,
+  reverse)."""
+  clutch = CLUTCH_AT + reach
+  shaft = _cylinderX(0.0125, -0.12, FLYWHEEL_AT + reach - 0.016,
+                     SHAFT_HEIGHT)
+  disc = _cylinderX(CLUTCH_OUTER, clutch - 0.004, clutch + 0.004,
                     SHAFT_HEIGHT)
   teeth = tuple(pair[0] for pair in GEARS) + (REVERSE[0],)
   gears = tuple(_onX(gearShape(count), at, SHAFT_HEIGHT)
@@ -505,12 +509,13 @@ def framePieces() -> tuple[tuple[str, Shape], ...]:
   return ('block', block), ('stand', _joined((plate,) + tuple(stands)))
 
 
-def casePieces() -> tuple[tuple[str, Shape], ...]:
+def casePieces(reach: float = 0.0) -> tuple[tuple[str, Shape], ...]:
   """The 'casePieces' function returns the gearbox's case and the bell
-  housing (glass), and the differential's housing, by their parts
+  housing (glass; the bell 'reach' m further ahead than on the bench,
+  at the engine), and the differential's housing, by their parts
   ('case')."""
-  bell = _box((CLUTCH_AT - 0.04, -0.17, SHAFT_HEIGHT - 0.17),
-              (FLYWHEEL_AT + 0.05, 0.17, SHAFT_HEIGHT + 0.16))
+  bell = _box((CLUTCH_AT + reach - 0.04, -0.17, SHAFT_HEIGHT - 0.17),
+              (FLYWHEEL_AT + reach + 0.05, 0.17, SHAFT_HEIGHT + 0.16))
   box = _box((-0.13, -0.10, OUTPUT_HEIGHT - 0.09),
              (0.28, 0.10, SHAFT_HEIGHT + 0.07))
   diff = _box((APEX - 0.11, -0.15, OUTPUT_HEIGHT - 0.11),
@@ -546,18 +551,20 @@ def wheelTurn(side: float) -> tuple:
 
 
 @functools.lru_cache(maxsize=4)
-def drivetrainBodies(shift: Vector) -> tuple[Body, ...]:
+def drivetrainBodies(shift: Vector,
+                     reach: float = 0.0) -> tuple[Body, ...]:
   """The 'drivetrainBodies' function returns the drivetrain's bodies
-  moved 'shift' from the bench: the flywheel, the input shaft, the
-  output shaft, the free gears first to fifth and reverse, the idler,
-  the carrier, its spiders (above, under)."""
+  moved 'shift' from the bench (the flywheel and the clutch 'reach' m
+  further ahead, the input shaft reaching them): the flywheel, the input
+  shaft, the output shaft, the free gears first to fifth and reverse,
+  the idler, the carrier, its spiders (above, under)."""
 
   def moved(pieces: tuple) -> Body:
     """Returns the steel body of 'pieces', moved."""
     return Body.of(_joined(tuple(shape.moved(shift, (1.0, 0.0, 0.0, 0.0))
                                  for _, shape in pieces)), STEEL)
 
-  return ((moved(flywheelPieces()), moved(inputPieces()),
+  return ((moved(flywheelPieces(reach)), moved(inputPieces(reach)),
            moved(outputPieces()))
           + tuple(moved((('gear', _freeGear(k)),)) for k in range(6))
           + (moved((('gear', idlerShape()),)), moved(carrierPieces()),
@@ -568,7 +575,8 @@ def drivetrainBodies(shift: Vector) -> tuple[Body, ...]:
 def addDrivetrain(controls: DrivetrainControls, shift: Vector, frame: int,
                   case: int, first: int, sides: tuple, sideAxes: tuple,
                   world: object, turn: tuple, idle: float, bodies: list,
-                  states: list, connections: list) -> None:
+                  states: list, connections: list,
+                  reach: float = 0.0) -> None:
   """The 'addDrivetrain' function adds the drivetrain, moved 'shift' from
   the bench (its frame's points; 'world' puts them in the world, turned
   'turn'), to 'bodies', 'states' and 'connections', worked by
@@ -580,14 +588,17 @@ def addDrivetrain(controls: DrivetrainControls, shift: Vector, frame: int,
   the ground never meets them), the spiders meshing the
   side gears (bodies 'sides', left and right, their axes 'sideAxes' in
   their own frames, out from the differential's middle); the engine
-  turning at 'idle' rpm in neutral, the clutch in."""
+  turning at 'idle' rpm in neutral, the clutch in; the flywheel and
+  the clutch 'reach' m further ahead than on the bench, the input shaft
+  reaching forward to them (a front engine's propshaft: user,
+  2026-11-15, "Move the seat back, front engine")."""
   flywheel, inputShaft, output = first, first + 1, first + 2
   firstGear, idler, carrier = first + 3, first + 9, first + 10
   spiders = (first + 11, first + 12)
   controls.layout = DrivetrainLayout(flywheel, inputShaft, output,
                                      firstGear, carrier, sides[0],
                                      sides[1], sideAxes[0], sideAxes[1])
-  made = drivetrainBodies(shift)
+  made = drivetrainBodies(shift, reach)
   spin = idle * 2.0 * math.pi / 60.0
   inputs = tuple(pair[0] for pair in GEARS) + (REVERSE[0],)
   outputs = tuple(pair[1] for pair in GEARS) + (REVERSE[2],)
@@ -607,15 +618,16 @@ def addDrivetrain(controls: DrivetrainControls, shift: Vector, frame: int,
 
   apex = at((APEX, 0.0, OUTPUT_HEIGHT))
   connections += [
-    Hinge(frame, at((FLYWHEEL_AT, 0.0, SHAFT_HEIGHT)), X, flywheel,
-          at((FLYWHEEL_AT, 0.0, SHAFT_HEIGHT)), X),
+    Hinge(frame, at((FLYWHEEL_AT + reach, 0.0, SHAFT_HEIGHT)), X,
+          flywheel, at((FLYWHEEL_AT + reach, 0.0, SHAFT_HEIGHT)), X),
     Hinge(frame, at((0.0, 0.0, SHAFT_HEIGHT)), X, inputShaft,
           at((0.0, 0.0, SHAFT_HEIGHT)), X),
     Hinge(frame, at((0.0, 0.0, OUTPUT_HEIGHT)), X, output,
           at((0.0, 0.0, OUTPUT_HEIGHT)), X),
     Motor(frame, flywheel, X, controls.engine),
-    DiscBrake(inputShaft, flywheel, at((CLUTCH_AT, 0.0, SHAFT_HEIGHT)), X,
-              at((CLUTCH_AT, 0.0, SHAFT_HEIGHT + 0.5 * (
+    DiscBrake(inputShaft, flywheel, at((CLUTCH_AT + reach, 0.0,
+                                         SHAFT_HEIGHT)), X,
+              at((CLUTCH_AT + reach, 0.0, SHAFT_HEIGHT + 0.5 * (
                 CLUTCH_INNER + CLUTCH_OUTER))), CLUTCH_INNER, CLUTCH_OUTER,
               controls.clutch, 1.0, LINING)]
   for k in range(6):

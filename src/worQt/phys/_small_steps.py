@@ -982,28 +982,34 @@ class _ShapeData:
 def _bendsOf(grid: numpy.ndarray, cell: float) -> numpy.ndarray:
   """Returns how much a terrain's slope (its heights 'grid', 'cell' m
   apart, bilinear between) changes at most within each of its cells and
-  into the cells about it (a cell's value for each cell): within a cell
-  its slope along x runs between those of its two edges along x (and so
-  across); from one cell into the next along x it jumps from one row of
-  edges' to the next (and so across); each cell then takes the most of
-  the nine about it (in the near look's time a point crosses into the
-  next cell at most)."""
-  along = numpy.diff(grid, 1, 0) / cell
-  across = numpy.diff(grid, 1, 1) / cell
-  bend = numpy.maximum(numpy.abs(along[:, 1:] - along[:, :-1]),
-                       numpy.abs(across[1:, :] - across[:-1, :]))
+  into the cells about it (a cell's value for each cell, float32): within
+  a cell its slope along x runs between those of its two edges along x
+  (and so across); from one cell into the next along x it jumps from one
+  row of edges' to the next (and so across); each cell then takes the
+  most of the nine about it (in the near look's time a point crosses
+  into the next cell at most), in place (a city's grid is millions of
+  cells)."""
+  heights = numpy.asarray(grid, numpy.float32)
+  along = numpy.diff(heights, 1, 0) / numpy.float32(cell)
+  across = numpy.diff(heights, 1, 1) / numpy.float32(cell)
+  bend = numpy.abs(along[:, 1:] - along[:, :-1])
+  numpy.maximum(bend, numpy.abs(across[1:, :] - across[:-1, :]), bend)
   jumps = numpy.abs(numpy.diff(along, 1, 0))
   jumps = numpy.maximum(jumps[:, 1:], jumps[:, :-1])
-  bend[1:] = numpy.maximum(bend[1:], jumps)
-  bend[:-1] = numpy.maximum(bend[:-1], jumps)
+  numpy.maximum(bend[1:], jumps, bend[1:])
+  numpy.maximum(bend[:-1], jumps, bend[:-1])
   jumps = numpy.abs(numpy.diff(across, 1, 1))
   jumps = numpy.maximum(jumps[1:], jumps[:-1])
-  bend[:, 1:] = numpy.maximum(bend[:, 1:], jumps)
-  bend[:, :-1] = numpy.maximum(bend[:, :-1], jumps)
-  padded = numpy.pad(bend, 1, 'edge')
-  rows, columns = bend.shape
-  return numpy.max([padded[a:a + rows, c:c + columns]
-                    for a in range(3) for c in range(3)], 0)
+  numpy.maximum(bend[:, 1:], jumps, bend[:, 1:])
+  numpy.maximum(bend[:, :-1], jumps, bend[:, :-1])
+  del along, across, jumps
+  out = bend.copy()
+  numpy.maximum(out[1:], bend[:-1], out[1:])
+  numpy.maximum(out[:-1], bend[1:], out[:-1])
+  rows = out.copy()
+  numpy.maximum(out[:, 1:], rows[:, :-1], out[:, 1:])
+  numpy.maximum(out[:, :-1], rows[:, 1:], out[:, :-1])
+  return out
 
 
 def _touchesOf(world: SmallSteps, assembly: Assembly, movers: list,

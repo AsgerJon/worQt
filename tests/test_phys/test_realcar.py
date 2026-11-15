@@ -10,7 +10,13 @@ it; steered left standing, its front wheels turn left, its rears not;
 stopped hard from 15 m/s its anti-lock keeps its wheels turning (user,
 2026-11-14: "Key_S: disc-brakes with ABS") where without it they lock,
 and the handbrake locks its rear wheels at once ("instantly locks
-wheels"), its fronts rolling on. Tolerant: tyres are chaotic.
+wheels"), its fronts rolling on. Its controls take any share (user,
+2026-11-15: "make sure that the car can accept continuous amounts of
+throttle, break and turning"): its front wheels turn as far as the
+steering wheel is turned, either way; its brakes slow it as hard as the
+foot presses (short of locking a wheel); each tenth more throttle in
+fourth speeds it up as much more (short of spinning a rear wheel: at
+332 kg the car's rear is light). Tolerant: tyres are chaotic.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -23,7 +29,8 @@ from worQt.phys import conjugate, minus, norm, rotated, scaled
 from worQt.phys._carcass import TYRE_YARD
 from worQt.phys._drivetrain import DrivetrainControls, drivetrainWorked
 from worQt.phys._drivetrain import readingOf, rpmOf, spinAbout
-from worQt.phys._realcar import CHASSIS, CORNERS, FIRST_CORNER, FOOT
+from worQt.phys._realcar import CHASSIS, CORNERS, FOOT, WHEELBASE
+from worQt.phys._realcar import WHEELS
 from worQt.phys._realcar import Antilock, RealCarControls, realCar
 from worQt.phys._rig import HUB_HEIGHT, TuneUp, WheelSetup
 from worQt.phys._tyred import tyreOf
@@ -69,7 +76,7 @@ class TestRealCar(PhysTest):
     rolling so (its drivetrain, in neutral, brought along by its
     gears)."""
     self.ran(0.5)
-    wheels = {FIRST_CORNER + 6 * c + 3: side
+    wheels = {WHEELS[c]: side
               for c, (_, side) in enumerate(CORNERS)}
     radius = next(tyre.radius for tyre in self.assembly.tyres
                   if tyre.body in wheels)
@@ -83,6 +90,25 @@ class TestRealCar(PhysTest):
                           spin))
     self.states = tuple(moving)
     self.ran(0.3)
+
+  def forward(self, ) -> float:
+    """Returns how fast the car goes along its chassis' forward, m/s."""
+    chassis = self.states[CHASSIS]
+    return rotated(conjugate(chassis.turn), chassis.velocity)[0]
+
+  def fronts(self, ) -> float:
+    """Returns how far the front wheels are turned left on the chassis
+    on their mean, degrees."""
+    chassis, turned = self.states[CHASSIS], []
+    for c, (at, side) in enumerate(CORNERS):
+      if at != 0.0:
+        continue
+      wheel = self.states[WHEELS[c]]
+      axle = rotated(conjugate(chassis.turn), rotated(wheel.turn,
+                                                      (0.0, 0.0, 1.0)))
+      turned.append(math.degrees(math.atan2(axle[1], axle[0]))
+                    - 90.0 * side)
+    return sum(turned) / len(turned)
 
   def rims(self, ) -> list[float]:
     """Returns how fast each wheel's tread goes round, as a share of
@@ -103,7 +129,7 @@ class TestRealCar(PhysTest):
     chassis = self.states[CHASSIS]
     body = self.assembly.bodies[CHASSIS]
     for c in range(len(CORNERS)):
-      wheel = self.states[FIRST_CORNER + 6 * c + 3]
+      wheel = self.states[WHEELS[c]]
       own = rotated(conjugate(chassis.turn), minus(wheel.place,
                                                    chassis.place))
       self.assertNear(own[2] + body.centre[2], HUB_HEIGHT, 0.003)
@@ -152,7 +178,7 @@ class TestRealCar(PhysTest):
     self.ran(1.0)
     chassis = self.states[CHASSIS]
     for c, (at, side) in enumerate(CORNERS):
-      wheel = self.states[FIRST_CORNER + 6 * c + 3]
+      wheel = self.states[WHEELS[c]]
       axle = rotated(conjugate(chassis.turn), rotated(wheel.turn,
                                                       (0.0, 0.0, 1.0)))
       turned = math.degrees(math.atan2(axle[1], axle[0])) - 90.0 * side
@@ -204,3 +230,113 @@ class TestRealCar(PhysTest):
         self.assertGreater(rims[c], 0.9)
       else:
         self.assertLess(rims[c], 0.1)
+
+  def test_steers_in_shares(self) -> None:
+    """Rolling at 5 m/s, its steering wheel held a quarter, a half and
+    all of 3 rad left, its front wheels turn as far as it (each over
+    its share within 5 % of the others), and as far right as left."""
+    turned = {}
+    for wheel in (0.75, 1.5, 3.0, -1.5):
+      self.setUp()
+      self.rolling(5.0)
+      self.controls.steer.value = wheel
+      self.ran(0.6)
+      turned[wheel] = self.fronts()
+    rates = [turned[wheel] / wheel for wheel in (0.75, 1.5, 3.0)]
+    for rate in rates:
+      self.assertGreater(rate, 0.0)
+      self.assertNear(rate, rates[-1], 0.05 * rates[-1])
+    self.assertNear(-turned[-1.5], turned[1.5], 0.05 * turned[1.5])
+
+  def test_brakes_in_shares(self) -> None:
+    """From 15 m/s, the foot pressing 6, 12 and 18 bar (short of locking
+    a wheel: the light rear ones lock from about 24), the car slows the
+    harder the harder it presses, by as much (over the rolling's own
+    slowing, each over its pressure within 10 % of the others)."""
+    slowing = {}
+    for bar in (0.0, 6.0, 12.0, 18.0):
+      self.setUp()
+      self.rolling(15.0)
+      self.controls.line.pressure = bar * 1e5
+      self.ran(0.2)
+      before = self.forward()
+      self.ran(0.5)
+      slowing[bar] = (before - self.forward()) / 0.5
+    rates = [(slowing[bar] - slowing[0.0]) / bar for bar in (6.0, 12.0,
+                                                             18.0)]
+    for rate in rates:
+      self.assertGreater(rate, 0.0)
+      self.assertNear(rate, rates[-1], 0.1 * rates[-1])
+
+  def test_throttle_in_shares(self) -> None:
+    """Rolling at 20 m/s in fourth (in first, at 332 kg, a fifth of the
+    throttle already spins a rear wheel), two, three, four and five
+    tenths of the throttle speed it up the more the more is open, each
+    tenth more by as much more (within 20 % of the mean step: the
+    engine's own losses take a fixed share)."""
+    speeding = []
+    for opened in (0.2, 0.3, 0.4, 0.5):
+      self.setUp()
+      self.rolling(20.0)
+      drive = self.controls.drive
+      drive.pedal, drive.asked = 1.0, '4'
+      for _ in range(15):
+        self.ran(0.2)
+        if drive.shifter.engaged == '4':
+          break
+      self.assertEqual(drive.shifter.engaged, '4')
+      drive.throttle = 0.3
+      self.ran(0.2)
+      drive.pedal = 0.0
+      self.ran(0.6)
+      drive.throttle = opened
+      self.ran(0.3)
+      before = self.forward()
+      self.ran(0.5)
+      speeding.append((self.forward() - before) / 0.5)
+    steps = [b - a for a, b in zip(speeding, speeding[1:])]
+    mean = sum(steps) / len(steps)
+    self.assertGreater(speeding[0], 0.0)
+    for step in steps:
+      self.assertGreater(step, 0.0)
+      self.assertNear(step, mean, 0.2 * mean)
+
+  def test_balanced(self) -> None:
+    """With its driver in it, the car's middle of mass lies at its
+    wheelbase's middle (a centimetre; user, 2026-11-15: "assume the
+    driver weight brings center of gravity back to even between from and
+    rear")."""
+    mass = sum(body.mass for body in self.assembly.bodies)
+    middle = sum(body.mass * state.place[0] for body, state in zip(
+      self.assembly.bodies, self.states)) / mass
+    self.assertNear(middle, -0.5 * WHEELBASE, 0.01)
+
+  def test_flywheel(self) -> None:
+    """The flywheel weighs what the tune-up sets ('TuneUp.flywheel', as
+    built 'FLYWHEEL_MASS'), and the lighter it is the faster the engine's
+    revs fall (user, 2026-11-15: "If it's too heavy. the engine speed
+    falls too slowly"): revved past 4000 in neutral and let go (the
+    throttle shut in an eighth of a second), a 6 kg one falls half as
+    far again as the 20 kg one in the fifth of a second after (measured:
+    about 6000 rpm/s against 1600)."""
+    fell = {}
+    for kilograms in (6.0, 20.0):
+      self.controls = RealCarControls(
+        BrakeLine(0.0), FourthWall(0.0), TuneUp(
+          (WheelSetup(),) * len(CORNERS), kilograms), DrivetrainControls(),
+        Antilock())
+      self.assembly, self.states = realCar(self.controls)
+      drive = self.controls.drive
+      flywheel = drive.layout.flywheel
+      self.assertNear(self.assembly.bodies[flywheel].mass, kilograms, 1e-9)
+      drive.throttle = 1.0
+      for _ in range(40):
+        self.ran(0.05)
+        if rpmOf(self.states, flywheel) > 4000.0:
+          break
+      drive.throttle = 0.0
+      self.ran(0.15)
+      before = rpmOf(self.states, flywheel)
+      self.ran(0.2)
+      fell[kilograms] = before - rpmOf(self.states, flywheel)
+    self.assertGreater(fell[6.0], 1.5 * fell[20.0])

@@ -64,12 +64,16 @@ from .._drivetrain import CASE as GEARBOX_CASE, DrivetrainControls
 from .._drivetrain import benchFinishes as drivetrainFinishes
 from .._drivetrain import drivetrainBench, drivetrainWorked, readingOf
 from .. import _realcar
-from .._realcar import FOOT, Antilock, RealCarControls, realCar
+from .._realcar import FLYWHEEL_MASS, FOOT, Antilock, RealCarControls
+from .._realcar import realCar
 from .._realcar import realCarCoils
 from .._realcar import realCarFinishes
 from .._carcass import TYRE_YARD, rimFinishes, tyreYard, wheelGiven
 from .._laps import LapTimer, lapText
-from .._realdriver import RealCarRacer
+from .._city import CITY_TRACK, cityCourse, cityGround, cityTrack
+from .._city import realCarInCity, squareFinishes
+from .._crg import ATTRIBUTION
+from .._realdriver import CityDriver, RealCarRacer
 from .._realoval import ovalGround, parkedFinishes, realCarOnOval
 from .._carcass import wheelsOf
 from .._tyred import tyredFinishes, tyredGiven, wheelYard
@@ -158,10 +162,17 @@ class Place(NamedTuple):
   over 1 3 5), N neutral, I the starter; None: none), and the car the
   walker starts sat in ('ride', a 'Ride': the camera riding it, F out of
   it, S its brakes, Space its handbrake, its tune-up; None: none), and
-  whether a racing driver drives that car round the oval ('racing':
-  'RealCarRacer', while 'Robot hands' is on; its laps timed), and the
-  dresses drawn beside the bodies ('extras': None, or a function of the
-  assembly returning them: the old car parked on the oval). Cord
+  the robot that drives that car round a course ('racing': a function
+  of the assembly and the real car's controls returning it, while 'Robot
+  hands' is on, its laps timed: 'RealCarRacer' on the oval, 'CityDriver'
+  in town; None: none), and the dresses drawn beside the bodies
+  ('extras': None, or a function of the assembly returning them: the old
+  car parked on the oval), how the ground's terrain is drawn ('drawn':
+  'oval', the oval's surfaces; 'crg', the city lap's road along its rows;
+  None, the terrain's grid), and a credit its data asks to be shown
+  ('credit', in the readings: the city's heights). A place's ground may
+  be a function returning it (the city's, seconds to lay out: made when
+  the place is first chosen). Cord
   tyres
   ('wheelsOf') are drawn over their nodes ('TyreDress'), their wheels
   grabbed and punted whole.
@@ -204,8 +215,10 @@ class Place(NamedTuple):
   soapbox: SoapboxControls = None
   drivetrain: DrivetrainControls = None
   ride: object = None
-  racing: bool = False
+  racing: object = None
   extras: object = None
+  drawn: str = None
+  credit: str = None
 
 
 class Ride(NamedTuple):
@@ -487,14 +500,27 @@ def _drivetrainBuilt() -> tuple:
 #  The real car (user, 2026-11-14: "continue to assemble the real car"):
 #  its controls (the brakes' line, the hands, the tune-up of four, the
 #  drivetrain), its looks (the soapbox's corners, the bench's
-#  drivetrain, the engine's block dark, the case glass).
+#  drivetrain, the engine's block dark, the case glass: seen into, the
+#  gears turning; made opaque a while to spare the GPU, then back, the
+#  user, 2026-11-15: "bring back transparency"); its bodywork
+#  ('_bodyshell': user, 2026-11-15, "let's do something about our
+#  minecraft ass blocky car") a period's dark green, its intake's grille
+#  dark, its screen glass.
 REALCAR = RealCarControls(BrakeLine(0.0), FourthWall(0.0),
-                          TuneUp((WheelSetup(),) * len(CORNERS)),
+                          TuneUp((WheelSetup(),) * len(CORNERS),
+                                 FLYWHEEL_MASS),
                           DrivetrainControls(), Antilock())
 REALCAR_LOOKS = dict(SOAPBOX_LOOKS)
 REALCAR_LOOKS.update(DRIVETRAIN_LOOKS)
 REALCAR_LOOKS.update({
-  'case': (QColor(150, 215, 255, 85), 0.0, 0.1, False)})
+  'case': (QColor(150, 215, 255, 85), 0.0, 0.1, False),
+  'paint': (QColor(20, 66, 44), 0.2, 0.3),
+  'cockpit': (QColor(34, 32, 30), 0.0, 0.8),
+  'coil': (QColor(26, 26, 28), 0.3, 0.4, True),
+  'damper': (QColor(150, 152, 156), 0.5, 0.3, True),
+  'tank': (QColor(176, 178, 182), 0.5, 0.35),
+  'grille': (QColor(22, 22, 24), 0.4, 0.6),
+  'screen': (QColor(205, 228, 238, 60), 0.0, 0.05, False)})
 #  The oval's looks: the real car's, and the old car's parked by it (its
 #  own window's palette, each key 'old ' and its own; its rims gold, its
 #  tyres rubber).
@@ -502,6 +528,15 @@ OVAL_LOOKS = dict(REALCAR_LOOKS)
 OVAL_LOOKS.update({
   'old rim': (QColor(206, 164, 62), 0.3, 0.35),
   'old rubber': (QColor(36, 36, 40), 0.0, 0.9)})
+#  The city's looks: the real car's, and the palace square's (its
+#  palaces' warm grey plaster, their dark roofs, the statue's pale stone
+#  pedestal and green bronze).
+CITY_LOOKS = dict(REALCAR_LOOKS)
+CITY_LOOKS.update({
+  'palace': (QColor(222, 208, 178), 0.0, 0.85),
+  'roof': (QColor(64, 68, 72), 0.3, 0.6),
+  'pedestal': (QColor(196, 194, 188), 0.0, 0.7),
+  'bronze': (QColor(74, 122, 104), 0.6, 0.45)})
 
 
 def _realCarBuilt() -> tuple:
@@ -535,6 +570,33 @@ def _ovalFinishes(assembly: object) -> dict:
   finishes = _realCarFinishes(assembly)
   finishes.update(parkedFinishes())
   return finishes
+
+
+def _ovalRacer(assembly: object, controls: RealCarControls) -> object:
+  """Returns the oval's racing driver at the real car's wheel."""
+  return RealCarRacer(assembly, controls)
+
+
+def _cityBuilt() -> tuple:
+  """Returns the real car anew at the city lap's start, its engine
+  idling in neutral, its brakes off, the palace square by it
+  ('realCarInCity')."""
+  REALCAR.drive.reset()
+  REALCAR.brakes.reset()
+  return realCarInCity(REALCAR)
+
+
+def _cityFinishes(assembly: object) -> dict:
+  """Returns how the real car and the palace square are drawn
+  ('_realCarFinishes', 'squareFinishes')."""
+  finishes = _realCarFinishes(assembly)
+  finishes.update(squareFinishes())
+  return finishes
+
+
+def _cityRacer(assembly: object, controls: RealCarControls) -> object:
+  """Returns the city driver at the real car's wheel round the lap."""
+  return CityDriver(assembly, controls, cityCourse())
 
 
 def _ovalExtras(assembly: object) -> tuple:
@@ -645,17 +707,15 @@ PLACES = (Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
                 REALCAR_LOOKS, 'ball', 1, HINGE_GREASE, REALCAR.line,
                 realCarCoils, REALCAR.steer, None, None, REALCAR.drive,
                 Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
-                     (_realcar.FIRST_CORNER + 2,
-                      _realcar.FIRST_CORNER + 8), REALCAR.brakes)),
+                     _realcar.KNUCKLES[:2], REALCAR.brakes)),
           Place('The oval', _ovalBuilt, ovalGround(), Grabber(), math.pi,
                 1.0, None, oakBallGiven, None, 1.0, None, FULL, True, (),
                 RIG_STEP, False, None, (), _ovalFinishes, OVAL_LOOKS,
                 'ball', 1, HINGE_GREASE, REALCAR.line, realCarCoils,
                 REALCAR.steer, None, None, REALCAR.drive,
                 Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
-                     (_realcar.FIRST_CORNER + 2,
-                      _realcar.FIRST_CORNER + 8), REALCAR.brakes),
-                True, _ovalExtras),
+                     _realcar.KNUCKLES[:2], REALCAR.brakes),
+                _ovalRacer, _ovalExtras, 'oval'),
           Place('The cord tyre yard', tyreYard, TYRE_YARD, Grabber(),
                 -0.5 * math.pi, 1.0, None, wheelGiven, None, 1.0, None,
                 FULL, True, (), 2.5e-4, False, None, (), rimFinishes,
@@ -695,7 +755,16 @@ PLACES = (Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
                 RING_GRABBER, -0.5 * math.pi, 2.0, None, giantBallGiven,
                 None, 1.0),
           Place('The yard', walkingYard, YARD_GROUND, Grabber(), math.pi,
-                1.0, Sleep(), oakBallGiven, None, 1.0))
+                1.0, Sleep(), oakBallGiven, None, 1.0)) + ((
+  Place('Copenhagen', _cityBuilt, cityGround, Grabber(), math.pi, 1.0,
+        None, oakBallGiven, None, 1.0, None, FULL, True, (), RIG_STEP,
+        False, None, (), _cityFinishes, CITY_LOOKS, 'ball', 1,
+        HINGE_GREASE, REALCAR.line, realCarCoils, REALCAR.steer, None,
+        None, REALCAR.drive,
+        Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
+             _realcar.KNUCKLES[:2], REALCAR.brakes),
+        _cityRacer, None, 'crg', ATTRIBUTION),) if os.path.isfile(
+  os.path.normpath(CITY_TRACK)) else ())
 
 
 
@@ -744,8 +813,23 @@ _HINT = ('Click to look round.  E: the menu (its buttons).  WASD walk, '
          'Shift runs, Space jumps; Space twice flies (Space up, Shift '
          'down, Ctrl faster; landing '
          'walks).  Right button: grab or drop.  Left: punt.  Wheel: hold '
-         'nearer or further.  F9 records ten seconds.  Esc lets the mouse '
-         'go.')
+         'nearer or further.  In a car, V: the chase view (the mouse looks '
+         'round the car, the wheel nearer or further).  F9 records ten '
+         'seconds.  Esc lets the mouse go.')
+#  The chase view (user, 2026-11-15: "more camera views like chase where
+#  the mouse can look around, like in GTA V"): sat in a car, V swaps the
+#  driver's eyes for a camera behind and over the car, level, swinging
+#  round after it as it turns ('GpuView.follow'); the mouse looks round
+#  it, and once it has been left 'CHASE_BACK' s with the car going over
+#  'CHASE_MOVING' m/s the look eases back behind at 'CHASE_RETURN' rad/s;
+#  how far back it starts, m (the wheel nearer or further, between
+#  'CHASE_NEAREST' and 'CHASE_FARTHEST'), how high over the chassis'
+#  middle it looks, m, and how far down, rad (the mouse within
+#  'CHASE_LOWEST' and 'CHASE_HIGHEST').
+CHASE_DISTANCE, CHASE_LIFT, CHASE_PITCH = 6.5, 1.0, 0.22
+CHASE_NEAREST, CHASE_FARTHEST = 3.0, 25.0
+CHASE_LOWEST, CHASE_HIGHEST = -0.35, 1.2
+CHASE_BACK, CHASE_MOVING, CHASE_RETURN = 1.5, 2.0, 2.5
 
 
 class WalkView(GpuView):
@@ -782,6 +866,9 @@ class WalkView(GpuView):
   def __init__(self, ) -> None:
     GpuView.__init__(self)
     self.distance, self.pitch = 0.0, 0.1
+    self.chasing, self.chaseFar, self.chaseTilt = False, CHASE_DISTANCE, (
+      CHASE_PITCH)
+    self.lookedAt, self.seatLook = 0.0, (0.0, 0.1)
     self.looking, self.lookFrames = False, []
     self.skins, self.hiddenLegs, self.finishLooks = [], set(), {}
     self.tyres, self.coils, self.extras = (), (), ()
@@ -856,7 +943,12 @@ class WalkView(GpuView):
         self._looked(event)
       return True
     if kind == types.Wheel:
-      self.reached.emit(0.25 if event.angleDelta().y() > 0 else -0.25)
+      nearer = event.angleDelta().y() > 0
+      if self.chasing:
+        self.chaseFar = min(CHASE_FARTHEST, max(CHASE_NEAREST, (
+          self.chaseFar * (0.9 if nearer else 1.1))))
+        return True
+      self.reached.emit(0.25 if nearer else -0.25)
       return True
     if kind == types.KeyPress:
       self._pressed(event)
@@ -894,12 +986,31 @@ class WalkView(GpuView):
     if event.key() == Qt.Key.Key_E:
       self.menuAsked.emit()
       return
+    if event.key() == Qt.Key.Key_V:
+      self.chased(not self.chasing)
+      return
     if event.key() == Qt.Key.Key_Space:
       self.jumped.emit()
     self.keys.add(padKey(event))
 
+  def chased(self, on: bool) -> None:
+    """The 'chased' method takes the chase view ('on') or gives it back
+    for the driver's eyes, each as it was left: the head's turn in the
+    seat kept for its coming back; the chase behind the car anew."""
+    if on == self.chasing:
+      return
+    if on:
+      self.seatLook = (self.yaw, self.pitch)
+      self.heading, self.around, self.chaseTilt = None, 0.0, CHASE_PITCH
+      self.chasing = True
+      return
+    self.chasing = False
+    self.yaw, self.pitch = self.seatLook
+    self.distance, self.crosshair = 0.0, True
+
   def _looked(self, event: object) -> None:
-    """Turns the head by a move of the mouse, read from the nearer of
+    """Turns the head by a move of the mouse (in the chase view, the
+    look round the car: 'around', 'chaseTilt'), read from the nearer of
     the pointer's frames ('lookFrames'): where it last was and, once put
     back, where it was put; puts it back as it strays."""
     at = event.globalPosition()
@@ -910,9 +1021,15 @@ class WalkView(GpuView):
       at.x() - frames[k].x()) + abs(at.y() - frames[k].y()))
     last = frames.pop(nearest)
     frames.append(at)
-    self.yaw -= _TURN * (at.x() - last.x())
-    self.pitch = min(_TILT, max(-_TILT, self.pitch
-                                + _TURN * (at.y() - last.y())))
+    if self.chasing:
+      self.around -= _TURN * (at.x() - last.x())
+      self.chaseTilt = min(CHASE_HIGHEST, max(CHASE_LOWEST, self.chaseTilt
+                                              + _TURN * (at.y() - last.y())))
+      self.lookedAt = time.perf_counter()
+    else:
+      self.yaw -= _TURN * (at.x() - last.x())
+      self.pitch = min(_TILT, max(-_TILT, self.pitch
+                                  + _TURN * (at.y() - last.y())))
     local, width, height = event.position(), self.quick.width(), (
       self.quick.height())
     if abs(local.x() - 0.5 * width) > 0.25 * width \
@@ -1080,7 +1197,7 @@ class WalkWindow(QMainWindow):
     self.setCentralWidget(holder)
     self.playing, self.seconds = True, FRAME
     self.recording, self.recorded = None, ''
-    self.lastTick = time.perf_counter()
+    self.lastTick = self.chasedAt = time.perf_counter()
     self.lock, self.alive, self.driving = threading.RLock(), True, False
     self.physicsTook, self.speedNow, self.failed = 0.0, 1.0, None
     self.compiling, self.loaded, self.solver = None, set(), ''
@@ -1143,8 +1260,11 @@ class WalkWindow(QMainWindow):
     self._showNow()
 
   def _setUp(self, place: Place) -> None:
-    """Sets 'place' up anew (as 'reset')."""
+    """Sets 'place' up anew (as 'reset'): its ground made first, should
+    it be a function ('ground': the city's, made once)."""
     self.place = place
+    self.ground = place.ground() if callable(place.ground) else (
+      place.ground)
     self.smallButton.setEnabled(place.small > 0.0 and place.springs)
     if not place.springs:
       self.smallButton.setChecked(True)
@@ -1154,11 +1274,13 @@ class WalkWindow(QMainWindow):
     self.view.near = _NEAR_CUT * place.scale
     self.view.magnify = 1.0 / place.scale
     self.view.tiles = {'ground': place.tile * place.scale}
-    self.view.void = place.ground is None
-    terrain = None if place.ground is None else place.ground.terrain
+    ground = self.ground
+    self.view.void = ground is None
+    terrain = None if ground is None else ground.terrain
     self.view.terrain = terrain
-    self.view.wall = None if place.ground is None else place.ground.wall
-    self.view.oval = terrain is not None and place.racing
+    self.view.wall = None if ground is None else ground.wall
+    self.view.oval = terrain is not None and place.drawn == 'oval'
+    self.view.crg = cityTrack() if place.drawn == 'crg' else None
     self.view.glass = {index: MANA_GLASS for index in place.glass}
     self.view.finishLooks = {} if place.looks is None else place.looks
     self.giveButton.setText('Give %s' % place.gift)
@@ -1173,8 +1295,9 @@ class WalkWindow(QMainWindow):
       widget.setEnabled(place.rig is not None)
     self.tuneButton.setEnabled(place.rig is not None
                                or place.ride is not None)
-    self.handsButton.setEnabled(place.soapbox is not None or place.racing)
-    if place.racing:
+    self.handsButton.setEnabled(place.soapbox is not None
+                                or place.racing is not None)
+    if place.racing is not None:
       self.handsButton.setChecked(True)
     self.soundButton.setEnabled(place.drivetrain is not None)
     if place.drivetrain is None and self.soundButton.isChecked():
@@ -1191,9 +1314,11 @@ class WalkWindow(QMainWindow):
       place.steer.value = 0.0
     self.assembly, self.states = place.built()
     self.spawn = self.states[0]
-    self.racer = RealCarRacer(self.assembly, REALCAR) if (
-      place.racing) else None
-    self.lapTimer, self.rescueAsked = LapTimer(0.0), False
+    self.racer = None if place.racing is None else place.racing(
+      self.assembly, REALCAR)
+    self.lapTimer = LapTimer(0.0, None if self.racer is None else (
+      self.racer.course))
+    self.rescueAsked = False
     self.rigged = {leg.second for leg in self.assembly.actuators}
     self.view.hiddenLegs = set() if place.rigs else set(
       range(len(self.assembly.bodies)))
@@ -1254,10 +1379,10 @@ class WalkWindow(QMainWindow):
       self.solver = 'small steps, %s%s' % (device, (
         ', whole GPU' if spread else ', one block') if device != 'cpu'
                                             else '')
-      return SmallSteps(GRAVITY, place.ground, place.small, place.passes,
+      return SmallSteps(GRAVITY, self.ground, place.small, place.passes,
                         place.grease, device, THREADS, spread)
     self.solver = 'springs, %s' % fastestDevice()
-    return World(GRAVITY, 1e-3, place.ground, None, True, place.sleeping,
+    return World(GRAVITY, 1e-3, self.ground, None, True, place.sleeping,
                  fastestDevice(), place.fidelity)
 
   def _readied(self, device: str) -> None:
@@ -1564,7 +1689,7 @@ class WalkWindow(QMainWindow):
       self._getOut(states)
     if not self.seated:
       standing = self.walker.standingOn(self.assembly, self.states, 0,
-                                        self.place.ground)
+                                        self.ground)
       self._walk(states, standing)
     self._drive(states)
     eye, forward = self._eyes(states[0])
@@ -1644,13 +1769,16 @@ class WalkWindow(QMainWindow):
       return
     names = ('Front left',) if self.place.ride is None else (
       CORNER_NAMES)
-    if self.tunePanel is not None and self.tunePanel.names != names:
+    built = None if rig.tune.flywheel is None else FLYWHEEL_MASS
+    if self.tunePanel is not None and (self.tunePanel.names != names or
+                                       self.tunePanel.built != built):
       self.tunePanel.close()
       self.tunePanel = None
     if self.tunePanel is None:
-      self.tunePanel = TunePanel(names, self)
+      self.tunePanel = TunePanel(names, self, built)
       self.tunePanel.changed.connect(self._tuned)
     self.tunePanel.setSetups(rig.tune.wheels)
+    self.tunePanel.setFlywheel(rig.tune.flywheel)
     self.tunePanel.show()
     self.tunePanel.raise_()
 
@@ -1661,6 +1789,8 @@ class WalkWindow(QMainWindow):
     if rig is None or rig.tune is None:
       return
     rig.tune.wheels = tuple(setups)
+    if rig.tune.flywheel is not None and self.tunePanel is not None:
+      rig.tune.flywheel = self.tunePanel.flywheel
     self.reset()
 
   def _setRigSteer(self, degrees: float) -> None:
@@ -1929,9 +2059,11 @@ class WalkWindow(QMainWindow):
     who = ('robot driving (%s, gear %s)' % (self.racer.shifting,
                                              self.racer.gear)
            if self.robotHands else 'you drive (Robot hands: off)')
-    return '    %s    lap %d %s    last %s    best %s' % (
+    credit = '' if self.place.credit is None else (
+      '    ' + self.place.credit)
+    return '    %s    lap %d %s    last %s    best %s%s' % (
       who, len(timer.laps) + 1, lapText(timer.now(self.clock)),
-      lapText(timer.last), lapText(timer.best))
+      lapText(timer.last), lapText(timer.best), credit)
 
   def _walk(self, states: list, standing: tuple | None) -> None:
     """Walks the walker in 'states' as the keys ask, at once, as a
@@ -2103,7 +2235,8 @@ class WalkWindow(QMainWindow):
   def _eyes(self, walker: object) -> tuple:
     """Returns where the walker's eyes are and the way they look: sat
     in the soapbox, its chassis' own over the seat ('SOAPBOX_EYES' up
-    the car's up from their ball's middle), the view riding with it."""
+    the car's up from their ball's middle), the view riding with it (but
+    in the chase view: '_chased' places the camera)."""
     yaw, pitch = self.view.yaw, self.view.pitch
     forward = (-math.cos(pitch) * math.cos(yaw),
                -math.cos(pitch) * math.sin(yaw), -math.sin(pitch))
@@ -2112,7 +2245,7 @@ class WalkWindow(QMainWindow):
       return self.walker.eyeOf(walker), forward
     ride = self.place.ride
     chassis = self.states[ride.chassis]
-    self.view.riding = chassis.turn
+    self.view.riding = None if self.view.chasing else chassis.turn
     eye = self.assembly.bodies[ride.chassis].placeOf(
       chassis, plus(ride.seat, (0.0, 0.0, SOAPBOX_EYES)))
     return eye, rotated(chassis.turn, forward)
@@ -2125,12 +2258,19 @@ class WalkWindow(QMainWindow):
     pixels on edges and cuts to and fro; tints what is held and what the
     grabber points at within its reach (asleep or not, bodies keep their
     own tones; sat in a car, nothing: its ray was a tenth of a frame's
-    work); returns what it points at."""
-    eye, forward = self._eyes(self.states[0])
+    work); returns what it points at. Sat in a car with the chase view
+    on, from behind it ('_chased')."""
     eyeStep, step = 1e-5 * self.place.scale, 1e-6 * self.place.scale
-    self.view.target = tuple(round(x / eyeStep) * eyeStep for x in eye)
-    hit = None if self.seated else self._aimed(
-      list(self.states), eye, forward, self.grabber.reach)
+    hit = None
+    if self.seated and self.view.chasing:
+      self._chased()
+    else:
+      eye, forward = self._eyes(self.states[0])
+      self.view.distance, self.view.crosshair = 0.0, True
+      self.view.target = tuple(round(x / eyeStep) * eyeStep for x in eye)
+      if not self.seated:
+        hit = self._aimed(list(self.states), eye, forward,
+                          self.grabber.reach)
     aimed = None if hit is None else hit[0]
     tones = dict(self.steel)
     if aimed is not None and aimed not in self.rigged:
@@ -2144,6 +2284,31 @@ class WalkWindow(QMainWindow):
             state.spin, (), (), state.rest)
       for state in self.states), math.inf)
     return aimed
+
+
+  def _chased(self, ) -> None:
+    """Puts the camera behind the car ridden ('CHASE_' constants):
+    'chaseFar' m back, looking 'CHASE_LIFT' m over its chassis' middle
+    and 'chaseTilt' down, swung round after its heading
+    ('GpuView.follow') and the mouse's look; the look eased back behind
+    once left alone a while with the car going."""
+    view, ride = self.view, self.place.ride
+    chassis = self.states[ride.chassis]
+    ahead = rotated(chassis.turn, (1.0, 0.0, 0.0))
+    now = time.perf_counter()
+    seconds = min(0.1, max(0.0, now - self.chasedAt))
+    self.chasedAt = now
+    if now - view.lookedAt > CHASE_BACK and norm(chassis.velocity) > (
+        CHASE_MOVING):
+      back = CHASE_RETURN * seconds
+      around = (view.around + math.pi) % (2.0 * math.pi) - math.pi
+      view.around = around - max(-back, min(back, around))
+      view.chaseTilt += max(-back, min(back, CHASE_PITCH - view.chaseTilt))
+    view.riding, view.crosshair = None, False
+    view.distance, view.pitch = view.chaseFar, view.chaseTilt
+    view.follow(chassis.place, math.atan2(ahead[1], ahead[0]), seconds)
+    place = chassis.place
+    view.target = (place[0], place[1], place[2] + CHASE_LIFT)
 
 
 def _finite(states: tuple) -> bool:

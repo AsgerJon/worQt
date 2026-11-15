@@ -154,14 +154,17 @@ class WheelSetup(NamedTuple):
 class TuneUp:
   """
   TuneUp is the tune-up menu's setting of every wheel, 'wheels' (a tuple
-  of 'WheelSetup', the car's corners in order; the tyre rig's one), set
-  from outside between builds as a mechanic sets a car up stopped.
+  of 'WheelSetup', the car's corners in order; the tyre rig's one), and
+  of its engine's flywheel, 'flywheel' (its mass, kg; None: as built, or
+  none to set), set from outside between builds as a mechanic sets a car
+  up stopped.
   """
 
-  __slots__ = ('wheels',)
+  __slots__ = ('wheels', 'flywheel')
 
-  def __init__(self, wheels: tuple = (WheelSetup(),)) -> None:
-    self.wheels = tuple(wheels)
+  def __init__(self, wheels: tuple = (WheelSetup(),),
+               flywheel: float = None) -> None:
+    self.wheels, self.flywheel = tuple(wheels), flywheel
 
 
 class RigControls(NamedTuple):

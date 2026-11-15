@@ -15,7 +15,7 @@ running lap's, 'last' and 'best' the finished ones'.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from ._terrain import OVAL_LENGTH, OVAL_STRAIGHT, ovalPlaceOf
+from ._terrain import OVAL_STRAIGHT
 
 #  Where the start-finish line is, m round the middle line from the
 #  front straight's start: the straight's middle.
@@ -28,19 +28,23 @@ class LapTimer:
   done, 'gone' how far round it has come since, m.
   """
 
-  def __init__(self, start: float = 0.0) -> None:
+  def __init__(self, start: float = 0.0, course: object = None) -> None:
+    from ._course import OVAL
     self.started, self.laps, self.gone = start, [], 0.0
     self._round, self._when = None, start
+    self.course = OVAL if course is None else course
 
   def seen(self, x: float, y: float, time: float) -> None:
     """The 'seen' method notes the car at 'x', 'y' at 'time' s: how far
     it has come since last seen, and a lap done should it have crossed
     the line forward once more."""
-    round_ = (ovalPlaceOf(x, y)[1] - LINE) % OVAL_LENGTH
+    course = self.course
+    length = course.length
+    round_ = (course.placeOf(x, y)[1] - course.start) % length
     if self._round is not None:
       moved = round_ - self._round
-      moved -= OVAL_LENGTH * round(moved / OVAL_LENGTH)
-      line = (len(self.laps) + 1) * OVAL_LENGTH
+      moved -= length * round(moved / length)
+      line = (len(self.laps) + 1) * length
       if self.gone < line <= self.gone + moved:
         crossed = self._when + (time - self._when) * (
           line - self.gone) / moved

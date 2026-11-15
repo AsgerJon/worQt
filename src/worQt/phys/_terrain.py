@@ -136,7 +136,7 @@ def _gridOf(terrain: Terrain) -> numpy.ndarray:
   heights' identity)."""
   key = id(terrain.heights)
   if key not in _GRIDS:
-    _GRIDS[key] = numpy.array(terrain.heights, numpy.float64)
+    _GRIDS[key] = numpy.asarray(terrain.heights, numpy.float64)
   return _GRIDS[key]
 
 
