@@ -20,10 +20,10 @@ from ._lattice_base import LatticeBase
 from ._phase_num import PhaseNum
 
 _REAL, _BOTTOM, _TOP, _WALL = 0, 1, 2, 3
-_STONE = PhaseNum.STONE.index
-_MORTAR = PhaseNum.MORTAR.index
-_BOND = PhaseNum.BOND.index
-_PLATEN = PhaseNum.PLATEN.index
+_STONE = [*PhaseNum].index(PhaseNum.STONE)
+_MORTAR = [*PhaseNum].index(PhaseNum.MORTAR)
+_BOND = [*PhaseNum].index(PhaseNum.BOND)
+_PLATEN = [*PhaseNum].index(PhaseNum.PLATEN)
 
 
 def _unit(rows: torch.Tensor) -> torch.Tensor:

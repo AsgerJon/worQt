@@ -29,7 +29,7 @@ from . import PaintCylinder, CRACK_LEAST
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QMouseEvent
 
-_PLATEN = PhaseNum.PLATEN.index
+_PLATEN = [*PhaseNum].index(PhaseNum.PLATEN)
 _LIGHT = torch.tensor([-0.45, 0.55, -0.7]).double()
 _LIGHT = _LIGHT / _LIGHT.norm()  # towards the light, from the top left
 _AMBIENT = 0.35  # of the light a face turned away from it still has

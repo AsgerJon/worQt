@@ -75,7 +75,7 @@ class TestLattice(MesoTest):
     """The face between two neighbours is square to the line between
     their nodes and halfway along it."""
     lattice = self.lattice
-    inner = lattice.phases != PhaseNum.PLATEN.index
+    inner = lattice.phases != [*PhaseNum].index(PhaseNum.PLATEN)
     first = lattice.nodes[lattice.first[inner]]
     second = lattice.nodes[lattice.second[inner]]
     normals = lattice.normals[inner]
@@ -93,7 +93,7 @@ class TestLattice(MesoTest):
     top = lattice.lengths[lattice.topMask].sum().item()
     self.assertAlmostEqual(bottom, 40.0, delta=1e-9)
     self.assertAlmostEqual(top, 40.0, delta=1e-9)
-    links = lattice.phases == PhaseNum.PLATEN.index
+    links = lattice.phases == [*PhaseNum].index(PhaseNum.PLATEN)
     self.assertTrue(torch.equal(links, lattice.bottomMask | lattice.topMask))
 
   def test_the_patch_test(self) -> None:
@@ -115,7 +115,7 @@ class TestLattice(MesoTest):
     edge of the bond."""
     lattice = self.lattice
     polygons = lattice.stones
-    inner = lattice.phases != PhaseNum.PLATEN.index
+    inner = lattice.phases != [*PhaseNum].index(PhaseNum.PLATEN)
     first = lattice.nodes[lattice.first[inner]]
     second = lattice.nodes[lattice.second[inner]]
     phases = lattice.phases[inner]
@@ -126,13 +126,13 @@ class TestLattice(MesoTest):
       return torch.where(inside.any(1), inside.double().argmax(1), -1)
 
     one, two = stoneOf(first), stoneOf(second)
-    stone = phases == PhaseNum.STONE.index
+    stone = phases == [*PhaseNum].index(PhaseNum.STONE)
     self.assertTrue(bool((one[stone] >= 0).all()))
     self.assertTrue(bool((one[stone] == two[stone]).all()))
-    mortar = phases == PhaseNum.MORTAR.index
+    mortar = phases == [*PhaseNum].index(PhaseNum.MORTAR)
     self.assertTrue(bool((one[mortar] < 0).all()))
     self.assertTrue(bool((two[mortar] < 0).all()))
-    bond = phases == PhaseNum.BOND.index
+    bond = phases == [*PhaseNum].index(PhaseNum.BOND)
     self.assertGreater(int(bond.sum()), 0)
     self.assertFalse(bool(((one == two) & (one >= 0) & bond).any()))
 

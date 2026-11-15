@@ -1,8 +1,10 @@
 """
 RunAppTestInternals covers the 'AppTest' lifecycle that needs a running
 'QApplication': the 'tearDown' widget disposal - with and without a
-'setUp' snapshot, and after the base 'tearDown' fails the test - and an
-'AppTest' running under the standard 'TestCase.run'.
+'setUp' snapshot, and in a test failed by a 'subTest' block - an
+'AppTest' running under the standard 'TestCase.run', and worktoy's
+report of failed 'subTest' blocks (among the cleanups): it fails the
+test even when its 'tearDown' does not hand on.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -28,6 +30,28 @@ class _Probe(AppTest):
 
   def test_raise(self) -> None:
     raise RuntimeError('boom')
+
+
+class _SubFailProbe(AppTest):
+  """An 'AppTest' opening a window and failing a 'subTest' block."""
+
+  def test_sub_fail(self) -> None:
+    self.opened = QWidget()
+    self.opened.show()
+    with self.subTest('failing on purpose'):
+      self.assertEqual(1, 2)
+
+
+class _NoHandOnProbe(AppTest):
+  """An 'AppTest' whose 'tearDown' does not hand on, failing a 'subTest'
+  block."""
+
+  def tearDown(self) -> None:
+    pass
+
+  def test_sub_fail(self) -> None:
+    with self.subTest('failing on purpose'):
+      self.assertEqual(1, 2)
 
 
 class RunAppTestInternals(AppTest):
@@ -61,18 +85,22 @@ class RunAppTestInternals(AppTest):
     widget.hide()
     widget.deleteLater()
 
-  def run_teardown_disposes_after_failed_base(self) -> None:
-    """When the base 'tearDown' fails the test over a failed 'subTest'
-    block, the widgets the test opened are still freed."""
-    probe = _Probe('test_pass')
-    probe.setUp()
-    widget = QWidget()
-    widget.show()
-    with probe.subTest('failing on purpose'):
-      probe.assertEqual(1, 2)
-    with self.assertRaises(AssertionError):
-      probe.tearDown()
-    self.assertFalse(isValid(widget))
+  def run_sub_test_failure_disposes(self) -> None:
+    """A test failed by a 'subTest' block, run by 'TestCase.run', is one
+    failure, and the window it opened is freed."""
+    result = unittest.TestResult()
+    probe = _SubFailProbe('test_sub_fail')
+    probe.run(result)
+    self.assertEqual(len(result.failures), 1)
+    self.assertEqual(len(result.errors), 0)
+    self.assertFalse(isValid(probe.opened))
+
+  def run_sub_test_failure_without_hand_on(self) -> None:
+    """A test whose 'tearDown' does not hand on still fails by its failed
+    'subTest' block: the report runs among the cleanups."""
+    result = unittest.TestResult()
+    _NoHandOnProbe('test_sub_fail').run(result)
+    self.assertEqual(len(result.failures), 1)
 
   def run_test_case_run_pass(self) -> None:
     """Under 'TestCase.run' a passing 'AppTest' test is a success."""

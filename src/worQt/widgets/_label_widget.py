@@ -19,7 +19,7 @@ from worktoy.core.sentinels import THIS
 from worktoy.desc import Field, AttriBox, Alias
 from worktoy.dispatch import overload
 from worktoy.waitaminute import TypeException
-from worktoy.waitaminute.control_flow import SkipSet
+from worktoy.core.control_flow import SkipSet
 
 from . import PaintedWidget
 from . import AbstractWidget as Widget

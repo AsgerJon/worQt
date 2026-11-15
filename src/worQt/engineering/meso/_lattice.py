@@ -20,10 +20,10 @@ from ._lattice_base import LatticeBase
 from ._phase_num import PhaseNum
 
 _REAL, _BOTTOM, _TOP, _LEFT, _RIGHT, _CORNER = 0, 1, 2, 3, 4, 5
-_STONE = PhaseNum.STONE.index
-_MORTAR = PhaseNum.MORTAR.index
-_BOND = PhaseNum.BOND.index
-_PLATEN = PhaseNum.PLATEN.index
+_STONE = [*PhaseNum].index(PhaseNum.STONE)
+_MORTAR = [*PhaseNum].index(PhaseNum.MORTAR)
+_BOND = [*PhaseNum].index(PhaseNum.BOND)
+_PLATEN = [*PhaseNum].index(PhaseNum.PLATEN)
 
 
 def _cross(one: torch.Tensor, two: torch.Tensor) -> torch.Tensor:
@@ -69,7 +69,7 @@ class Lattice(LatticeBase):
   join, a platen's being after the cells, the bottom's then the top's;
   'centres', 'lengths' and 'facetEnds' of their faces; 'distances' and
   'normals', from the first node to the second; 'phases', of 'PhaseNum',
-  by index; and 'moduli'. 'normalRows' and 'shearRows' are how a spring
+  by position; and 'moduli'. 'normalRows' and 'shearRows' are how a spring
   stretches and slides as the six movements, 'dofs', of its two bodies
   go.
   """

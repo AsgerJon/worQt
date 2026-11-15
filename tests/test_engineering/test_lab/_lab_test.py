@@ -70,8 +70,10 @@ class LabTest(BaseTest):
 
   @classmethod
   def tearDownClass(cls) -> None:
-    cls.worker.close()
-    super().tearDownClass()
+    try:
+      cls.worker.close()
+    finally:
+      super().tearDownClass()
 
 
 class LabWidgetTest(WidgetTest):

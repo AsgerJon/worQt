@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from worktoy.keenum import KeeFlags, KeeFlag
+from worktoy.keenum import KeeFlags, Kee
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
@@ -26,6 +26,6 @@ class ButtonStateFlags(KeeFlags):
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  HOVERED = KeeFlag()
-  PRESSED = KeeFlag()
-  DISABLED = KeeFlag()
+  HOVERED = Kee[str]()
+  PRESSED = Kee[str]()
+  DISABLED = Kee[str]()

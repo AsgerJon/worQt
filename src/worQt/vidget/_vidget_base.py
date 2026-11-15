@@ -15,7 +15,7 @@ from worktoy.desc import AttriBox, Field
 from worktoy.dispatch import overload
 from worktoy.utilities import textFmt
 from worktoy.waitaminute import TypeException
-from worktoy.waitaminute.control_flow import SkipSet
+from worktoy.core.control_flow import SkipSet
 
 from ..paint_ops import PaintBoxModel
 from ..utils import WFont, Color

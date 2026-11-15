@@ -30,10 +30,10 @@ class TestBoxEnums(UtilsTest):
     self.assertEqual(BoxNum.PADDING.value, 2)
     self.assertEqual(BoxNum.CONTENT.value, 3)
 
-  def test_box_num_index(self) -> None:
-    """'int' of a member is its enumeration index."""
-    self.assertEqual(int(BoxNum.MARGIN), 0)
-    self.assertEqual(int(BoxNum.CONTENT), 3)
+  def test_box_num_position(self) -> None:
+    """'BoxNum[x]' is the member at position 'x'."""
+    self.assertIs(BoxNum[0], BoxNum.MARGIN)
+    self.assertIs(BoxNum[3], BoxNum.CONTENT)
 
   def test_box_num_resolve_by_name(self) -> None:
     """A member resolves from its name, case-insensitively."""

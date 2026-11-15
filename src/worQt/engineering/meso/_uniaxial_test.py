@@ -16,7 +16,7 @@ from worktoy.waitaminute import MissingVariable
 from ._lattice_base import LatticeBase
 from ._phase_num import PhaseNum
 
-_PLATEN = PhaseNum.PLATEN.index
+_PLATEN = [*PhaseNum].index(PhaseNum.PLATEN)
 
 
 class UniaxialTest(BaseObject):

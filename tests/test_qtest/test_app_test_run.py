@@ -82,7 +82,8 @@ class TestAppTestRun(QTestTest):
     self.assertIn('run_after_failure', output)
 
   def test_sub_test_failure_fails(self) -> None:
-    """A failure raised from 'tearDown' fails the class (it used to pass)."""
+    """A failed 'subTest' block, reported from the cleanups, fails the
+    class (it used to pass)."""
     label, output = self._run('_sub_test_fail')
     self.assertEqual(label, 'FAIL', output)
     self.assertIn('run_after_sub_test', output)

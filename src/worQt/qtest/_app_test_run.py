@@ -159,9 +159,19 @@ class AppTestRun(BaseObject):
     the first line of the interpreter on. The child marker tells a suite
     running inside a test (as the harness's own tests do) that it is not
     the top-level run, so it leaves 'latest.log' alone. 'mode' decides
-    the Qt platform: the real one, or 'offscreen'.
+    the Qt platform: the real one, or 'offscreen'. A run taking no focus
+    ('QTEST_NO_FOCUS' '1') on a Wayland desktop with an X server beside
+    it puts its windows there ('xcb'; unless a platform is set): Wayland
+    has no way for a window to ask not to be focused, the compositor
+    decides, while on X an unactivated window that takes no focus is
+    left alone.
     """
     env = mode.applyEnv(dict(os.environ))
+    if (env.get('QTEST_NO_FOCUS') == '1'
+        and not env.get('QT_QPA_PLATFORM')
+        and env.get('XDG_SESSION_TYPE') == 'wayland'
+        and env.get('DISPLAY')):
+      env['QT_QPA_PLATFORM'] = 'xcb'
     env['PYTHONPATH'] = os.pathsep.join(sys.path)
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONFAULTHANDLER'] = '1'

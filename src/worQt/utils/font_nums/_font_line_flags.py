@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QFont
-from worktoy.keenum import KeeFlags, KeeFlag
+from worktoy.keenum import KeeFlags, Kee
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   pass
@@ -23,9 +23,9 @@ class FontLineFlags(KeeFlags):
   and 'strikeout' (or 'strikethrough').
   """
 
-  UNDERLINE = KeeFlag()
-  STRIKEOUT = KeeFlag()
-  OVERLINE = KeeFlag()
+  UNDERLINE = Kee[str]()
+  STRIKEOUT = Kee[str]()
+  OVERLINE = Kee[str]()
 
   def apply(self, font: QFont, ) -> QFont:
     """

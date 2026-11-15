@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QKeyEvent
 from worktoy.desc import AttriBox, Field
-from worktoy.waitaminute.control_flow import SkipSet
+from worktoy.core.control_flow import SkipSet
 
 from . import ViMode, VidgetBase, viMotions
 

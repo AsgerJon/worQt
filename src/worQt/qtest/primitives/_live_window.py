@@ -2,14 +2,19 @@
 LiveWindow shows a widget as a real top-level window and blocks until it is
 mapped and painted, so a test acts on an actually rendered window. In the
 headless fallback the offscreen platform still exposes the window, so the
-same fixture serves both modes.
+same fixture serves both modes. With 'QTEST_NO_FOCUS' set to '1' in the
+environment (an unattended run: the job runner's, user, 2026-11-14: "make
+it so the app doesn't take focus") the window is shown without being
+activated and takes no focus, so the person at the desktop keeps theirs.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QWidget
 from worktoy.desc import Field
@@ -63,12 +68,19 @@ class LiveWindow(BaseObject):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def show(self, ) -> QWidget:
-    """The 'show' method shows the widget, raises and activates it, and
-    blocks until it is exposed and painted, then returns it."""
+    """The 'show' method shows the widget, raises and activates it (in a
+    run that takes no focus, 'QTEST_NO_FOCUS', neither: shown without
+    activating, taking no focus), and blocks until it is exposed and
+    painted, then returns it."""
     widget = self.widget
-    widget.show()
-    widget.raise_()
-    widget.activateWindow()
+    if os.environ.get('QTEST_NO_FOCUS') == '1':
+      widget.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+      widget.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+      widget.show()
+    else:
+      widget.show()
+      widget.raise_()
+      widget.activateWindow()
     QTest.qWaitForWindowExposed(widget, self.__expose_timeout__)
     return widget
 

@@ -13,7 +13,7 @@ from PySide6.QtCore import Signal, Slot, QTimer
 from PySide6.QtGui import QMouseEvent, QEventPoint
 from worktoy.desc import Field
 from worktoy.utilities import maybe
-from worktoy.waitaminute.control_flow import SkipSet
+from worktoy.core.control_flow import SkipSet
 
 from . import LabelWidget
 from ..utils import ButtonStateFlags, MouseButtonNum

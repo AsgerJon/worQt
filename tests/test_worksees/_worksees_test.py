@@ -87,5 +87,7 @@ class WorkseesTest(BaseTest):
 
   @classmethod
   def tearDownClass(cls) -> None:
-    cls.solver.close()
-    super().tearDownClass()
+    try:
+      cls.solver.close()
+    finally:
+      super().tearDownClass()

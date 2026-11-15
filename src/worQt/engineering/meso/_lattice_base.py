@@ -17,8 +17,8 @@ from worktoy.waitaminute import MissingVariable
 from ._phase_material import PhaseMaterial
 from ._phase_num import PhaseNum
 
-_STONE = PhaseNum.STONE.index
-_MORTAR = PhaseNum.MORTAR.index
+_STONE = [*PhaseNum].index(PhaseNum.STONE)
+_MORTAR = [*PhaseNum].index(PhaseNum.MORTAR)
 
 
 class LatticeBase(BaseObject):
@@ -29,7 +29,7 @@ class LatticeBase(BaseObject):
   cells and the top's last. Each spring joins two bodies across the face
   they share: 'first' and 'second', the nodes it joins; 'centres' and
   'faceAreas' of its face; 'distances' and 'normals', from the first
-  node towards the second; 'phases', of 'PhaseNum', by index; and
+  node towards the second; 'phases', of 'PhaseNum', by position; and
   'stoneShares', how much of its reach is in stone, one for a spring on
   a platen from a cell in stone. 'normalRows' and 'shearRows' are how it
   stretches and slides, the latter one way in the plane and two in
@@ -193,8 +193,8 @@ class LatticeBase(BaseObject):
 
   @phases.GET
   def _getPhases(self, ) -> torch.Tensor:
-    """The 'phases' getter returns what each spring is of, by the index
-    of its 'PhaseNum'."""
+    """The 'phases' getter returns what each spring is of, by the position
+    of its member in 'PhaseNum'."""
     return self._part('phases')
 
   @stoneShares.GET

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QSizePolicy
 from worktoy.desc import Field, AttriBox
 from worktoy.utilities import maybe
 from worktoy.waitaminute import MissingVariable, TypeException
-from worktoy.waitaminute.control_flow import SkipSet
+from worktoy.core.control_flow import SkipSet
 
 from ..waitaminute.events import EventException
 from ..utils import EmptyPen, EmptyBrush, WPainter

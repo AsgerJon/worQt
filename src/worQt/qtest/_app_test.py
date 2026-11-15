@@ -102,17 +102,22 @@ class AppTest(BaseTest, metaclass=MetaTest):
     than their ids: a widget Qt created on its own side (a popup, a
     tooltip) may get a fresh Python wrapper on every lookup, so only a held
     reference keeps its identity stable until 'tearDown' compares against
-    it.
+    it. Closing a test's last window never quits the application (Qt's
+    default does: every waiter after it then returned at once, its loop
+    told to quit, 2026-11-14).
     """
     super().setUp()
+    QApplication.setQuitOnLastWindowClosed(False)
     self.__preopen__ = (*QApplication.topLevelWidgets(),)
 
   def tearDown(self, ) -> None:
     """
     The 'tearDown' method lets the base tear down, then disposes every
-    top-level widget this test opened - even when the base fails the test,
-    for instance over a failed 'subTest' block - so a failing test never
-    leaves windows behind for the next one.
+    top-level widget this test opened - even when the base raises - so a
+    failing test never leaves windows behind for the next one. worktoy
+    reports the failed 'subTest' blocks of a test after this, among its
+    cleanups ('BaseTest.doCleanups'), so a 'tearDown' that does not hand
+    on loses none.
     """
     try:
       super().tearDown()

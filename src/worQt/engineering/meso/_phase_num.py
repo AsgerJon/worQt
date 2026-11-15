@@ -14,7 +14,8 @@ class PhaseNum(KeeNum):
   between two nodes in one stone; 'MORTAR', between two nodes clear of
   every stone; 'BOND', crossing a stone's edge, where the mortar meets
   the stone; 'PLATEN', where a cell along the top or the bottom bears on
-  the platen. Each member's 'index' is the code the lattice keeps it by.
+  the platen. A member's position in 'PhaseNum' is the code the lattice
+  keeps it by.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
