@@ -11,3 +11,4 @@ dependencies:
   - shiboken6
   - icecream>=2.1.8
   - coverage>=7.13
+  - warp

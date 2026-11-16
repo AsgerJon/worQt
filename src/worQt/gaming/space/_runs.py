@@ -21,7 +21,18 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_timekeeper',
                'tests.test_space.test_flight',
                'tests.test_space.test_autopilot',
-               'tests.test_space.test_ascentguidance')
+               'tests.test_space.test_ascentguidance',
+               'tests.test_space.test_cockpit',
+               'tests.test_space.test_teleprinter',
+               'tests.test_space.test_tapedeck',
+               'tests.test_space.test_flightlog',
+               'tests.test_space.test_instruments',
+               'tests.test_space.test_cabinmixer',
+               'tests.test_space.test_furnishings',
+               'tests.test_space.test_crewman',
+               'tests.test_space.test_accelerometer',
+               'tests.test_space.test_cabinworld',
+               'tests.test_sandbox.test_peepkinds')
 
 
 def spaceTests() -> int:
@@ -37,22 +48,17 @@ def spaceShow() -> int:
   (the mouse kept in the window): the creative rocket on Terra's pad,
   the solar system as it stands today. Shift opens the throttle, Z at
   once; T holds the turn; A D, W S, Q E steer; M the map; , and . warp
-  (above the air, the engine shut). Returns the window's exit code once
-  it closes."""
+  (above the air, the engine shut); K and L the cabin's gravity; B gets
+  Asger up (W A S D, Space) and sits him again. Returns the window's
+  exit code once it closes."""
   return scopedModule('worQt.gaming.space')
 
 
 def mainSpace() -> int:
-  """The 'mainSpace' function demonstrates the space as main.py does a
-  show (user, 2026-11-14: "we do tests, lots of tests, before we start
-  the show"): the space's tests first, said how they went, then the
-  space window. Returns nought when the tests passed and the window
-  closed cleanly."""
-  tested = spaceTests()
-  print('[mainSpace] the tests %s; opening the space window' % (
-    'passed' if tested == 0 else 'FAILED (see latest.log)'), flush=True)
-  shown = spaceShow()
-  return tested or shown
+  """The 'mainSpace' function opens the space window, no tests first
+  (user, 2026-11-16: "can you pull the testing out of mainSpace pls?";
+  'spaceTests' runs them). Returns the window's exit code."""
+  return spaceShow()
 
 
 def spaceShots() -> int:

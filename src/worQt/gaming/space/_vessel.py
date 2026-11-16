@@ -21,16 +21,20 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
 
 #  The creative rocket, its own axes z along it, nose up, its middle its
-#  centre of mass: its mass (kg; its fuel never runs out, so it never
-#  changes), how far its centre is over its feet (m), its parts from the
-#  feet up (m: the aerospike's plug, the tank, the capsule) and its
-#  radius (m).
-MASS = 20e3
-CENTRE = 7.0
-PLUG = (0.6, 2.0)
-TANK = (2.0, 13.0)
-CAPSULE = (13.0, 16.0)
-RADIUS = 1.25
+#  centre of mass: how many times its first size it is (user,
+#  2026-11-16: "Size is more like four times as large. we'll cheat to
+#  make it possible with the engine": 64 m tall, 10 m round, a room for a
+#  cabin), its mass (kg, its first one's as dense; its fuel never runs
+#  out, so it never changes), how far its centre is over its feet (m),
+#  its parts from the feet up (m: the aerospike's plug, the tank, the
+#  capsule) and its radius (m).
+SIZE = 4.0
+MASS = 20e3 * SIZE ** 3
+CENTRE = 7.0 * SIZE
+PLUG = (0.6 * SIZE, 2.0 * SIZE)
+TANK = (2.0 * SIZE, 13.0 * SIZE)
+CAPSULE = (13.0 * SIZE, 16.0 * SIZE)
+RADIUS = 1.25 * SIZE
 #  Its moments of inertia about its own x, y, z, kg m²: a solid
 #  cylinder its length.
 LONG = CAPSULE[1]
@@ -38,18 +42,21 @@ INERTIA = (MASS * (3.0 * RADIUS * RADIUS + LONG * LONG) / 12.0,
            MASS * (3.0 * RADIUS * RADIUS + LONG * LONG) / 12.0,
            0.5 * MASS * RADIUS * RADIUS)
 #  Its four legs' feet, its own axes (m from its centre), 'SPREAD' m out.
-SPREAD = 2.2
+SPREAD = 2.2 * SIZE
 LEGS = ((SPREAD, 0.0, -CENTRE), (0.0, SPREAD, -CENTRE),
         (-SPREAD, 0.0, -CENTRE), (0.0, -SPREAD, -CENTRE))
 #  Its drag coefficient times area, m²: along it (its nose's cone) and
 #  across it (a cylinder side on).
 DRAG = (0.4 * math.pi * RADIUS * RADIUS, 1.0 * 2.0 * RADIUS * LONG)
-#  Its engine: 1.5 g of lift on Terra's pad (the spec), the magic fuel's
-#  specific impulse.
-THRUST = 1.5 * MASS * 9.82
+#  Its engine: 4 g of lift on Terra's pad (user, 2026-11-16: "1.5g aint
+#  cutting it! i have not achieved an orbit yet, it's too slow. Try 4g";
+#  magic: no engine of its size lifts it so), the magic fuel's specific
+#  impulse.
+THRUST = 4.0 * MASS * 9.82
 #  Its reaction wheels' most torque about its own x, y, z, N m: magic,
-#  creative ones, a quarter turn in about four seconds.
-WHEELS = (150e3, 150e3, 30e3)
+#  creative ones, a quarter turn in about four seconds whatever its size
+#  (its inertia grows as its size's fifth power).
+WHEELS = (150e3 * SIZE ** 5, 150e3 * SIZE ** 5, 30e3 * SIZE ** 5)
 #  How far its legs give standing (the legs' stiffness is the kernel's:
 #  'LEG_STIFF'), m.
 SAG = 0.0049

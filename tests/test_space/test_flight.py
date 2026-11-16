@@ -3,8 +3,8 @@ TestFlight covers the vessel's flight on the device (the CPU here):
 standing on the pad it turns with Terra, at rest on its legs; at full
 throttle it lifts off; coasting it keeps its orbit, a frame at a time
 (about 320 000 small steps an orbit, float32: the place and velocity
-in two parts) and at the fastest warp alike, Terra pulling alone; the air drags it as
-reckoned; near Luna it is handed to Luna.
+in two parts) and at the fastest warp alike, Terra pulling alone; the
+air drags it as reckoned; near Luna it is handed to Luna.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -36,19 +36,20 @@ class TestFlight(SpaceTest):
     self.assertGreater(dot(vessel.nose, unit(vessel.place)), 0.99999)
 
   def test_lifts(self) -> None:
-    """At full throttle (1.5 g) the vessel leaves the pad, held upright
-    by its autopilot: some 200 m up after 10 s, still climbing."""
+    """At full throttle (4 g) the vessel leaves the pad, held upright by
+    its autopilot: some 1.4 km up after 10 s (3 g left over its weight,
+    a little drag), still climbing."""
     system, flight = self.systemOf(), self.flightOf()
     vessel = self.padded(system)
     vessel.autopilot.engaged('hold', vessel.turn)
     vessel.engine.throttled(1.0)
     self.flownFrames(flight, vessel, system, 10.0)
     height = vessel.heightOver(system) - CENTRE
-    self.assertGreater(height, 180.0)
-    self.assertLess(height, 260.0)
+    self.assertGreater(height, 1350.0)
+    self.assertLess(height, 1480.0)
     self.assertEqual(vessel.touching, 0)
     climb = dot(vessel.groundVelocity(system), unit(vessel.place))
-    self.assertGreater(climb, 30.0)
+    self.assertGreater(climb, 250.0)
     self.assertGreater(dot(vessel.nose, unit(vessel.place)), 0.999)
 
   def test_coasts(self) -> None:

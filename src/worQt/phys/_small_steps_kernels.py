@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import warp as wp
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 #  What a touch is: a skin point against the ground, a ball against the

@@ -19,7 +19,7 @@ import warp as wp
 from ._hits_kernels import (HitRules, loggedOf, pairPushed, sidePushed,
                             slated, turned)
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 ZERO = wp.constant(wp.float64(0.0))

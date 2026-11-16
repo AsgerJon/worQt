@@ -274,7 +274,7 @@ def _kernels() -> object:
   if _KERNELS is not None:
     return _KERNELS
   import warp as wp
-  wp.config.quiet = True
+  wp.config.log_level = wp.LOG_WARNING
   choked = (2.0 / (GAMMA + 1.0)) ** (GAMMA / (GAMMA - 1.0))
   chokedFactor = math.sqrt(GAMMA) * (2.0 / (GAMMA + 1.0)) ** (
     (GAMMA + 1.0) / (2.0 * (GAMMA - 1.0)))

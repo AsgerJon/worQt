@@ -26,7 +26,8 @@ SANDBOX_TESTS = ('tests.test_sandbox.test_universe',
                  'tests.test_sandbox.test_vehicle',
                  'tests.test_sandbox.test_mixer',
                  'tests.test_sandbox.test_skin',
-                 'tests.test_sandbox.test_fourthpeep')
+                 'tests.test_sandbox.test_fourthpeep',
+                 'tests.test_sandbox.test_peepkinds')
 TRAINS_TESTS = ('tests.test_trains.test_loopworld',
                 'tests.test_trains.test_minecart',
                 'tests.test_trains.test_train',

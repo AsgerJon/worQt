@@ -11,16 +11,18 @@ import math
 from typing import TYPE_CHECKING
 
 from ._turns import cross, dot, unit
+from ._vessel import SIZE
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
   from ._vessel import Vessel
 
 #  Rad a pixel the mouse moves; how far the wheel takes it a notch; how
-#  near and far it may be, m; how far up or down it may look, rad.
+#  near and far it may be, m (the near the rocket's size); how far up or
+#  down it may look, rad.
 TURN = 0.004
 ZOOM = 0.85
-NEAREST, FURTHEST = 12.0, 2e5
+NEAREST, FURTHEST = 3.0 * SIZE, 2e5
 STEEPEST = 1.5
 
 
@@ -29,8 +31,10 @@ class ChaseCamera:
   ChaseCamera circles a vessel: 'yaw' (rad, round its up from its north
   toward its east), 'pitch' (rad above its horizon) and 'distance' (m),
   its up away from the middle of the body the vessel is kept from, so
-  the horizon stays level. It starts west of the vessel, a little high,
-  looking east the way a launch goes.
+  the horizon stays level; it looks at the point 'lift' m up the
+  vessel's nose from its middle (nought: its middle; the capsule's
+  windows 7.3). It starts west of the vessel, a little high, looking
+  east the way a launch goes.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -41,13 +45,16 @@ class ChaseCamera:
   yaw: float
   pitch: float
   distance: float
+  lift: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.yaw, self.pitch, self.distance = -0.5 * math.pi, 0.12, 45.0
+    self.yaw, self.pitch = -0.5 * math.pi, 0.12
+    self.distance = 11.0 * SIZE
+    self.lift = 0.0
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -74,7 +81,9 @@ class ChaseCamera:
     way = tuple(level * (math.cos(self.yaw) * n + math.sin(self.yaw) * e)
                 + math.sin(self.pitch) * u for n, e, u in zip(north, east,
                                                               up))
-    offset = tuple(self.distance * x for x in way)
+    nose = vessel.nose
+    offset = tuple(self.distance * x + self.lift * n for x, n in zip(
+      way, nose))
     return offset, tuple(-x for x in way), up
 
 

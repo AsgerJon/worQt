@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy
 import warp as wp
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 #  Each look by the number the kernel knows it by; Saturn's rings last.

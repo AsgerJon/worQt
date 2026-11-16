@@ -14,8 +14,9 @@ import math
 
 import numpy
 
+from ._cabin import capsuleShell
 from ._looks import RING_INNER, RING_OUTER
-from ._vessel import CAPSULE, CENTRE, LEGS, PLUG, RADIUS, TANK
+from ._vessel import CAPSULE, CENTRE, LEGS, PLUG, RADIUS, SIZE, TANK
 
 TAU = 2.0 * math.pi
 #  The ground's cap: how far round it reaches (rad: ~1900 km on Terra),
@@ -90,31 +91,28 @@ def padRows() -> tuple:
 def rocketParts() -> dict:
   """Returns the creative rocket's parts by look, each its rows and
   triangles about its centre of mass (its own axes, z its nose): the
-  aerospike's plug, the tank, the capsule and its nose, the legs."""
+  aerospike's plug, the tank, the capsule's skin (its windows cut: the
+  cabin inside, '_cabin') and its nose, the legs."""
   low = -CENTRE
   out = {}
   out['plug'] = _joined([
-    _frustum(low + PLUG[0], 0.35, low + PLUG[1], RADIUS * 0.9, 32, True,
-             False)])
+    _frustum(low + PLUG[0], 0.35 * SIZE, low + PLUG[1], RADIUS * 0.9, 32,
+             True, False)])
   out['tank'] = _joined([
     _frustum(low + TANK[0], RADIUS, low + TANK[1], RADIUS, 40, True,
              True)])
-  out['capsule'] = _joined([
-    _frustum(low + CAPSULE[0], RADIUS, low + CAPSULE[1] - 0.4, 0.45, 40,
-             False, False),
-    _frustum(low + CAPSULE[1] - 0.4, 0.45, low + CAPSULE[1], 0.05, 24,
-             False, True)])
+  out['capsule'] = capsuleShell(False)
   legs = []
   for foot in LEGS:
     out_ = numpy.array([foot[0], foot[1], 0.0]) / math.hypot(foot[0],
                                                               foot[1])
-    top = out_ * (RADIUS - 0.05) + numpy.array([0.0, 0.0, low + TANK[0]
-                                                + 0.6])
-    bottom = numpy.array(foot, numpy.float64) + numpy.array([0.0, 0.0,
-                                                             0.25])
-    legs.append(_strut(top, bottom, 0.12))
-    legs.append(_frustum(foot[2], 0.45, foot[2] + 0.25, 0.3, 16, True,
-                         True, (foot[0], foot[1])))
+    top = out_ * (RADIUS - 0.05 * SIZE) + numpy.array(
+      [0.0, 0.0, low + TANK[0] + 0.6 * SIZE])
+    bottom = numpy.array(foot, numpy.float64) + numpy.array(
+      [0.0, 0.0, 0.25 * SIZE])
+    legs.append(_strut(top, bottom, 0.12 * SIZE))
+    legs.append(_frustum(foot[2], 0.45 * SIZE, foot[2] + 0.25 * SIZE,
+                         0.3 * SIZE, 16, True, True, (foot[0], foot[1])))
   out['legs'] = _joined(legs)
   return out
 

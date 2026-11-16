@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import warp as wp
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 ZERO = wp.constant(wp.float64(0.0))

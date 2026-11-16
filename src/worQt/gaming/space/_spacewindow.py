@@ -1,14 +1,17 @@
 """
 SpaceWindow flies the creative rocket (user, 2026-11-16: "let's start
 with a 'creative' rocket with inf fuel"): the keys and the mouse, time
-and its warp, the ascent guidance, the flight each frame, the flight
-view with its artificial horizon and control board, or the map.
+and its warp, the ascent guidance, the flight each frame, Asger's
+cockpit and its instruments and their sound, the chase view with its
+artificial horizon and control board, or the map.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import faulthandler
 import math
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -17,21 +20,41 @@ from PySide6.QtCore import QEvent, QPointF, Qt, QTimer
 from PySide6.QtWidgets import QMainWindow
 
 from worQt.gaming.sandbox._pointer import Pointer
+from worQt.gaming.sandbox._speaker import Speaker
 
+from ._accelerometer import Accelerometer
+from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
+from ._cabinmixer import THUD, THUDS, TOLD
 from ._chasecamera import ChaseCamera
+from ._cockpit import Cockpit
+from ._crewman import SIT
+from ._dashpictures import picturesReady
+from ._furnishings import candleLight
+from ._instruments import Instruments
 from ._navball import Navball
 from ._orrery import Orrery, lengthText, timeText
 from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
 from ._spaceviewport import SpaceViewport
+from ._teleprinter import ICONS
 from ._timekeeper import Timekeeper
-from ._turns import dot, norm, unit
+from ._turns import dot, norm, rotated, unit
 from ._vessel import Vessel
 
 #  A frame, ms; the longest step a frame takes, s.
 TICK = 16
 LONGEST_REAL = 0.1
+#  Loading that cannot be told from failing is failing (user, 2026-11-16:
+#  "If correct loading cannot be distinguished from failed loading, it
+#  *is* failed loading"): the window's thread frozen this long, s, every
+#  thread's stack goes to the console (faulthandler's own thread: it
+#  needs no Python, so it speaks even when Python is locked); a readying
+#  step taking this long is called stuck on screen and on the console.
+FROZEN = 10.0
+STUCK = 60.0
+#  The last readying step's words (the scene furnished on Qt's thread).
+FURNISHING = 'furnishing the cabin (the deck, the room, the dashboard)'
 #  The throttle's keys: how fast Shift and Ctrl open and close it, a s.
 THROTTLE_RATE = 0.6
 #  The aim's keys (user, 2026-11-16: "roll-insensitive controls that
@@ -55,6 +78,10 @@ FLASH = 0.25
 PICKED = 22.0
 #  The artificial horizon's radius, pixels (the scene's 'navRadius').
 NAV_RADIUS = 104.0
+#  Looking at the throttle's slide, the wheel moves it this much a
+#  notch, a click this much (a right click back).
+WHEEL_THROTTLE = 0.05
+CLICK_THROTTLE = 0.1
 #  The keys as their caps on the board name them.
 CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Control: 'Ctrl',
         Qt.Key.Key_Z: 'Z', Qt.Key.Key_X: 'X', Qt.Key.Key_T: 'T',
@@ -64,20 +91,40 @@ CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Control: 'Ctrl',
         Qt.Key.Key_Period: '.', Qt.Key.Key_Slash: '/', Qt.Key.Key_G: 'G',
         Qt.Key.Key_J: 'J', Qt.Key.Key_BracketLeft: '[',
         Qt.Key.Key_BracketRight: ']', Qt.Key.Key_M: 'M',
-        Qt.Key.Key_Backspace: '⌫'}
-#  A click on a lamp of the board does what its key does.
-ACTIONS = {'full': Qt.Key.Key_Z, 'cut': Qt.Key.Key_X,
-           'hold': Qt.Key.Key_T, 'prograde': Qt.Key.Key_F,
-           'retrograde': Qt.Key.Key_R, 'faster': Qt.Key.Key_Period,
-           'stop': Qt.Key.Key_Slash, 'toAp': Qt.Key.Key_G,
-           'ascent': Qt.Key.Key_J, 'higher': Qt.Key.Key_BracketRight,
-           'map': Qt.Key.Key_M, 'pad': Qt.Key.Key_Backspace}
-#  The keys that take the controls from the ascent guidance.
-TAKING = (Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Z,
-          Qt.Key.Key_X, Qt.Key.Key_T, Qt.Key.Key_F, Qt.Key.Key_R,
-          Qt.Key.Key_Backspace, *AIMING, *ROLLING)
+        Qt.Key.Key_Backspace: '⌫', Qt.Key.Key_V: 'V',
+        Qt.Key.Key_P: 'P', Qt.Key.Key_O: 'O', Qt.Key.Key_I: 'I',
+        Qt.Key.Key_K: 'K', Qt.Key.Key_L: 'L', Qt.Key.Key_B: 'B'}
+#  The action each key asks for.
+KEY_ACTIONS = {Qt.Key.Key_Z: 'full', Qt.Key.Key_X: 'cut',
+               Qt.Key.Key_T: 'hold', Qt.Key.Key_F: 'prograde',
+               Qt.Key.Key_R: 'retrograde', Qt.Key.Key_Period: 'faster',
+               Qt.Key.Key_Comma: 'slower', Qt.Key.Key_Slash: 'stop',
+               Qt.Key.Key_G: 'toAp', Qt.Key.Key_J: 'ascent',
+               Qt.Key.Key_BracketRight: 'higher',
+               Qt.Key.Key_BracketLeft: 'lower', Qt.Key.Key_M: 'map',
+               Qt.Key.Key_Backspace: 'pad', Qt.Key.Key_V: 'view',
+               Qt.Key.Key_P: 'play', Qt.Key.Key_O: 'halt',
+               Qt.Key.Key_I: 'eject', Qt.Key.Key_K: 'lighter',
+               Qt.Key.Key_L: 'heavier', Qt.Key.Key_B: 'buckle'}
+#  The cabin's input each action is worked by (Asger glances at it: user,
+#  2026-11-16: "When I press a keyboard key my view will turn to center
+#  on that key"), where it differs from the action's own.
+WORKED_BY = {'faster': 'warp', 'slower': 'warp', 'higher': 'orbit',
+             'lower': 'orbit', 'aim': 'aim', 'throttle': 'throttle',
+             'lighter': 'gravity', 'heavier': 'gravity'}
+#  Out of his chair (user, 2026-11-17: getting up, "FAFO rules") Asger
+#  works the dashboard only by reaching it (a click on what he looks at);
+#  these keys still do their work (the view's own; B sits him down), his
+#  legs take W A S D ('MOVING') and Space (a jump, or a push off what he
+#  touches).
+UP_KEYS = ('map', 'view', 'buckle')
+MOVING = {Qt.Key.Key_W: 'ahead', Qt.Key.Key_S: 'back',
+          Qt.Key.Key_A: 'left', Qt.Key.Key_D: 'right'}
+#  The actions that take the controls from the ascent guidance.
+TAKING = ('full', 'cut', 'hold', 'prograde', 'retrograde', 'aim',
+          'throttle', 'pad')
 HINT = ('click the view: look round   wheel: zoom   Esc: let the mouse go'
-        '   click a lamp: do it')
+        '   click a lamp: do it   V: Asger\'s eyes   B: get up / sit')
 MAP_HINT = ('drag: turn   wheel: zoom   click a name: look at it   '
             '⌫: back to the rocket   M: back to flying')
 
@@ -86,16 +133,17 @@ class SpaceWindow(QMainWindow):
   """
   SpaceWindow flies a creative 'Vessel' through the solar system of the
   day it opens ('system', its time kept by 'keeper'), seen through a
-  'SpaceViewport': the flight view ('chase', a 'ChaseCamera') with its
-  artificial horizon ('navball') and control board, or the map
-  ('orrery', M). It readies itself first on a thread of its own (the
-  flight's kernel compiled, the looks painted: 'readying'), then each
-  frame takes the keys, lets the ascent guidance fly ('guidance', J),
-  flies the vessel ('Flight', on the GPU), moves time on and draws
-  ('Scenery'). Time warp only above the air, off the ground, the engine
-  shut (the spec); warping to the apoapsis eases off 'APOAPSIS_LEAD' s
-  before it. W S A D move the autopilot's aim (over the horizon, off the
-  path), never the rocket about its own axes.
+  'SpaceViewport': Asger's eyes in his cockpit ('cockpit', its
+  'instruments': the dashboard alive, its sound in a process of its own,
+  'speaker'), the chase view ('chase') with its artificial horizon
+  ('navball') and control board, or the map ('orrery', M). It readies
+  itself first on a thread of its own (the flight's kernel compiled, the
+  looks painted: 'readying'), then each frame takes the keys, lets the
+  ascent guidance fly ('guidance', J), flies the vessel ('Flight', on the
+  GPU), moves time on and draws ('Scenery'). Every key, click on the
+  cabin's inputs and click on the board's lamps asks for an action
+  ('_acted'); a key turns Asger's head to the input working it. Time
+  warp only above the air, off the ground, the engine shut (the spec).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -110,19 +158,26 @@ class SpaceWindow(QMainWindow):
     self.keeper = Timekeeper(self.system)
     self.vessel = Vessel()
     self.guidance = AscentGuidance()
+    self.accelerometer, self.world, self._leaping = (Accelerometer(), None,
+                                                     False)
     self._padded()
     self.chase, self.orrery, self.scenery = (ChaseCamera(), Orrery(),
                                              Scenery())
     self.navball = Navball()
+    self.cockpit, self.inside = Cockpit(), True
+    self.instruments = Instruments(self.cockpit)
+    self.speaker = Speaker('worQt.gaming.space._cabinmixer:CabinMixer',
+                           TOLD)
     self.flight, self.files, self.readying = None, None, 'starting'
+    self._step, self._stuck = time.perf_counter(), False
     self.trouble, self.held, self.mapOpen = None, {}, False
     self.note, self._noted, self._flashed = '', 0.0, {}
-    self._dragged, self._dragFrom, self._pressedAt = False, None, None
+    self._dragged, self._dragFrom, self._clickedAt = False, None, None
     self._ticked = time.perf_counter()
     self.viewport = SpaceViewport()
     self.setCentralWidget(self.viewport)
     self.viewport.quick.installEventFilter(self)
-    self.viewport.boardPicked.connect(self._boardPicked)
+    self.viewport.boardPicked.connect(self._acted)
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
     self.timer.timeout.connect(self.tick)
@@ -133,15 +188,19 @@ class SpaceWindow(QMainWindow):
 
   def showEvent(self, event: object) -> None:
     """Shown the first time, the window readies itself on a thread of its
-    own and starts its frames."""
+    own, starts its sound and its frames."""
     if not self.timer.isActive():
+      faulthandler.dump_traceback_later(FROZEN, False, sys.stderr)
       threading.Thread(target=self._readied, daemon=True).start()
+      self.speaker.start()
       self.timer.start(TICK)
     QMainWindow.showEvent(self, event)
 
   def closeEvent(self, event: object) -> None:
-    """Closed, the window stops its frames."""
+    """Closed, the window stops its frames and its sound."""
     self.timer.stop()
+    faulthandler.cancel_dump_traceback_later()
+    self.speaker.close()
     QMainWindow.closeEvent(self, event)
 
   def eventFilter(self, watched: object, event: object) -> bool:
@@ -169,10 +228,18 @@ class SpaceWindow(QMainWindow):
     if kind == QEvent.Type.MouseButtonPress and not self.pointer.taken:
       self.pointer.take()
       return True
+    if kind == QEvent.Type.MouseButtonPress and self.inside:
+      self._used(event.button() == Qt.MouseButton.RightButton)
+      return True
     if kind == QEvent.Type.MouseMove:
       self.pointer.movedTo(event.globalPosition(), event.position())
     elif kind == QEvent.Type.Wheel:
-      self.chase.zoomed(event.angleDelta().y() / 120.0)
+      notches = event.angleDelta().y() / 120.0
+      if not self.inside:
+        self.chase.zoomed(notches)
+      elif self._looked() == 'throttle':
+        engine = self.vessel.engine
+        engine.throttled(engine.throttle + WHEEL_THROTTLE * notches)
       return True
     elif kind == QEvent.Type.Leave:
       self.pointer.forget()
@@ -184,8 +251,10 @@ class SpaceWindow(QMainWindow):
 
   def tick(self, ) -> None:
     """The 'tick' method takes the keys, lets the ascent guidance fly,
-    flies the vessel through the frame's time (warped), and draws."""
+    flies the vessel through the frame's time (warped), keeps the cabin
+    alive, tells the sound, and draws."""
     now = time.perf_counter()
+    faulthandler.dump_traceback_later(FROZEN, False, sys.stderr)
     real, self._ticked = min(LONGEST_REAL, now - self._ticked), now
     viewport = self.viewport
     if self.trouble is not None:
@@ -194,12 +263,10 @@ class SpaceWindow(QMainWindow):
       return
     if self.flight is None or not viewport.loaded:
       problems = '\n'.join(viewport.problems)
-      viewport.hudShown('', '', problems or 'Readying: %s' % self.readying)
+      viewport.hudShown('', '', problems or self._readyingText(now))
       return
     if not viewport.furnishedYet:
-      viewport.furnished(self.system, self.files,
-                         self.scenery.orbitsOf(self.system),
-                         self.navball.pictureReady())
+      self._furnished(now)
       return
     keeper, vessel, system = self.keeper, self.vessel, self.system
     self._steered(real)
@@ -209,20 +276,37 @@ class SpaceWindow(QMainWindow):
     seconds = keeper.secondsOf(real)
     self.flight.flown((vessel,), system, keeper.now, seconds)
     keeper.ticked(seconds)
+    self.accelerometer.measured(vessel, system, seconds, keeper.factor > 1)
+    self._cabinMoved(real)
+    self.instruments.acted(real, vessel, system, keeper, self.guidance,
+                           self.mapOpen, self.inside, self._header())
+    told = list(self.instruments.told(vessel, system, self.inside))
+    told[THUDS], told[THUD] = self.world.thuds, self.world.loudest
+    self.speaker.heard(tuple(told))
     right, down = self.pointer.moved()
     if right or down:
-      self.chase.turned(right, down)
+      (self.cockpit if self.inside else self.chase).turned(right, down)
     if self.mapOpen:
       quick = viewport.quick
       viewport.mapShown(self.scenery.mapOf(
         system, vessel, self.orrery, keeper.now, quick.width(),
         quick.height()))
     else:
-      viewport.flightShown(self.scenery.flightOf(
-        system, vessel, self.chase, keeper.now), system, vessel.anchor)
-      viewport.navballShown(self.navball.frameOf(vessel, system,
-                                                 NAV_RADIUS))
+      ball = self.navball.frameOf(vessel, system, NAV_RADIUS)
+      frame = self.scenery.flightOf(system, vessel, self._seen(),
+                                    keeper.now)
+      cabin = self.scenery.cabinOf(system, vessel, self.cockpit,
+                                   frame['rocket'], ball, self._dash(),
+                                   self.inside)
+      viewport.flightShown(frame, cabin, system, vessel.anchor)
+      viewport.navballShown(ball)
     viewport.boardShown(self._boardOf(now))
+    looked = self.cockpit.lookedAt() if self.inside else None
+    stamp = (self.began + timedelta(seconds=keeper.elapsed)).strftime(
+      '%Y-%m-%d  %H:%M:%S')
+    viewport.cockpitShown(self.inside, (looked.key, looked.peep.prompt())
+                          if looked else None,
+                          self.instruments.printer.paper(), stamp)
     viewport.hudShown(self._readout(), MAP_HINT if self.mapOpen else HINT,
                       '')
 
@@ -235,6 +319,7 @@ class SpaceWindow(QMainWindow):
     the GPU (or the CPU without one), the looks painted; says each step
     and how long it took ('readying', and on the console)."""
     try:
+      from ._cabinworld import CabinWorld
       from ._flight import Flight, preloadedFlight
       from ._looks import looksReady
       from worQt.phys._compiled import gpuDevice
@@ -246,17 +331,65 @@ class SpaceWindow(QMainWindow):
                  % took)
       began = time.perf_counter()
       files = looksReady(device, self._said)
-      self._said('the planets painted in %.1f s'
+      self._said('the planets painted in %.1f s; the cabin\'s physics on'
+                 ' %s (the first time ~10 s)' % (time.perf_counter()
+                                                 - began, device))
+      began = time.perf_counter()
+      self.world = CabinWorld(device)
+      self._said('the cabin\'s physics ready in %.1f s'
                  % (time.perf_counter() - began))
       self.files, self.flight = files, Flight(device)
     except Exception as error:
       self.trouble = '%s: %s' % (type(error).__name__, error)
       print('[space] could not ready: %s' % self.trouble, flush=True)
 
+  def _furnished(self, now: float) -> None:
+    """Furnishes the scene (on this thread: Qt's), said first on screen
+    and on the console (a frame drawn with it before the work), then how
+    long it took and that it flies."""
+    if self.readying != FURNISHING:
+      self._said(FURNISHING)
+      self.viewport.hudShown('', '', self._readyingText(now))
+      return
+    began = time.perf_counter()
+    if not self.viewport.furnished(self.system, self.files,
+                                   self.scenery.orbitsOf(self.system),
+                                   self.navball.pictureReady(),
+                                   picturesReady(),
+                                   self.scenery.cabinPieces(self.cockpit)):
+      self.trouble = 'the scene was gone when it was to be furnished'
+      print('[space] could not ready: %s' % self.trouble, flush=True)
+      return
+    self._said('the cabin furnished in %.1f s; ready, flying'
+               % (time.perf_counter() - began))
+
   def _said(self, line: str) -> None:
-    """Says how readying goes: on screen and on the console."""
-    self.readying = line
+    """Says how readying goes: on screen and on the console (its step's
+    clock started anew)."""
+    self.readying, self._step, self._stuck = line, time.perf_counter(), False
     print('[space] %s' % line, flush=True)
+
+  def _readyingText(self, now: float) -> str:
+    """Returns what the screen says while readying: the step and how
+    long it has taken; past 'STUCK' s, that it is stuck (said once on the
+    console too, with every thread's stack)."""
+    took = now - self._step
+    text = 'Readying: %s  (%.0f s)' % (self.readying, took)
+    if took < STUCK:
+      return text
+    if not self._stuck:
+      self._stuck = True
+      print('[space] STUCK: %.0f s on "%s"; every thread now:'
+            % (took, self.readying), flush=True)
+      faulthandler.dump_traceback(sys.stderr, True)
+    return text + '\nSTUCK: over %.0f s on this step (the console has' \
+                  ' every thread)' % STUCK
+
+  def _header(self, ) -> str:
+    """Returns the teleprinter's first line: where and when."""
+    return '%s WORQT SPACE  TERRA  %s' % (ICONS['rocket'],
+                                          self.began.strftime(
+                                            '%Y-%m-%d %H:%M UTC'))
 
   def _padded(self, ) -> None:
     """Stands the vessel on Terra's pad now, the engine shut, the
@@ -269,87 +402,215 @@ class SpaceWindow(QMainWindow):
     vessel.autopilot.engaged('off', vessel.turn)
     vessel.steered(0.0, 0.0, 0.0)
     self.keeper.realtime()
+    self.accelerometer.reset()
 
   def _pressed(self, key: object) -> bool:
-    """Acts on a key pressed; returns whether it was one of the
-    window's."""
-    vessel, keeper, system = self.vessel, self.keeper, self.system
-    pilot = vessel.autopilot
+    """Acts on a key pressed (its action, Asger glancing at the input
+    working it); returns whether it was one of the window's."""
     if key in CAPS:
       self._flashed[CAPS[key]] = time.perf_counter()
-    if key in TAKING and self.guidance.on:
-      self.guidance.stopped(vessel)
-      self._noteOf('Ascent guidance off: you took the controls')
     if key == Qt.Key.Key_Escape:
       self.pointer.letGo()
-    elif key in AIMING:
+      return True
+    if key == Qt.Key.Key_E and self.inside:
+      self._used(False)
+      return True
+    if not self.cockpit.crewman.buckled:
+      return self._upPressed(key)
+    if key in AIMING:
       up, right = AIMING[key]
-      vessel.aimNudged(system, up * AIM_STEP, right * AIM_STEP)
-    elif key == Qt.Key.Key_Z:
-      vessel.engine.throttled(1.0)
-    elif key == Qt.Key.Key_X:
-      vessel.engine.throttled(0.0)
-    elif key == Qt.Key.Key_T:
-      pilot.engaged('off' if pilot.mode == 'hold' else 'hold', vessel.turn)
-    elif key == Qt.Key.Key_F:
-      pilot.engaged('off' if pilot.mode == 'prograde' else 'prograde',
-                    vessel.turn)
-    elif key == Qt.Key.Key_R:
-      pilot.engaged('off' if pilot.mode == 'retrograde'
-                    else 'retrograde', vessel.turn)
-    elif key == Qt.Key.Key_J:
+      self._taken('aim')
+      self.vessel.aimNudged(self.system, up * AIM_STEP, right * AIM_STEP)
+      self._glanced('aim')
+      return True
+    if key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):
+      self._taken('throttle')
+      self._glanced('throttle')
+      return True
+    if key in ROLLING:
+      self._taken('aim')
+      return True
+    action = KEY_ACTIONS.get(key)
+    if action is None:
+      return False
+    self._acted(action)
+    self._glanced(action)
+    return True
+
+  def _glanced(self, action: str) -> None:
+    """Turns Asger's head to the input working 'action' (from his eyes
+    only: the chase view's camera is the mouse's alone)."""
+    if self.inside:
+      self.cockpit.glanced(WORKED_BY.get(action, action))
+
+  def _taken(self, action: str) -> None:
+    """Lets the ascent guidance go if 'action' takes the controls."""
+    if action in TAKING and self.guidance.on:
+      self.guidance.stopped(self.vessel)
+      self._noteOf('Ascent guidance off: you took the controls')
+
+  def _acted(self, action: str, back: bool = False) -> None:
+    """Does what 'action' asks (a key, a click on the cabin's input or on
+    the board's lamp; 'back': a right click, the other way): the input's
+    key sinks if it is one."""
+    vessel, keeper, system = self.vessel, self.keeper, self.system
+    pilot, engine = vessel.autopilot, vessel.engine
+    self._taken(action)
+    self.instruments.pressed(action)
+    if action in ('hold', 'prograde', 'retrograde'):
+      pilot.engaged('off' if pilot.mode == action else action, vessel.turn)
+    elif action == 'aim':
+      if pilot.mode == 'aim':
+        pilot.engaged('off', vessel.turn)
+      else:
+        vessel.aimNudged(system, 0.0, 0.0)
+    elif action == 'full':
+      engine.throttled(1.0)
+    elif action == 'cut':
+      engine.throttled(0.0)
+    elif action == 'throttle':
+      engine.throttled(engine.throttle + (-CLICK_THROTTLE if back
+                                          else CLICK_THROTTLE))
+    elif action == 'ascent':
       if self.guidance.on:
         self.guidance.stopped(vessel)
       else:
         self.guidance.started(vessel, system)
-    elif key == Qt.Key.Key_BracketLeft:
-      self.guidance.targeted(-1)
-    elif key == Qt.Key.Key_BracketRight:
-      self.guidance.targeted(1)
-    elif key == Qt.Key.Key_Period:
+    elif action in ('higher', 'lower', 'orbit'):
+      self.guidance.targeted(-1 if action == 'lower' or back else 1)
+    elif action in ('faster', 'warp') and not back:
       why = self._noWarp()
       if why:
         self._noteOf('No warp: %s' % why)
       else:
         keeper.faster()
-    elif key == Qt.Key.Key_Comma:
+    elif action in ('slower', 'warp'):
       keeper.slower()
-    elif key == Qt.Key.Key_Slash:
+    elif action == 'stop':
       keeper.realtime()
-    elif key == Qt.Key.Key_G:
+    elif action == 'toAp':
       self._toApoapsis()
-    elif key == Qt.Key.Key_M:
+    elif action == 'map':
       self.mapOpen = not self.mapOpen
       if self.mapOpen:
         self.pointer.letGo()
         self.orrery.opened(vessel, system)
-    elif key == Qt.Key.Key_Backspace:
+    elif action == 'pad':
       if self.mapOpen:
         self.orrery.opened(vessel, system)
       else:
         self._padded()
-    elif key not in ROLLING and key not in (Qt.Key.Key_Shift,
-                                            Qt.Key.Key_Control):
+    elif action == 'view':
+      self.inside = not self.inside
+    elif action == 'buckle':
+      self._buckled()
+    elif action in ('gravity', 'heavier', 'lighter'):
+      lighter = action == 'lighter' or (action == 'gravity' and back)
+      if self.cockpit.heavier(-1 if lighter else 1):
+        self._noteOf('Gravity %s' % _gravityText(self.cockpit.weight()))
+    elif action == 'play':
+      self.instruments.deck.play()
+    elif action == 'halt':
+      self.instruments.deck.halt()
+    elif action == 'eject':
+      self.instruments.deck.eject()
+
+  def _upPressed(self, key: object) -> bool:
+    """Acts on a key pressed while Asger is out of his chair: his legs'
+    keys (held; Space a leap), the view's own keys and B; the dashboard's
+    others he cannot reach from here (said)."""
+    if key in MOVING:
+      return True
+    if key == Qt.Key.Key_Space:
+      self._leaping = True
+      return True
+    if key in (Qt.Key.Key_Shift, Qt.Key.Key_Control) or key in ROLLING:
+      return True
+    action = KEY_ACTIONS.get(key)
+    if action is None:
       return False
+    if action in UP_KEYS:
+      self._acted(action)
+    else:
+      self._noteOf('Asger is out of his chair: B sits him down (or reach'
+                   ' the input and click it)')
     return True
 
-  def _boardPicked(self, action: str) -> None:
-    """Does what a click on the board's lamp 'action' asks: as its key
-    does; the aim's lamp aims where the nose points."""
-    if action == 'aim':
-      if self.guidance.on:
-        self.guidance.stopped(self.vessel)
-      self.vessel.aimNudged(self.system, 0.0, 0.0)
-      return
-    key = ACTIONS.get(action)
-    if key is not None:
-      self._pressed(key)
+  def _buckled(self, ) -> None:
+    """Gets Asger up out of his chair, or sits him down if he is near
+    enough to it (said either way)."""
+    cockpit = self.cockpit
+    if cockpit.crewman.buckled:
+      cockpit.gotUp()
+      self._noteOf('Asger is up: W A S D, Space, B to sit again')
+    elif cockpit.satDown():
+      self._noteOf('Asger sits')
+    else:
+      self._noteOf('Too far from the chair (%.1f m): within %.0f m'
+                   % (cockpit.crewman.seatFar(), SIT))
+
+  def _cabinMoved(self, real: float) -> None:
+    """Moves what is loose in the cabin 'real' s on: Asger (righted
+    against the pull on him, his legs as the keys held want, a leap
+    once) and the loose things."""
+    cockpit, accelerometer = self.cockpit, self.accelerometer
+    crewman, weight = cockpit.crewman, cockpit.weight()
+    want = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
+    if not crewman.buckled:
+      pull = accelerometer.pullAt(crewman.middle, crewman.velocity, weight)
+      crewman.righted(pull, real)
+      held = {MOVING[key] for key in self.held if key in MOVING}
+      wanted, walking, wanting = crewman.wantOf(held, cockpit.yaw,
+                                                cockpit.pitch, pull)
+      leap = crewman.leapOf(pull) if self._leaping else (0.0, 0.0, 0.0)
+      want = (wanted, walking, wanting, leap)
+    self._leaping = False
+    self.world.stepped(real, accelerometer, crewman, weight, want)
+
+  def _dash(self, ) -> dict:
+    """Returns what the cabin shows now: the instruments', the loose
+    things where they are, the pull at the candles (g)."""
+    dash = self.instruments.dash()
+    dash['loose'] = self.world.shown()
+    pull = self.accelerometer.pullAt(candleLight(), (0.0, 0.0, 0.0),
+                                     self.cockpit.weight())
+    dash['weight'] = norm(pull) / G0
+    return dash
+
+  def _seen(self, ) -> tuple:
+    """Returns where the eye is from the vessel's middle, the way it
+    looks and its up: Asger's eyes (sunk by the thrust, shaken by the
+    engine) or the chase camera's."""
+    vessel = self.vessel
+    if not self.inside:
+      return self.chase.eyeOf(vessel, self.system)
+    engine = vessel.engine
+    felt = self.accelerometer.felt[2] / G0 + self.cockpit.weight()
+    eye = self.cockpit.eyeOf(felt, engine.throttle)
+    look, up = self.cockpit.looking()
+    turn = vessel.turn
+    return rotated(turn, eye), rotated(turn, look), rotated(turn, up)
+
+  def _looked(self, ) -> str:
+    """Returns the action of the input Asger looks at ('' none)."""
+    control = self.cockpit.lookedAt()
+    return control.action if control else ''
+
+  def _used(self, back: bool) -> None:
+    """Works the input Asger looks at ('back': a right click, the other
+    way: the slide down, the knobs back)."""
+    action = self._looked()
+    if action:
+      self._acted(action, back)
 
   def _steered(self, real: float) -> None:
     """Sets the throttle and the roll from the keys held, and moves the
     aim on while its keys are held past a tap."""
     held, engine, vessel = self.held, self.vessel.engine, self.vessel
     now = time.perf_counter()
+    if not self.cockpit.crewman.buckled:
+      vessel.steered(0.0, 0.0, 0.0)
+      return
     if Qt.Key.Key_Shift in held:
       engine.throttled(engine.throttle + THROTTLE_RATE * real)
     if Qt.Key.Key_Control in held:
@@ -398,8 +659,9 @@ class SpaceWindow(QMainWindow):
     self.keeper.aim(conic.timeToApoapsis(0.0) - APOAPSIS_LEAD)
 
   def _noteOf(self, text: str) -> None:
-    """Shows 'text' a few seconds."""
+    """Shows 'text' a few seconds (and types it, inside)."""
     self.note, self._noted = text, time.perf_counter()
+    self.instruments.printer.said(text)
 
   def _boardOf(self, now: float) -> dict:
     """Returns what the control board shows: the throttle, the
@@ -418,27 +680,29 @@ class SpaceWindow(QMainWindow):
             'toAp': self.keeper.aimed is not None,
             'ascent': guidance.on, 'phase': phase,
             'target': lengthText(guidance.target),
-            'map': self.mapOpen, 'held': sorted(held)}
+            'map': self.mapOpen, 'held': sorted(held),
+            'gravity': _gravityText(self.cockpit.weight()),
+            'up': not self.cockpit.crewman.buckled}
 
   def _mapMouse(self, kind: object, event: object) -> bool:
     """Takes the mouse on the map: a drag turns it, the wheel zooms, a
     click on a mark looks at what it marks."""
     if kind == QEvent.Type.MouseButtonPress:
-      self._dragFrom = self._pressedAt = event.position()
+      self._dragFrom = self._clickedAt = event.position()
       self._dragged = False
       return True
     if kind == QEvent.Type.MouseMove and self._dragFrom is not None:
       at = event.position()
       moved = at - self._dragFrom
       self._dragFrom = at
-      if (at - self._pressedAt).manhattanLength() > 4.0:
+      if (at - self._clickedAt).manhattanLength() > 4.0:
         self._dragged = True
       self.orrery.turned(moved.x(), moved.y())
       return True
     if kind == QEvent.Type.MouseButtonRelease:
-      if not self._dragged and self._pressedAt is not None:
-        self._picked(self._pressedAt)
-      self._dragFrom = self._pressedAt = None
+      if not self._dragged and self._clickedAt is not None:
+        self._picked(self._clickedAt)
+      self._dragFrom = self._clickedAt = None
       return True
     if kind == QEvent.Type.Wheel:
       self.orrery.zoomed(event.angleDelta().y() / 120.0)
@@ -498,8 +762,16 @@ class SpaceWindow(QMainWindow):
     if self.guidance.on:
       lines.append('Ascent     to %s: %s' % (lengthText(
         self.guidance.target), self.guidance.phase))
-    lines.append('%.0f fps, flight %.2f ms (%d steps)' % (
-      self.viewport.fps, self.flight.lastMs, self.flight.lastSteps))
+    lines.append('%.0f fps, flight %.2f ms (%d steps)%s' % (
+      self.viewport.fps, self.flight.lastMs, self.flight.lastSteps,
+      '' if self.speaker.trouble is None else ', no sound: %s'
+                                              % self.speaker.trouble))
     if self.note and time.perf_counter() - self._noted < NOTE_LASTS:
       lines.append(self.note)
     return '\n'.join(lines)
+
+
+def _gravityText(weight: float) -> str:
+  """Returns the gravity enchantment's pull in words: '0 g', '0.3 g',
+  '1 g'."""
+  return '%s g' % ('%.1f' % weight).rstrip('0').rstrip('.')

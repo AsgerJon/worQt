@@ -13,7 +13,11 @@ of its concepts a class of its own:
 - Vehicle: what an avatar rides (E boards it, Shift leaves it): its
   bodies put in a world, a seat on its frame the rider is tied to.
 - FourthPeep: a control in the world the player uses (E, looking at it
-  within reach): a lever, its value read by what it works.
+  within reach): a lever (or a toggle's bat), its value read by what it
+  works; and its kinds (user, 2026-11-16: "*Every* fourtpeep input ...
+  must visibly deform when activated"): 'Pushbutton' (a key, sinking in
+  and springing back, or latched), 'Knob' (clicking through notches, or
+  on and on), 'Slider' (a slide control).
 
 It is the general base (user, 2026-11-16: "This must be the general
 base stuff"): it has no world of its own; a package on it makes its
@@ -30,6 +34,9 @@ from ._avatar import PERSON, Avatar
 from ._tool import Tool
 from ._vehicle import Vehicle
 from ._fourthpeep import FourthPeep
+from ._pushbutton import Pushbutton
+from ._knob import Knob
+from ._slider import Slider
 from ._gravitygun import GravityGun
 from ._hotbar import SLOTS, Hotbar
 from ._item import ITEMS, Item
@@ -44,6 +51,9 @@ __all__ = (
   'Tool',
   'Vehicle',
   'FourthPeep',
+  'Pushbutton',
+  'Knob',
+  'Slider',
   'GravityGun',
   'SLOTS',
   'Hotbar',

@@ -8,7 +8,7 @@ round burn), its target moved by its keys, and letting go.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-from worQt.gaming.space._ascentguidance import TARGET_MOST, AscentGuidance
+from worQt.gaming.space._ascentguidance import TARGETS, AscentGuidance
 from worQt.gaming.space._timekeeper import Timekeeper
 
 from . import FRAME, SpaceTest
@@ -47,12 +47,16 @@ class TestAscentGuidance(SpaceTest):
     self.assertAlmostEqual(conic.apoapsis - radius, 200e3, delta=5e3)
 
   def test_target(self) -> None:
-    """Its target moves 10 km a step, kept within its bounds."""
+    """Its target steps through its marked heights, kept within them;
+    its notch says which."""
     guidance = AscentGuidance()
+    self.assertEqual(guidance.notch(), TARGETS.index(200e3))
     guidance.targeted(3)
-    self.assertEqual(guidance.target, 230e3)
+    self.assertEqual(guidance.target, 400e3)
     guidance.targeted(1000)
-    self.assertEqual(guidance.target, TARGET_MOST)
+    self.assertEqual(guidance.target, TARGETS[-1])
+    guidance.targeted(-1000)
+    self.assertEqual(guidance.target, TARGETS[0])
 
   def test_stopped(self) -> None:
     """Let go in the climb, the engine is shut and the autopilot holds

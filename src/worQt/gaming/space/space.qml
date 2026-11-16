@@ -38,6 +38,50 @@ Item {
   property var nearPlaces: []
   property var nearTurns: []
   property var nearShown: []
+  //  Each near slot's glow (a lit button's label), the near camera's
+  //  nearest cut (m: Asger's eyes see his panel 0.7 m off), the cabin's
+  //  lamp's place
+  property var nearGlows: []
+  property real nearClip: 0.3
+  property vector3d cabinLight: Qt.vector3d(0, 0, 0)
+  property vector3d panelLamp: Qt.vector3d(0, 0, 0)
+  property vector3d floodPlace: Qt.vector3d(0, 0, 0)
+  //  The cabin's warm lights (its floor lamp, its candles: their
+  //  flicker) and the warp knob's glint's slide (once round its loop)
+  property vector3d lampLight: Qt.vector3d(0, 0, 0)
+  property vector3d candleLight: Qt.vector3d(0, 0, 0)
+  property real candleGlow: 1.0
+  property real glintPhase: 0.0
+  NumberAnimation on glintPhase {
+    from: 0.0
+    to: 1.0
+    duration: 2800
+    loops: Animation.Infinite
+  }
+  property quaternion floodTurn: Qt.quaternion(1, 0, 0, 0)
+  //  Seen through Asger's eyes (user, 2026-11-16: "in first person the
+  //  hud hides and instead Asger is presented iwth a fully functional
+  //  diegetic dashboard"): the overlays hidden, a dot in the middle, the
+  //  input he looks at (its key and what working it does, '' none); the
+  //  teleprinter's paper (user, 2026-11-16: "Instead of a terminal ...
+  //  a teleprinter"; "a modern font like nerd monospace to be cheeky"):
+  //  its lines printed, the line being typed, its font, its mesh; the
+  //  closed circuit monitor (user, 2026-11-16: "Replase the radar with a
+  //  cctv type thing"): its screen's mesh, the hull camera's place and
+  //  turn (the scene's), the picture's time
+  property bool cockpitOn: false
+  property string promptKey: ""
+  property string promptName: ""
+  property var paperLines: []
+  property string paperTyping: ""
+  property string paperFont: "JetBrainsMono Nerd Font Mono"
+  property var paperGeometry: null
+  onPaperLinesChanged: paperCanvas.requestPaint()
+  onPaperTypingChanged: paperCanvas.requestPaint()
+  property var screenGeometry: null
+  property vector3d cctvPlace: Qt.vector3d(0, 0, 0)
+  property quaternion cctvTurn: Qt.quaternion(1, 0, 0, 0)
+  property string cctvStamp: ""
   //  The ground under the eye: its mesh (a cap, the body's own axes), its
   //  body's picture, its place and turn, whether it shows
   property var capGeometry: null
@@ -91,6 +135,8 @@ Item {
   property string boardPhase: ""
   property string boardTarget: ""
   property bool boardMap: false
+  property string boardGravity: "0 g"
+  property bool boardUp: false
   property string boardHeld: "|"
   signal boardPicked(string action)
   //  The board's keys float a little, all together
@@ -189,8 +235,193 @@ Item {
     }
   }
 
+  //  The two layers' scenes, standalone: each imported by its view and
+  //  by the closed circuit camera's (Qt's way of several views of one
+  //  scene: a scene inside one view cannot be shown by another).
+  Node {
+    id: farWorld
+    eulerRotation.x: -90
+    Repeater3D {
+      model: root.farBodies
+      delegate: Model {
+        required property var modelData
+        geometry: modelData.geometry
+        position: root.farPlaces[modelData.slot] || Qt.vector3d(0, 0, 0)
+        rotation: root.farTurns[modelData.slot] || Qt.quaternion(1, 0, 0, 0)
+        property real size: root.farScales[modelData.slot] || 1
+        scale: Qt.vector3d(size, size, size)
+        materials: PrincipledMaterial {
+          lighting: modelData.glow > 0 ? PrincipledMaterial.NoLighting
+                                       : PrincipledMaterial.FragmentLighting
+          baseColorMap: Texture {
+            source: modelData.picture
+            tilingModeHorizontal: Texture.Repeat
+          }
+          alphaMode: modelData.ring ? PrincipledMaterial.Blend
+                                    : PrincipledMaterial.Opaque
+          cullMode: modelData.ring ? Material.NoCulling : Material.BackFaceCulling
+          metalness: 0
+          roughness: 1
+        }
+      }
+    }
+  }
+
+  Node {
+    id: nearWorld
+    eulerRotation.x: -90
+    Model {
+      geometry: root.capGeometry
+      visible: root.capShown && root.capGeometry !== null
+      position: root.capPlace
+      rotation: root.capTurn
+      materials: PrincipledMaterial {
+        baseColorMap: Texture {
+          source: root.capPicture
+          tilingModeHorizontal: Texture.Repeat
+        }
+        metalness: 0
+        roughness: 1
+      }
+    }
+    //  Qt Quick 3D takes a light's fades as if its scene were in cm (it
+    //  scales the linear term by 0.01 and the quadratic by 0.0001): this
+    //  scene is in m, so a quadratic fade of q a square metre is written
+    //  q x 10000 (written in metres, every lamp lit the whole cabin
+    //  alike, at its full brightness).
+    PointLight {
+      position: root.cabinLight
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#ffdcb0"
+      brightness: 0.35
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 300
+    }
+    //  The hull's floodlight over the closed circuit camera (user,
+    //  2026-11-16: "have a tiny bit of artificial light outside the
+    //  rocket"): along the camera's look, reaching the pad below.
+    SpotLight {
+      position: root.floodPlace
+      rotation: root.floodTurn
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#fff3e0"
+      brightness: 4.0
+      coneAngle: 75
+      innerConeAngle: 35
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 400
+    }
+    PointLight {
+      position: root.lampLight
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#ffcf8a"
+      brightness: 1.8
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 3500
+    }
+    PointLight {
+      position: root.candleLight
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#ffa850"
+      brightness: 0.9 * root.candleGlow
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 20000
+    }
+    PointLight {
+      position: root.panelLamp
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#fff6e8"
+      brightness: 0.45
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 20000
+    }
+    Model {
+      geometry: root.paperGeometry
+      visible: root.paperGeometry !== null
+      position: root.nearPlaces[1] || Qt.vector3d(0, 0, 0)
+      rotation: root.nearTurns[1] || Qt.quaternion(1, 0, 0, 0)
+      materials: PrincipledMaterial {
+        roughness: 0.9
+        cullMode: Material.NoCulling
+        baseColorMap: Texture {
+          sourceItem: Canvas {
+            id: paperCanvas
+            width: 512
+            height: 640
+            onPaint: {
+              var ctx = getContext("2d")
+              ctx.fillStyle = "#f4efe0"
+              ctx.fillRect(0, 0, width, height)
+              ctx.fillStyle = "#dfeccf"
+              for (var bar = 0; bar < height; bar += 80)
+                ctx.fillRect(0, height - bar - 40, width, 40)
+              ctx.font = "bold 33px '" + root.paperFont + "'"
+              ctx.fillStyle = "#1c1a24"
+              var step = 40
+              var y = height - 12
+              ctx.fillText(root.paperTyping, 12, y)
+              var lines = root.paperLines
+              for (var k = lines.length - 1; k >= 0; --k) {
+                y -= step
+                if (y < 0) break
+                ctx.fillText(lines[k], 12, y)
+              }
+            }
+          }
+        }
+      }
+    }
+    Repeater3D {
+      model: root.nearParts
+      delegate: Model {
+        id: nearModel
+        required property var modelData
+        property bool pictured: (modelData.picture || "") !== ""
+        property Texture picture: Texture {
+          source: nearModel.modelData.picture || ""
+          tilingModeHorizontal: Texture.Repeat
+          tilingModeVertical: Texture.Repeat
+          generateMipmaps: true
+          mipFilter: Texture.Linear
+          positionU: (nearModel.modelData.scroll || 0) * root.glintPhase
+        }
+        geometry: modelData.geometry
+        visible: root.nearShown[modelData.slot] || false
+        position: root.nearPlaces[modelData.slot] || Qt.vector3d(0, 0, 0)
+        rotation: root.nearTurns[modelData.slot] || Qt.quaternion(1, 0, 0, 0)
+        property real glow: root.nearGlows[modelData.slot] || 0
+        materials: PrincipledMaterial {
+          lighting: modelData.unlit ? PrincipledMaterial.NoLighting
+                                    : PrincipledMaterial.FragmentLighting
+          baseColor: modelData.colour
+          baseColorMap: nearModel.pictured ? nearModel.picture : null
+          emissiveMap: nearModel.pictured && nearModel.glow > 0
+                       ? nearModel.picture : null
+          emissiveFactor: Qt.vector3d(nearModel.glow * modelData.emit.r,
+                                      nearModel.glow * modelData.emit.g,
+                                      nearModel.glow * modelData.emit.b)
+          metalness: modelData.metal
+          roughness: modelData.rough
+          opacity: modelData.opacity
+          blendMode: modelData.screen ? PrincipledMaterial.Screen
+                                      : PrincipledMaterial.SourceOver
+          alphaMode: modelData.masked ? PrincipledMaterial.Mask
+                     : modelData.opacity < 1 ? PrincipledMaterial.Blend
+                     : PrincipledMaterial.Opaque
+          cullMode: modelData.culled ? Material.BackFaceCulling : Material.NoCulling
+        }
+      }
+    }
+  }
+
   View3D {
     id: farView
+    importScene: farWorld
     anchors.fill: parent
     visible: !root.mapOpen
     environment: SceneEnvironment {
@@ -209,37 +440,11 @@ Item {
       rotation: root.sunTurn
       brightness: 1.4
     }
-    Node {
-      eulerRotation.x: -90
-      Repeater3D {
-        model: root.farBodies
-        delegate: Model {
-          required property var modelData
-          geometry: modelData.geometry
-          position: root.farPlaces[modelData.slot] || Qt.vector3d(0, 0, 0)
-          rotation: root.farTurns[modelData.slot] || Qt.quaternion(1, 0, 0, 0)
-          property real size: root.farScales[modelData.slot] || 1
-          scale: Qt.vector3d(size, size, size)
-          materials: PrincipledMaterial {
-            lighting: modelData.glow > 0 ? PrincipledMaterial.NoLighting
-                                         : PrincipledMaterial.FragmentLighting
-            baseColorMap: Texture {
-              source: modelData.picture
-              tilingModeHorizontal: Texture.Repeat
-            }
-            alphaMode: modelData.ring ? PrincipledMaterial.Blend
-                                      : PrincipledMaterial.Opaque
-            cullMode: modelData.ring ? Material.NoCulling : Material.BackFaceCulling
-            metalness: 0
-            roughness: 1
-          }
-        }
-      }
-    }
   }
 
   View3D {
     id: nearView
+    importScene: nearWorld
     anchors.fill: parent
     visible: !root.mapOpen
     environment: SceneEnvironment {
@@ -250,49 +455,178 @@ Item {
     PerspectiveCamera {
       id: nearCamera
       rotation: root.cameraTurn
-      clipNear: 0.3
+      clipNear: root.nearClip
       clipFar: 3e6
     }
     DirectionalLight {
       rotation: root.sunTurn
       brightness: 1.4
     }
+    //  The closed circuit monitor's screen, outside 'nearWorld' (the
+    //  camera's own views import it: the screen must not show itself).
+    //  Its picture: the hull camera's, the far bodies and the near world
+    //  from there, each turned black and white by 'cctv.frag' (Qt Quick
+    //  3D's own effect: Qt's MultiEffect loads QML while running and
+    //  deadlocked against 'App.notify'), scanlines and a vignette over.
     Node {
       eulerRotation.x: -90
       Model {
-        geometry: root.capGeometry
-        visible: root.capShown && root.capGeometry !== null
-        position: root.capPlace
-        rotation: root.capTurn
+        geometry: root.screenGeometry
+        visible: root.screenGeometry !== null
+        position: root.nearPlaces[1] || Qt.vector3d(0, 0, 0)
+        rotation: root.nearTurns[1] || Qt.quaternion(1, 0, 0, 0)
         materials: PrincipledMaterial {
+          lighting: PrincipledMaterial.NoLighting
           baseColorMap: Texture {
-            source: root.capPicture
-            tilingModeHorizontal: Texture.Repeat
-          }
-          metalness: 0
-          roughness: 1
-        }
-      }
-      Repeater3D {
-        model: root.nearParts
-        delegate: Model {
-          id: nearModel
-          required property var modelData
-          property bool pictured: (modelData.picture || "") !== ""
-          property Texture picture: Texture {
-            source: nearModel.modelData.picture || ""
-            tilingModeHorizontal: Texture.Repeat
-          }
-          geometry: modelData.geometry
-          visible: root.nearShown[modelData.slot] || false
-          position: root.nearPlaces[modelData.slot] || Qt.vector3d(0, 0, 0)
-          rotation: root.nearTurns[modelData.slot] || Qt.quaternion(1, 0, 0, 0)
-          materials: PrincipledMaterial {
-            baseColor: modelData.colour
-            baseColorMap: nearModel.pictured ? nearModel.picture : null
-            metalness: modelData.metal
-            roughness: modelData.rough
-            cullMode: modelData.culled ? Material.BackFaceCulling : Material.NoCulling
+            sourceItem: Item {
+              id: cctv
+              width: 384
+              height: 288
+              Item {
+                id: cctvViews
+                anchors.fill: parent
+                View3D {
+                  anchors.fill: parent
+                  importScene: farWorld
+                  environment: SceneEnvironment {
+                    backgroundMode: SceneEnvironment.Color
+                    clearColor: root.skyColour
+                    effects: [cctvFarLook]
+                  }
+                  Effect {
+                    id: cctvFarLook
+                    passes: Pass {
+                      shaders: Shader {
+                        stage: Shader.Fragment
+                        shader: "cctv.frag"
+                      }
+                    }
+                  }
+                  camera: cctvFarCamera
+                  PerspectiveCamera {
+                    id: cctvFarCamera
+                    rotation: root.cctvTurn
+                    fieldOfView: 64
+                    clipNear: 10
+                    clipFar: 5e6
+                  }
+                  DirectionalLight {
+                    rotation: root.sunTurn
+                    brightness: 1.4
+                  }
+                }
+                View3D {
+                  anchors.fill: parent
+                  importScene: nearWorld
+                  environment: SceneEnvironment {
+                    backgroundMode: SceneEnvironment.Transparent
+                    effects: [cctvNearLook]
+                  }
+                  Effect {
+                    id: cctvNearLook
+                    passes: Pass {
+                      shaders: Shader {
+                        stage: Shader.Fragment
+                        shader: "cctv.frag"
+                      }
+                    }
+                  }
+                  camera: cctvNearCamera
+                  PerspectiveCamera {
+                    id: cctvNearCamera
+                    position: root.cctvPlace
+                    rotation: root.cctvTurn
+                    fieldOfView: 64
+                    clipNear: 0.1
+                    clipFar: 3e6
+                  }
+                  DirectionalLight {
+                    rotation: root.sunTurn
+                    brightness: 1.4
+                  }
+                }
+              }
+              Canvas {
+                anchors.fill: parent
+                onPaint: {
+                  var ctx = getContext("2d")
+                  ctx.fillStyle = "rgba(0, 0, 0, 0.28)"
+                  for (var y = 0; y < height; y += 3)
+                    ctx.fillRect(0, y, width, 1)
+                  //  The tube's rounded corners (a 1970s set's).
+                  ctx.fillStyle = "#050505"
+                  var r = 46
+                  ctx.beginPath()
+                  ctx.rect(0, 0, width, height)
+                  ctx.moveTo(r, 0)
+                  ctx.arcTo(0, 0, 0, r, r)
+                  ctx.lineTo(0, height - r)
+                  ctx.arcTo(0, height, r, height, r)
+                  ctx.lineTo(width - r, height)
+                  ctx.arcTo(width, height, width, height - r, r)
+                  ctx.lineTo(width, r)
+                  ctx.arcTo(width, 0, width - r, 0, r)
+                  ctx.closePath()
+                  ctx.fillRule = Qt.OddEvenFill
+                  ctx.fill()
+                  var glow = ctx.createRadialGradient(
+                    width / 2, height / 2, height * 0.3,
+                    width / 2, height / 2, height * 0.85)
+                  glow.addColorStop(0, "rgba(0, 0, 0, 0)")
+                  glow.addColorStop(1, "rgba(0, 0, 0, 0.75)")
+                  ctx.fillStyle = glow
+                  ctx.fillRect(0, 0, width, height)
+                }
+              }
+              Text {
+                x: 34
+                y: 20
+                text: "CAM 1  AFT"
+                color: "#f2f2f2"
+                style: Text.Outline
+                styleColor: "#000000"
+                font.family: "monospace"
+                font.pixelSize: 20
+                font.bold: true
+              }
+              Row {
+                x: parent.width - width - 34
+                y: 20
+                spacing: 6
+                Rectangle {
+                  width: 12
+                  height: 12
+                  radius: 6
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: "#ff3030"
+                  SequentialAnimation on opacity {
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.1; duration: 600 }
+                    NumberAnimation { to: 1.0; duration: 600 }
+                  }
+                }
+                Text {
+                  text: "REC"
+                  color: "#f2f2f2"
+                  style: Text.Outline
+                  styleColor: "#000000"
+                  font.family: "monospace"
+                  font.pixelSize: 20
+                  font.bold: true
+                }
+              }
+              Text {
+                x: parent.width - width - 34
+                y: parent.height - height - 20
+                text: root.cctvStamp
+                color: "#f2f2f2"
+                style: Text.Outline
+                styleColor: "#000000"
+                font.family: "monospace"
+                font.pixelSize: 18
+                font.bold: true
+              }
+            }
           }
         }
       }
@@ -385,7 +719,7 @@ Item {
   Item {
     id: navball
     objectName: "navball"
-    visible: root.navShown && !root.mapOpen
+    visible: root.navShown && !root.mapOpen && !root.cockpitOn
     width: 2 * root.navRadius + 24
     height: 2 * root.navRadius + 58
     anchors.right: parent.right
@@ -529,6 +863,7 @@ Item {
   Rectangle {
     id: board
     objectName: "board"
+    visible: !root.cockpitOn || root.mapOpen
     anchors.left: parent.left
     anchors.bottom: parent.bottom
     anchors.leftMargin: 12
@@ -607,13 +942,16 @@ Item {
                     || root.boardHeld.indexOf("|E|") >= 0 }
       }
       Group {
-        title: "TIME"
+        title: "TIME AND GRAVITY"
         Lamp { label: "Warp: " + root.boardWarp + "x"; keys: [",", "."]
                action: "faster"; tint: "#8fd3ff"; lit: root.boardWarp > 1 }
         Lamp { label: "Real time"; keys: ["/"]; action: "stop"
                tint: "#8fd3ff"; lit: root.boardWarp === 1 }
         Lamp { label: "To Ap: " + (lit ? "on" : "off"); keys: ["G"]
                action: "toAp"; tint: "#8fd3ff"; lit: root.boardToAp }
+        Lamp { label: "Gravity: " + root.boardGravity; keys: ["K", "L"]
+               action: "heavier"; tint: "#d9a8ff"
+               lit: root.boardGravity !== "0 g" }
       }
       Group {
         title: "ASCENT GUIDANCE"
@@ -631,12 +969,60 @@ Item {
                action: "map"; tint: "#e8ecf0"; lit: root.boardMap }
         Lamp { label: "Back to pad"; keys: ["\u232b"]; action: "pad"
                tint: "#e8ecf0"; lit: false }
+        Lamp { label: root.boardUp ? "Up: sit down" : "Seated: get up"
+               keys: ["B"]; action: "buckle"; tint: "#ffd27a"
+               lit: root.boardUp }
+      }
+    }
+  }
+
+  Item {
+    visible: root.cockpitOn && !root.mapOpen
+    anchors.fill: parent
+    Rectangle {
+      anchors.centerIn: parent
+      width: 6
+      height: 6
+      radius: 3
+      color: "#e8eef6"
+      border.color: "#000000"
+      border.width: 1
+    }
+    Row {
+      visible: root.promptName !== ""
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: parent.height / 2 + 22
+      spacing: 8
+      Rectangle {
+        width: Math.max(30, promptKeyText.implicitWidth + 14)
+        height: 30
+        radius: 5
+        color: "#e8ecf0"
+        border.color: "#8a949e"
+        border.width: 2
+        Text {
+          id: promptKeyText
+          anchors.centerIn: parent
+          text: root.promptKey
+          color: "#181c22"
+          font.pixelSize: 16
+          font.bold: true
+        }
+      }
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.promptName
+        color: "#e8ecf0"
+        font.pixelSize: 16
+        font.bold: true
+        style: Text.Outline
+        styleColor: "#000000"
       }
     }
   }
 
   Rectangle {
-    visible: root.readout !== ""
+    visible: root.readout !== "" && (!root.cockpitOn || root.mapOpen)
     x: 12
     y: 12
     width: readoutText.width + 20
@@ -658,6 +1044,7 @@ Item {
     anchors.bottom: parent.bottom
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottomMargin: 10
+    visible: !root.cockpitOn || root.mapOpen
     text: root.hint
     color: "#e8f0ff"
     font.pixelSize: 14

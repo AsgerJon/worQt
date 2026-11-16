@@ -37,7 +37,7 @@ from ._axlebox import BEARING_EASE, BRAKE_EASE, MOTOR_LEAST
 from ._railworld import A0, B0, C11, C22, CONTACT_DAMPING, EPS_MOST
 from ._railworld import LOST, N0, OFF_ACROSS, OFF_UP, Q0, SHEAR
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 

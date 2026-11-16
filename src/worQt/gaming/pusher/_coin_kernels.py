@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import warp as wp
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 #  No gradients: Warp would write each kernel backward too, for
 #  differentiating through it, which the coins never need; without, the
 #  first compile takes 5 s instead of 13

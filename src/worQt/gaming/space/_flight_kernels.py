@@ -40,9 +40,9 @@ from __future__ import annotations
 
 import warp as wp
 
-from ._vessel import SAG
+from ._vessel import MASS, SAG
 
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
 
 
@@ -89,9 +89,9 @@ LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
 #  A leg on the ground: its spring (N/m: 'SAG' standing), damper (N s/m),
 #  sliding damper (N s/m) and its grip (friction's share of the push).
-LEG_STIFF = _single(9.82 * 20e3 / 4.0 / SAG)
-LEG_DAMP = _single(3e5)
-LEG_SLIDE = _single(2e5)
+LEG_STIFF = _single(9.82 * MASS / 4.0 / SAG)
+LEG_DAMP = _single(3e5 * MASS / 20e3)
+LEG_SLIDE = _single(2e5 * MASS / 20e3)
 LEG_GRIP = _single(0.8)
 #  The autopilot: rad/s wanted a rad off, the fastest it turns (rad/s),
 #  and how fast the wheels take the vessel to the rate wanted (1/s).

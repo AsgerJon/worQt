@@ -22,29 +22,34 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 
 #  Its phases, in order.
 PHASES = ('off', 'climb', 'turn', 'coast', 'round', 'done')
-#  The orbit's height asked at first, m; how far a key moves it, m; the
-#  least and most.
+#  The orbit's heights to be asked, m, a key a step through them (user,
+#  2026-11-16: "The orbit input dial should have clearer markings on
+#  it": its knob a notch each, marked); the one asked at first.
+TARGETS = (120e3, 150e3, 200e3, 250e3, 300e3, 400e3, 500e3, 700e3, 1000e3,
+           1500e3, 2000e3)
 TARGET = 200e3
-TARGET_STEP = 10e3
-TARGET_LEAST, TARGET_MOST = 120e3, 2000e3
 #  Straight up to this height, m; then the turn: the pitch over the
 #  horizon falls from 90 degrees as the share of the way to 'TURN_END'
-#  m to the power 'TURN_SHAPE', to 'TURN_LEAST' (deg) at its end.
-TURN_START = 1500.0
-TURN_END = 60e3
-TURN_SHAPE = 0.5
+#  m to the power 'TURN_SHAPE', to 'TURN_LEAST' (deg) at its end. At the
+#  rocket's 4 g (user, 2026-11-16) the turn starts low and slow: begun at
+#  1.5 km (290 m/s) its path barely bent in the thick air, and the round
+#  burn at the apoapsis had 4.5 km/s to make up (it fell short); tried
+#  against the flight (pad to 200 x 199 km).
+TURN_START = 150.0
+TURN_END = 35e3
+TURN_SHAPE = 0.4
 TURN_LEAST = 3.0
 #  In the thick air the nose keeps within 'AOA_LOW' deg of the path
 #  (MechJeb's angle of attack limit: turned across the air the rocket
 #  hangs on its own drag), the limit opening to a right angle from
 #  'AOA_FROM' m to 'AOA_TO' m up.
-AOA_LOW = 5.0
+AOA_LOW = 10.0
 AOA_FROM, AOA_TO = 30e3, 60e3
 #  However it turns, the nose stays high enough to climb at least
 #  'CLIMB_FAST' m/s near the ground, less with height, nought from
 #  'CLIMB_UNTIL' m: its push up beats the pull less the curve's relief
 #  (v² / r of its speed along the horizon), and makes up a shortfall in
-#  the climb at 'CLIMB_GAIN' a second (the rocket's 1.5 g never grows:
+#  the climb at 'CLIMB_GAIN' a second (the rocket's push never grows:
 #  a turn that lets its path sag sends it into the ground, one too slow
 #  up drags it through the thick air for minutes).
 CLIMB_FAST = 400.0
@@ -125,10 +130,16 @@ class AscentGuidance:
     self.phase = 'off'
 
   def targeted(self, steps: int) -> None:
-    """The 'targeted' method moves the orbit's height asked 'steps'
-    steps up (down when below nought)."""
-    self.target = max(TARGET_LEAST, min(TARGET_MOST, self.target
-                                        + steps * TARGET_STEP))
+    """The 'targeted' method moves the orbit's height asked 'steps' of
+    'TARGETS' up (down when below nought), kept within them."""
+    self.target = TARGETS[max(0, min(len(TARGETS) - 1,
+                                     self.notch() + steps))]
+
+  def notch(self, ) -> int:
+    """The 'notch' method returns which of 'TARGETS' is asked (the
+    nearest)."""
+    return min(range(len(TARGETS)),
+               key=lambda k: abs(TARGETS[k] - self.target))
 
   def acted(self, vessel: Vessel, system: SolarSystem,
             keeper: Timekeeper) -> None:

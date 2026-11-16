@@ -9,12 +9,17 @@ never waiting on the sound.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import sys
 import time
 from typing import TYPE_CHECKING
 
 from ._mixer import TOLD, VOLUME
+
+#  The sandbox's own mixer, as 'Speaker' is told which to play: its
+#  module and class, 'module:Class'.
+SANDBOX_MIXER = 'worQt.gaming.sandbox._mixer:Mixer'
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from multiprocessing.connection import Connection
@@ -28,18 +33,24 @@ RATE, AHEAD, EVERY, CHANNELS = 44100, 0.08, 0.01, 2
 FINE = ('NoError', 'UnderrunError')
 
 
-def _played(connection: Connection, shared: object) -> None:
-  """Plays the mixer as 'shared' tells it ('TOLD' numbers) on the
-  default speaker, in stereo, 'AHEAD' s queued; says ('ready', seconds)
-  once playing or ('trouble', words). None over 'connection', or the
-  asker gone, ends it."""
+def mixerOf(source: str) -> type:
+  """Returns the mixer class 'source' names ('module:Class'): found by
+  its module's import, never made up from words."""
+  module, name = source.split(':')
+  return getattr(importlib.import_module(module), name)
+
+
+def _played(connection: Connection, shared: object, source: str,
+            count: int) -> None:
+  """Plays the mixer 'source' names ('module:Class') as 'shared' tells
+  it ('count' numbers) on the default speaker, in stereo, 'AHEAD' s
+  queued; says ('ready', seconds) once playing or ('trouble', words).
+  None over 'connection', or the asker gone, ends it."""
   from PySide6.QtCore import QLoggingCategory, QTimer
   from PySide6.QtGui import QGuiApplication
   from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QMediaDevices
 
   import numpy
-
-  from ._mixer import Mixer
 
   began = time.perf_counter()
   QLoggingCategory.setFilterRules('qt.multimedia.ffmpeg.info=false\n'
@@ -58,7 +69,7 @@ def _played(connection: Connection, shared: object) -> None:
     except (OSError, BrokenPipeError):
       pass
     sys.exit(0)
-  mixer = Mixer(RATE)
+  mixer = mixerOf(source)(RATE)
   sink = QAudioSink(device, form)
   frame = 2 * CHANNELS
   sink.setBufferSize(2 * frame * int(RATE * AHEAD))
@@ -70,7 +81,7 @@ def _played(connection: Connection, shared: object) -> None:
     """Writes as much sound as the speaker's queue lacks."""
     lacking = (queue - (sink.bufferSize() - sink.bytesFree())) // frame
     if lacking >= 64:
-      sound = mixer.samples([shared[k] for k in range(TOLD)], lacking)
+      sound = mixer.samples([shared[k] for k in range(count)], lacking)
       pcm = (numpy.clip(sound, -1.0, 1.0) * 32767.0).astype(numpy.int16)
       speaker.write(numpy.repeat(pcm, CHANNELS).tobytes())
 
@@ -105,10 +116,11 @@ def _played(connection: Connection, shared: object) -> None:
 
 class Speaker:
   """
-  Speaker plays the sandbox's sound in a process of its own: 'start'
-  spawns it, 'heard' tells it what is going on ('TOLD' numbers, as
-  'Mixer.samples' takes them), 'close' ends it. 'trouble' says why it
-  is silent (None: playing, or starting).
+  Speaker plays a mixer's sound in a process of its own: the sandbox's
+  ('SANDBOX_MIXER') or another ('source': 'module:Class', its 'samples'
+  told 'count' numbers: the space's cabin). 'start' spawns it, 'heard'
+  tells it what is going on, 'close' ends it. 'trouble' says why it is
+  silent (None: playing, or starting).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -122,7 +134,9 @@ class Speaker:
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, ) -> None:
+  def __init__(self, source: str = SANDBOX_MIXER,
+               count: int = TOLD) -> None:
+    self.source, self.count = source, int(count)
     self.trouble, self._shared, self._pipe, self._process = (
       None, None, None, None)
 
@@ -138,10 +152,11 @@ class Speaker:
     context = multiprocessing.get_context('spawn')
     #  'lock' is keyword-only in multiprocessing: no way to pass it by
     #  place (the engine's sound does the same).
-    self._shared = context.Array('d', TOLD, lock=False)
+    self._shared = context.Array('d', self.count, lock=False)
     mine, theirs = context.Pipe()
     self._process = context.Process(None, _played, 'worQt-sandbox-sound',
-                                    (theirs, self._shared))
+                                    (theirs, self._shared, self.source,
+                                     self.count))
     self._process.daemon = True
     self._process.start()
     theirs.close()
