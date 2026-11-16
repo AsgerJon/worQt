@@ -29,7 +29,9 @@ SANDBOX_TESTS = ('tests.test_sandbox.test_universe',
 TRAINS_TESTS = ('tests.test_trains.test_loopworld',
                 'tests.test_trains.test_minecart',
                 'tests.test_trains.test_train',
-                'tests.test_trains.test_locomotive')
+                'tests.test_trains.test_locomotive',
+                'tests.test_trains.test_coupling',
+                'tests.test_trains.test_walkthrough')
 RAIL_TESTS = ('tests.test_phys.test_ribbon',
               'tests.test_phys.test_trackdress',
               'tests.test_phys.test_wheelset',

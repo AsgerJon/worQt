@@ -3,7 +3,8 @@ TestLocomotive covers the steam train on its oval (user, 2026-11-16: "a
 steam locomotive and a bunch of cars being pulled by it. At first we
 will have the cylinders moved by the steam just be actuators"): the
 oval is closed and the rail world finds it so; the engine, its bogie,
-its rods and crossheads, its tender and three coaches stand, each axle
+its rods and crossheads, its tender and three coaches stand (three more
+loose on the siding), each axle
 carrying what it was built to (the drivers 20 t, the trailing axle 14,
 the bogie's 9, the tender's ~16), every rod on its crank pins; the
 valves admit steam the way the gear runs the engine, for the first
@@ -11,7 +12,8 @@ valves admit steam the way the gear runs the engine, for the first
 (the rods within 2 cm of their pins under full steam); reversed, it
 backs; the brake (a train brake: every vehicle's shoes) slows it; a
 tender shoved off its rails is taken off, the world going on, and put
-back as it was made; dressed in the model where the model is.
+back as it was made; dressed in the model where the model is (the
+tender's corridor cut through it), the coaches in their own dress.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -24,7 +26,10 @@ import numpy
 from worQt.phys._poke import poked
 from worQt.phys._vectors import rotated
 
-from worQt.gaming.trains._locomotive import CRANKS, CUTOFF, Locomotive
+from worQt.gaming.trains._locomotive import CORRIDOR_FLOOR, CORRIDOR_HALF
+from worQt.gaming.trains._locomotive import CORRIDOR_HIGH, CORRIDOR_LOOKS
+from worQt.gaming.trains._locomotive import CRANKS, CUTOFF, TENDER_ENDS
+from worQt.gaming.trains._locomotive import Locomotive
 from worQt.gaming.trains._model import MODEL
 from worQt.gaming.trains._coach import Coach
 
@@ -68,8 +73,9 @@ class TestLocomotive(TrainsTest):
     world = self.ovalWorld()
     engine = world.vehicles[0]
     self.assertIsInstance(engine, Locomotive)
-    self.assertEqual([type(v) for v in world.vehicles[1:]], [Coach] * 3)
-    self.assertEqual(engine.train, tuple(world.vehicles[1:]))
+    self.assertEqual([type(v) for v in world.vehicles[1:]], [Coach] * 6)
+    self.assertEqual(engine.train, tuple(world.vehicles[1:4]))
+    self.assertEqual(world.loose, tuple(world.vehicles[4:]))
     self.ran(world, 1.5)
     self.assertEqual(world.solver.closed, frozenset((0,)))
     self.assertLess(abs(self.speedOf(world)), 0.05)
@@ -173,12 +179,30 @@ class TestLocomotive(TrainsTest):
   def test_dressed(self) -> None:
     """Where the model is, the engine's moving bodies are dressed in its
     parts (the engine, the bogie, nine wheelsets, six rods, two
-    crossheads, the tender)."""
+    crossheads, the tender: its corridor cut through the model, nothing
+    of it left in the passage), each coach in its own (pictures among
+    them: rows of eight)."""
     if not MODEL.is_file():
       self.skipTest('the model is not here (it is not in git)')
     world = self.ovalWorld()
-    self.assertEqual(len(world.dressed), 20)
+    engine = world.vehicles[0]
+    self.assertEqual(len(world.dressed), 20 + 6)
     for parts in world.dressed.values():
       for rows, indices, look in parts:
-        self.assertEqual(rows.shape[1], 6)
+        self.assertIn(rows.shape[1], (6, 8))
         self.assertIn(look, world.looks)
+    centre = numpy.array(world.assembly.bodies[engine.tender].centre)
+    for rows, indices, look in world.dressed[engine.tender]:
+      if look in CORRIDOR_LOOKS:
+        continue
+      corners = rows[indices.reshape(-1, 3), :3] + centre
+      middles = corners.mean(1)
+      low, high = CORRIDOR_FLOOR
+      back, front = TENDER_ENDS
+      floor = low + (high - low) * (middles[:, 0] - back) / (front - back)
+      inside = ((numpy.abs(middles[:, 1]) < CORRIDOR_HALF - 0.01)
+                & (middles[:, 2] > floor + 0.01)
+                & (middles[:, 2] < floor + CORRIDOR_HIGH - 0.01)
+                & (middles[:, 0] > back) & (middles[:, 0] < front))
+      with self.subTest(look=look):
+        self.assertFalse(inside.any())

@@ -12,7 +12,10 @@ together as a beam), a connecting rod from
 the main driver's crank pin to a crosshead sliding on its bars; steam
 pushing each crosshead from its cylinder ('Ram': a force, set each
 step as the valves would admit it); a tender on three wheelsets behind
-on a drawbar; in the cab the regulator, the reverser and the brake.
+on a drawbar, a corridor down its middle from the cab to the train
+(user, 2026-11-16: walk from the engine back through every car); in the
+cab the regulator, the reverser and the brake; buffers at the engine's
+front and the tender's back.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -27,14 +30,16 @@ import numpy
 from worQt.phys._assembly import FourthWall, Hinge, Ram, Slide, Tie
 from worQt.phys._body import Body, State
 from worQt.phys._shape import boxShape
-from worQt.phys._vectors import UNTURNED, rotated, turnOf
+from worQt.phys._vectors import UNTURNED, rotated, turnAbout, turnOf
 from worQt.phys.rail import JOURNAL_AT, Axlebox, wheelsetBody, wheelsetOn
 from worQt.phys.rail._crankpin import CrankPin
 
 from worQt.gaming.sandbox._fourthpeep import FourthPeep
 from worQt.gaming.sandbox._vehicle import Vehicle
 
-from ._model import MODEL, modelParts
+from ._coupling import CarEnd, carApart
+from ._dress import boxQuads, partsOf
+from ._model import MODEL, carvedOut, modelParts
 from ._offrails import putBack, tookOff
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -128,15 +133,33 @@ LEVER_LONG, LEVER_NEAR, LEVER_FAR = 0.7, 0.4, -0.5
 #  the engine's and the tender's alone made 0.25).
 BRAKE_MOST, TENDER_BRAKE, COACH_BRAKE = 10e3, 6e3, 2.7e3
 #  The tender: its middle wheelset this far behind the main axle, m; its
-#  wheelsets either side of that, m; its pieces (frame, tank) as the
-#  engine's; the drawbar's joints on the engine's back and the tender's
-#  front (x, z), m; the tender's back, where the train's first car
-#  couples (x, z), m.
+#  wheelsets either side of that, m; its back and front, m (its own
+#  frame); its pieces as the engine's (its frame under the corridor, its
+#  tank over it, its tank either side of it); the drawbar's joints on
+#  the engine's back and the tender's front (x, z), m.
 TENDER_AT, TENDER_HALF = -9.65, 2.75
-TENDER_PIECES = ((-3.86, 4.2, 0.9, 0.8, 1.38),
-                 (-3.86, 4.2, 1.44, 1.38, 3.66))
-ENGINE_TAIL, TENDER_NOSE, TENDER_TAIL = (-5.2, 1.5), (3.9, 1.5), (
-  -3.86, 1.0)
+TENDER_ENDS = (-3.86, 4.2)
+TENDER_PIECES = ((-3.86, 4.2, 0.9, 0.8, 1.1),
+                 (-3.86, 4.2, 0.45, 3.0, 3.66))
+TENDER_SIDES = ((-3.86, 4.2, 0.45, 1.44, 1.1, 3.66),)
+ENGINE_TAIL, TENDER_NOSE = (-5.2, 1.5), (3.9, 1.5)
+#  The tender's corridor (user, 2026-11-16: "make the train, however
+#  realistic or not, such that we can walk from the locomotive and back
+#  through each car"; the LNER's non-stop tenders had one, down a side;
+#  this one runs down the middle, as the coaches' doors do): half its
+#  width, m; its floor's top at the tender's back (a coach's floor) and
+#  front (the cab's), m over the rails' top, its floor 'CORRIDOR_DEEP'
+#  thick; its roof this high over its floor (drawn: the eyes 1.65 m up
+#  pass under it; the tank's solid over it from 'TENDER_PIECES' up).
+CORRIDOR_HALF = 0.45
+CORRIDOR_FLOOR, CORRIDOR_DEEP = (1.15, 2.05), 0.05
+CORRIDOR_HIGH = 1.95
+#  The buffers' heads, m along their bodies' own x (where the model has
+#  them): the engine's front, the tender's back.
+ENGINE_HEAD, TENDER_HEAD = 8.64, -4.49
+#  How the corridor is drawn (a look each: its floor, its lining).
+CORRIDOR_LOOKS = {'floor': ((118, 82, 52), 0.0, 0.7),
+                  'lining': ((222, 208, 176), 0.0, 0.8)}
 #  Bars (the coupling and connecting rods, the drawbar), m thick and
 #  deep; the crosshead (with its piston and rod), m.
 ROD_THICK, ROD_DEEP = 0.08, 0.16
@@ -233,12 +256,54 @@ def engineBody() -> Body:
   return _weighted(shape, ENGINE_MASS, ENGINE_MIDDLE)
 
 
+def corridorFrame() -> tuple:
+  """The 'corridorFrame' function returns the tender's corridor's frame
+  (its own frame's origin on the middle of its floor's top, its x up the
+  slope to the front): (that place, the turn there as a matrix, as a
+  turn, the floor's length along the slope)."""
+  back, front = TENDER_ENDS
+  low, high = CORRIDOR_FLOOR
+  rise, run = high - low, front - back
+  angle = math.atan2(rise, run)
+  matrix = numpy.array(((math.cos(angle), 0.0, -math.sin(angle)),
+                        (0.0, 1.0, 0.0),
+                        (math.sin(angle), 0.0, math.cos(angle))))
+  return ((0.5 * (back + front), 0.0, 0.5 * (low + high)), matrix,
+          turnAbout((0.0, 1.0, 0.0), -angle), math.hypot(rise, run))
+
+
 @functools.lru_cache(None)
 def tenderBody() -> Body:
-  """Returns the tender, loaded, as one body ('TENDER_PIECES',
-  'TENDER_MASS' kg)."""
-  shape = _blocks(TENDER_PIECES)
+  """Returns the tender, loaded, as one body ('TENDER_PIECES', its tank
+  either side of the corridor 'TENDER_SIDES', the corridor's sloping
+  floor), 'TENDER_MASS' kg."""
+  middle, _, turn, long = corridorFrame()
+  floor = boxShape(long, 2.0 * CORRIDOR_HALF, CORRIDOR_DEEP).moved(
+    (0.0, 0.0, -0.5 * CORRIDOR_DEEP), UNTURNED).moved(middle, turn)
+  shape = _sides(TENDER_SIDES, _blocks(TENDER_PIECES)).joined(floor)
   return Body.of(shape, TENDER_MASS / Body.of(shape, 1.0).mass)
+
+
+def corridorParts(centre: tuple) -> tuple:
+  """The 'corridorParts' function returns the tender's corridor drawn
+  (its floor, its walls and its roof, lined), about the tender's body's
+  'centre'."""
+  middle, matrix, _, long = corridorFrame()
+  wall = 0.02
+
+  def tilted(low: tuple, high: tuple) -> list:
+    return list(boxQuads(low, high, matrix, middle))
+  floor = tilted((-0.5 * long, -CORRIDOR_HALF, 0.0),
+                 (0.5 * long, CORRIDOR_HALF, 0.005))
+  lining = tilted((-0.5 * long, -CORRIDOR_HALF - wall, CORRIDOR_HIGH),
+                  (0.5 * long, CORRIDOR_HALF + wall,
+                   CORRIDOR_HIGH + wall))
+  for side in (1.0, -1.0):
+    low, high = sorted((side * CORRIDOR_HALF,
+                        side * (CORRIDOR_HALF + wall)))
+    lining += tilted((-0.5 * long, low, 0.0),
+                     (0.5 * long, high, CORRIDOR_HIGH))
+  return partsOf({'floor': floor, 'lining': lining}, centre)
 
 
 @functools.lru_cache(None)
@@ -286,7 +351,10 @@ class Locomotive(Vehicle):
   bogie's frame on a pivot ('Hinge'), the 'rods' (coupling and
   connecting, either side), the 'crossheads' on their slide bars
   ('Slide'), each pushed by its cylinder's 'steam' ('Ram', a
-  'FourthWall' set each step), the 'tender' on a drawbar. In the cab
+  'FourthWall' set each step), the 'tender' on a drawbar (a corridor
+  down its middle: 'tenderBody'); buffers at its 'front' and 'back'
+  ('CarEnd's), its engine and tender meeting every car not coupled to
+  it ('world.cars'). In the cab
   the 'regulator' (how much steam: 'FORCE' at full), the 'reverser'
   (thrown back: running backward) and the 'brake' (each driver's and
   tender wheel's shoes at full, 'BRAKE_MOST' and 'TENDER_BRAKE', and
@@ -350,7 +418,9 @@ class Locomotive(Vehicle):
     self.world = world
     self._rows = tuple(tuple(float(x) for x in row) for row in frame)
     self._place = tuple(float(x) for x in place)
-    engine = self._spawned(engineBody(), (0.0, 0.0, 0.0), None, 'engine')
+    engine = self._spawned(engineBody(), (0.0, 0.0, 0.0), None, 'engine',
+                           carApart(world, self, None))
+    world.cars.append((engine, self))
     bodies, boxes, wheelsets = [engine], [], []
     for x in DRIVERS:
       wheelsets.append(self._wheelset(track, x, DRIVER))
@@ -437,10 +507,16 @@ class Locomotive(Vehicle):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   @property
-  def tail(self, ) -> tuple:
-    """The 'tail' property is where the train's first car couples: the
-    tender's index and the point on its back, in its own frame."""
-    return self.tender, (TENDER_TAIL[0], 0.0, TENDER_TAIL[1])
+  def front(self, ) -> CarEnd:
+    """The 'front' property is the engine's front end: its buffers'
+    heads at 'ENGINE_HEAD'."""
+    return CarEnd(self.frame, ENGINE_HEAD, 1.0, self)
+
+  @property
+  def back(self, ) -> CarEnd:
+    """The 'back' property is the tender's back end, where the train's
+    first car couples: its buffers' heads at 'TENDER_HEAD'."""
+    return CarEnd(self.tender, TENDER_HEAD, -1.0, self)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -490,14 +566,16 @@ class Locomotive(Vehicle):
                          for j in range(3)) for i in range(3))
     return State(world, turnOf(matrix))
 
-  def _spawned(self, body: Body, local: tuple, axes: tuple,
-               look: str) -> int:
-    """Puts 'body' in the world at 'local' ('_stateAt'), apart from every
-    body already there, drawn as 'look'; returns its index."""
+  def _spawned(self, body: Body, local: tuple, axes: tuple, look: str,
+               apart: frozenset = None) -> int:
+    """Puts 'body' in the world at 'local' ('_stateAt'), apart from
+    'apart' (None: every body already there), drawn as 'look'; returns
+    its index."""
     world = self.world
+    if apart is None:
+      apart = frozenset(range(len(world.states)))
     index = world.spawned(body, self._stateAt(body, local, axes),
-                          TRAIN_LAW, look,
-                          frozenset(range(len(world.states))))
+                          TRAIN_LAW, look, apart)
     self._locals[index] = (local, axes)
     return index
 
@@ -582,7 +660,8 @@ class Locomotive(Vehicle):
     drawbar between them; returns the tender and its wheelsets."""
     world = self.world
     tender = self._spawned(tenderBody(), (TENDER_AT, 0.0, 0.0), None,
-                           'tender')
+                           'tender', carApart(world, self, None))
+    world.cars.append((tender, self))
     wheelsets = [self._wheelset(track, TENDER_AT + x, TENDER_WHEEL)
                  for x in (TENDER_HALF, 0.0, -TENDER_HALF)]
     back = (ENGINE_TAIL[0], 0.0, ENGINE_TAIL[1])
@@ -603,11 +682,12 @@ class Locomotive(Vehicle):
     its frame, each wheelset its wheels, each rod and crosshead its own
     (each side's coupling rod cut at the main driver's pin, the knuckle:
     a triangle goes with the rod its middle lies on), the tender its
-    frame, tank and coal."""
+    frame, tank and coal with its corridor cut through them
+    ('tenderParts') and drawn."""
     parts, looks = modelParts(MODEL)
     wearing = {self.frame: [parts[name] for name in ENGINE_PARTS],
                self._bogie: [parts['bogie']],
-               self.tender: [parts[name] for name in TENDER_PARTS]}
+               self.tender: list(tenderParts())}
     for index, name in zip(self.wheelsets, WHEEL_PARTS):
       wearing[index] = [parts[name]]
     for k, (side, end) in enumerate(MODEL_SIDES.items()):
@@ -627,8 +707,10 @@ class Locomotive(Vehicle):
     bodies = self.world.assembly.bodies
     for index, meshes in wearing.items():
       local, axes = self._locals[index]
-      self.world.dressedWith(index, _worn(meshes, local, axes,
-                                          bodies[index].centre), looks)
+      worn = _worn(meshes, local, axes, bodies[index].centre)
+      if index == self.tender:
+        worn += corridorParts(bodies[index].centre)
+      self.world.dressedWith(index, worn, {**looks, **CORRIDOR_LOOKS})
 
   def _levered(self, name: str, pivot: tuple, prompts: tuple) -> FourthPeep:
     """Returns a lever working 'name' at 'pivot' on the engine (thrown
@@ -638,6 +720,20 @@ class Locomotive(Vehicle):
                        prompts)
     self.world.addFourthPeep(lever)
     return lever
+
+
+@functools.lru_cache(maxsize=1)
+def tenderParts() -> tuple:
+  """The 'tenderParts' function returns the model's tender ('TENDER_PARTS',
+  in the engine's frame) with its corridor cut through it, made once."""
+  parts, _ = modelParts(MODEL)
+  back, front = TENDER_ENDS
+  low, high = CORRIDOR_FLOOR
+  past = 0.05 * (high - low) / (front - back)
+  return tuple(carvedOut(parts[name], (TENDER_AT + back - 0.05,
+                                       TENDER_AT + front + 0.05),
+                         CORRIDOR_HALF, (low - past, high + past),
+                         CORRIDOR_HIGH + 0.03) for name in TENDER_PARTS)
 
 
 def _worn(meshes: list, local: tuple, axes: tuple, centre: tuple) -> tuple:

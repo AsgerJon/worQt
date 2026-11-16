@@ -16,6 +16,8 @@ import functools
 import math
 from typing import TYPE_CHECKING
 
+import numpy
+
 from ._body import Body, State
 from ._shape import Sphere
 from ._turned import Turned
@@ -132,7 +134,7 @@ def reachOf(body: Body) -> float:
   return _reachOf(body.shape, body.centre)
 
 
-@functools.lru_cache(maxsize=256)
+@functools.lru_cache(maxsize=4096)
 def _reachOf(shape: object, centre: Vector) -> float:
   """Returns how far 'shape' reaches from 'centre'."""
   if shape is None:
@@ -180,8 +182,47 @@ def _onShape(body: Body, state: State, eye: Vector,
     return None
   if isinstance(body.shape, Turned):
     return _onTurned(body, state, eye, way)
-  places = [body.placeOf(state, point) for point in body.shape.points]
-  return _onFaces(places, body.shape.faces, eye, way)
+  back = conjugate(state.turn)
+  start = plus(rotated(back, minus(eye, state.place)), body.centre)
+  found = _onCorners(_cornersOf(body.shape), start, rotated(back, way))
+  if found is None:
+    return None
+  return found[0], rotated(state.turn, found[1])
+
+
+@functools.lru_cache(maxsize=4096)
+def _cornersOf(shape: object) -> numpy.ndarray:
+  """Returns the faces of 'shape' as an array of their corners (n, 3,
+  3: in its own frame), made once a shape."""
+  points = numpy.array(shape.points, numpy.float64)
+  return points[numpy.array(shape.faces, numpy.int64)]
+
+
+def _onCorners(corners: numpy.ndarray, eye: Vector,
+               way: Vector) -> tuple | None:
+  """Returns how far along 'way' from 'eye' the ray first meets one of
+  the faces whose 'corners' (n, 3, 3) are given, turned toward it, and
+  its outward normal; None for none ('_onFaces' for every face at once)."""
+  eye, way = numpy.array(eye, numpy.float64), numpy.array(way, numpy.float64)
+  a, b, c = corners[:, 0], corners[:, 1], corners[:, 2]
+  facing = numpy.cross(b - a, c - a)
+  size = numpy.linalg.norm(facing, axis=1)
+  toward = facing @ way
+  turned = (size > 0.0) & (toward < 0.0)
+  if not turned.any():
+    return None
+  a, b, c = a[turned], b[turned], c[turned]
+  facing, size, toward = facing[turned], size[turned], toward[turned]
+  far = numpy.einsum('ij,ij->i', facing, a - eye) / toward
+  point = eye + far[:, None] * way
+  inside = far > 0.0
+  for p, q in ((a, b), (b, c), (c, a)):
+    inside &= numpy.einsum('ij,ij->i', numpy.cross(q - p, point - p),
+                           facing) >= -1e-12 * size
+  if not inside.any():
+    return None
+  k = numpy.flatnonzero(inside)[numpy.argmin(far[inside])]
+  return float(far[k]), tuple(float(x) for x in facing[k] / size[k])
 
 
 def _onTurned(body: Body, state: State, eye: Vector,

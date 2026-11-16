@@ -13,7 +13,6 @@ cart and a cart coupled behind it), the points' lever beside them.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import numpy
@@ -21,12 +20,7 @@ import numpy
 from worQt.phys._body import Body, State
 from worQt.phys._compiled import gpuDevice
 from worQt.phys._shape import boxShape
-from worQt.phys._vectors import UNTURNED, turnOf
 from worQt.phys._small_steps import THREADS, SmallSteps, preloaded
-from worQt.phys.rail._trackshape import BED_DEEP, BED_HALF, BED_TOP, GAUGE
-from worQt.phys.rail._trackshape import RAIL_SECTION, SLEEPER_DEEP
-from worQt.phys.rail._trackshape import SLEEPER_HALF, SLEEPER_LONG
-from worQt.phys.rail._trackshape import SLEEPER_PITCH, SLEEPER_TOP
 from worQt.phys.rail._trackshape import trackQuads
 from worQt.phys.rail import RailWorld, Turnout, wheelsetBody
 from worQt.phys.rail._railrun import preloadedRails
@@ -38,6 +32,7 @@ from worQt.gaming.sandbox._fourthpeep import FourthPeep
 
 from ._layout import EDGE, TOE, mainLine, sidingLine
 from ._minecart import COUPLED, Minecart
+from ._solidtrack import chunkBody, chunksOf, stateOn, stopBody
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from worQt.gaming.sandbox import Universe
@@ -48,13 +43,6 @@ LOOP_STEP = 2.5e-4
 #  Fallen below this, m, a body has left the world (the island's top is
 #  29.6 m up, the loop's foot at nought).
 LOOP_LOWEST = -20.0
-#  The track is solid in straight pieces lying within 'SAG' m of its
-#  curve (1.2 m long on the loop, two sleepers), 'CHUNK' m long at most
-#  (on its straights: fewer bodies for every step to go over); a rail's
-#  head, as wide and as tall as the rail, m.
-SAG, CHUNK = 0.018, 12.0
-RAIL_WIDE = RAIL_SECTION[1][0] - RAIL_SECTION[0][0]
-RAIL_HIGH = -RAIL_SECTION[6][1]
 #  The rail world as the window runs it, s: the spec's reference, its
 #  wheels' step 0.1 ms and the axleboxes traded with the small steps
 #  every 2 ms, all on the world's device (float32: the wheelsets in the
@@ -67,11 +55,9 @@ LIVE_STEP, LIVE_EXCHANGE = 1e-4, 2e-3
 #  previews/wiley_coyote_lol.png: the minecart rolled off the start's
 #  open end into the void, its rider in it): a steel beam across at the
 #  height of the cart's ends (its wings, forks and beams, 0.39-0.56 m
-#  up), long, wide, high, its middle over the rails' top, m, on two
-#  posts down to the bed; steel, kg/m³.
-BEAM, BEAM_WIDE, BEAM_HIGH, BEAM_AT = 0.3, 2.6, 0.5, 0.5
-POST = 0.2
-STEEL = 7850.0
+#  up): its beam's bottom and top over the rails' top, m
+#  ('_solidtrack.stopBody').
+BEAM_SPAN = (0.25, 0.75)
 #  Where the minecart waits, m along the line: in the headshunt, its
 #  back end 0.5 m before the start's buffer stop (user, 2026-11-16:
 #  "let's get a 'minecart' but fr on that track").
@@ -151,9 +137,11 @@ class LoopWorld(World):
     self._fixedIsland(ISLAND)
     self._fixedIsland((ISLAND[1], float(end[0]) + 2.0,
                        SIDING_ISLAND_BESIDE, ISLAND[3]))
-    for track, ribbon in enumerate(self.tracks):
-      for begins, ends in _chunksOf(ribbon):
-        self._fixedChunk(track, begins, ends)
+    for ribbon in self.tracks:
+      for begins, ends in chunksOf(ribbon):
+        body = chunkBody(begins, ends)
+        self.fixed(body, stateOn(ribbon, 0.5 * (begins + ends), body),
+                   None)
     self.buffers = (self._fixedBuffer(0, 0.0, -1.0),
                     self._fixedBuffer(0, self.track.length, 1.0),
                     self._fixedBuffer(1, siding.length, 1.0))
@@ -234,63 +222,8 @@ class LoopWorld(World):
   def _fixedBuffer(self, track: int, along: float, way: float) -> int:
     """Puts a buffer stop past an end of track 'track' at 'along' ('way':
     -1 its start, 1 its end) and returns its index: a beam across at the
-    cart's ends' height and two posts under it, held still, drawn."""
-    beam = boxShape(BEAM, BEAM_WIDE, BEAM_HIGH).moved(
-      (way * 0.5 * BEAM, 0.0, BEAM_AT), UNTURNED)
-    low = BED_TOP - BED_DEEP
-    high = BEAM_AT - 0.5 * BEAM_HIGH
-    for side in (-0.6, 0.6):
-      beam = beam.joined(boxShape(POST, POST, high - low).moved(
-        (way * 0.5 * BEAM, side, 0.5 * (low + high)), UNTURNED))
-    body = Body.of(beam, STEEL)
-    place, frame = self.tracks[track].frameAt(along)
-    rows = tuple(tuple(float(x) for x in row) for row in frame)
-    centre = tuple(float(place[i]) + sum(rows[i][j] * body.centre[j]
-                                         for j in range(3))
-                   for i in range(3))
-    return self.fixed(body, State(centre, turnOf(rows)), 'buffer')
-
-  def _fixedChunk(self, track: int, begins: float, ends: float) -> None:
-    """Puts track 'track' from 'begins' to 'ends' m along in the world as
-    one body held still, straight along the track's frame at its
-    middle: the bed, the sleepers whose middles lie in it, the two
-    rails' heads, each a box; not drawn (the track's dress is)."""
-    middle, long = 0.5 * (begins + ends), ends - begins
-    shape = boxShape(long, 2.0 * BED_HALF, BED_DEEP).moved(
-      (0.0, 0.0, BED_TOP - 0.5 * BED_DEEP), UNTURNED)
-    first = math.ceil((begins - 0.5 * SLEEPER_PITCH) / SLEEPER_PITCH)
-    at = (first + 0.5) * SLEEPER_PITCH
-    while at < ends:
-      shape = shape.joined(boxShape(
-        SLEEPER_LONG, 2.0 * SLEEPER_HALF, SLEEPER_DEEP).moved(
-        (at - middle, 0.0, SLEEPER_TOP - 0.5 * SLEEPER_DEEP), UNTURNED))
-      at += SLEEPER_PITCH
-    for side in (-0.5 * GAUGE, 0.5 * GAUGE):
-      shape = shape.joined(boxShape(long, RAIL_WIDE, RAIL_HIGH).moved(
-        (0.0, side, -0.5 * RAIL_HIGH), UNTURNED))
-    body = Body.of(shape, EARTH)
-    place, frame = self.tracks[track].frameAt(middle)
-    rows = tuple(tuple(float(x) for x in row) for row in frame)
-    centre = tuple(float(place[i]) + sum(rows[i][j] * body.centre[j]
-                                         for j in range(3))
-                   for i in range(3))
-    self.fixed(body, State(centre, turnOf(rows)), None)
-
-
-def _chunksOf(ribbon: object) -> list:
-  """Returns where the track along 'ribbon' is cut into its solid pieces
-  (from, to, m along): each of its own pieces cut evenly into lengths
-  whose sag over its sharpest curve stays within 'SAG' (L^2 k / 8),
-  'CHUNK' at most."""
-  out, s = [], 0.0
-  for piece in ribbon.pieces:
-    sharpest = max(math.sqrt(sum(x * x for x in piece.start)),
-                   math.sqrt(sum(x * x for x in piece.end)))
-    longest = CHUNK if sharpest <= 0.0 else min(
-      CHUNK, math.sqrt(8.0 * SAG / sharpest))
-    count = max(1, math.ceil(piece.length / longest - 1e-9))
-    for k in range(count):
-      out.append((s + piece.length * k / count,
-                  s + piece.length * (k + 1) / count))
-    s += piece.length
-  return out
+    cart's ends' height ('BEAM_SPAN') and two posts under it, held still,
+    drawn."""
+    body = stopBody(way, BEAM_SPAN)
+    return self.fixed(body, stateOn(self.tracks[track], along, body),
+                      'buffer')

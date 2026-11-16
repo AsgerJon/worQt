@@ -387,10 +387,17 @@ Item {
         }
       }
 
+      //  A body's part may carry a picture (a coach's posters), as bright
+      //  as its 'glow' of its own
       Repeater3D {
         model: root.bodies
         delegate: Model {
+          id: bodyModel
           required property var modelData
+          property bool pictured: (modelData.picture || "") !== ""
+          property Texture picture: Texture {
+            source: bodyModel.modelData.picture || ""
+          }
           geometry: modelData.geometry
           position: modelData.body < root.places.length
                     ? root.places[modelData.body] : Qt.vector3d(0, 0, 0)
@@ -400,6 +407,11 @@ Item {
             baseColor: modelData.body === root.heldBody ? root.heldTint
                        : modelData.body === root.pointedBody
                        ? root.pointedTint : modelData.colour
+            baseColorMap: bodyModel.pictured ? bodyModel.picture : null
+            emissiveMap: bodyModel.pictured ? bodyModel.picture : null
+            emissiveFactor: Qt.vector3d(modelData.glow || 0,
+                                        modelData.glow || 0,
+                                        modelData.glow || 0)
             metalness: modelData.metal
             roughness: modelData.rough
           }

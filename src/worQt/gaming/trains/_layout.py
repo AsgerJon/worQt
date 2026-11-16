@@ -124,3 +124,20 @@ def ovalLine() -> Ribbon:
   first = Ribbon(pieces, (0.0, 0.0, OVAL_UP))
   across = float(first.frameAt(0.5 * first.length)[0][1])
   return Ribbon(pieces, (0.0, -0.5 * across, OVAL_UP))
+
+
+#  The oval's siding (user, 2026-11-16: something for the train to run
+#  into): its points at the end of the near straight ('OVAL_TOE' m along
+#  the oval, where its curve begins), the siding going on straight while
+#  the oval curves away to the left, 'OVAL_SIDING' m to its buffer stop.
+OVAL_TOE, OVAL_SIDING = 0.5 * OVAL_STRAIGHT, 260.0
+
+
+@functools.lru_cache(maxsize=1)
+def ovalSiding() -> Ribbon:
+  """The 'ovalSiding' function returns the oval's siding (made once):
+  straight on from the points ('OVAL_TOE' m along the oval, as the oval
+  lies there), 'OVAL_SIDING' m long."""
+  place, frame = ovalLine().frameAt(OVAL_TOE)
+  return Ribbon((straight(OVAL_SIDING),), tuple(float(x) for x in place),
+                frame)

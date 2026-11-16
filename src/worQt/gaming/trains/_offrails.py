@@ -17,6 +17,7 @@ import math
 
 from worQt.phys._assembly import Contact, Spring
 from worQt.phys._body import Body, State
+from worQt.phys._poke import reachOf
 from worQt.phys._shape import cylinderShape
 from worQt.phys._vectors import UNTURNED, turnAbout
 from worQt.phys.rail import Axlebox, wheelsetBody
@@ -27,6 +28,10 @@ from worQt.phys.rail._wheelset import ROOT_AT, radiusOf
 
 #  How many sides a wheel's and the axle's cylinders have.
 WHEEL_SIDES, AXLE_SIDES = 24, 10
+#  A wreck meets the world's bodies held still that reach within this of
+#  where it left its rails, m (a solid track is hundreds of them; a train
+#  off its rails at 30 m/s slides some 100 m).
+WRECK_NEAR = 150.0
 
 
 def offRailsBody(radius: float = RADIUS) -> Body:
@@ -65,8 +70,9 @@ def tookOff(world: object, index: int, states: list, law: tuple,
   of the same body to the same point of it instead; put back between
   its axleboxes, moving as they move, turning as it turned; it and
   'frames' (its vehicle's bodies, each once) meeting the world's own
-  bodies ('world.still') by 'law' (a 'Contact''s numbers). Returns what
-  it did: (the holds let go, the springs, the contacts, its radius)."""
+  bodies ('world.still') reaching within 'WRECK_NEAR' of it by 'law' (a
+  'Contact''s numbers). Returns what it did: (the holds let go, the
+  springs, the contacts, its radius)."""
   bodies = world.assembly.bodies
   radius = radiusOf(bodies[index])
   held = tuple(c for c in world.assembly.connections
@@ -89,8 +95,11 @@ def tookOff(world: object, index: int, states: list, law: tuple,
     was = states[index]
     states[index] = State(body.placeOf(carried, middle), was.turn,
                           body.velocityOf(carried, middle), was.spin)
-  contacts = []
+  contacts, here = [], states[index].place
   for other in sorted(world.still):
+    apart = sum((a - b) ** 2 for a, b in zip(states[other].place, here))
+    if apart ** 0.5 - reachOf(bodies[other]) > WRECK_NEAR:
+      continue
     for touched in (index,) + tuple(frames):
       contact = Contact(other, touched, *law)
       world.connected(contact)

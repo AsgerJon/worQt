@@ -142,3 +142,79 @@ def modelParts(path: Path = MODEL) -> tuple:
         places[:, (2, 0, 1)] + numpy.array((0.0, 0.0, origin[1])),
         normals[:, (2, 0, 1)], indices, 'model %s' % material))
   return parts, looks
+
+
+def carvedOut(meshes: list, ends: tuple, half: float, floor: tuple,
+              high: float) -> list:
+  """The 'carvedOut' function returns the model's 'meshes' (a part's: a
+  list of (places, normals, indices, look), in the engine's frame) with
+  a passage cut through them (user, 2026-11-16: walk from the engine
+  back through the train; the tender's corridor): along x from 'ends'
+  (from, to, m), 'half' m either side of the middle, from its floor (a
+  slope: 'floor' its height at the passage's two ends) 'high' m up.
+  What lies in it goes; a triangle across its side is cut along it
+  (its places and normals taken along its edges)."""
+  x0, x1 = ends
+  slope = (floor[1] - floor[0]) / (x1 - x0)
+  base = floor[0] - slope * x0
+  bounds = ((numpy.array((-1.0, 0.0, 0.0)), -x0),
+            (numpy.array((1.0, 0.0, 0.0)), x1),
+            (numpy.array((0.0, -1.0, 0.0)), half),
+            (numpy.array((0.0, 1.0, 0.0)), half),
+            (numpy.array((slope, 0.0, -1.0)), -base),
+            (numpy.array((-slope, 0.0, 1.0)), base + high))
+  outside = [((-1.0 * normal, -offset),) + tuple(bounds[:k])
+             for k, (normal, offset) in enumerate(bounds)]
+  out = []
+  for places, normals, indices, look in meshes:
+    triangles = indices.reshape(-1, 3)
+    corners = places[triangles]
+    sides = numpy.stack([corners @ normal - offset
+                         for normal, offset in bounds], -1)
+    within = (sides < 0.0).all(-1)
+    clear = (sides >= 0.0).all(1).any(-1)
+    kept = triangles[clear]
+    cut = numpy.flatnonzero(~clear & ~within.all(1))
+    rows, extra = [], []
+    for t in cut:
+      polygon = [(places[i], normals[i]) for i in triangles[t]]
+      for region in outside:
+        piece = polygon
+        for normal, offset in region:
+          piece = _clipped(piece, normal, offset)
+          if len(piece) < 3:
+            break
+        for k in range(1, len(piece) - 1):
+          extra.append((piece[0], piece[k], piece[k + 1]))
+    allPlaces, allNormals = [places], [normals]
+    newIndices = [kept.ravel().astype(numpy.uint32)]
+    at = len(places)
+    for triangle in extra:
+      allPlaces.append(numpy.array([p for p, _ in triangle]))
+      allNormals.append(numpy.array([n for _, n in triangle]))
+      newIndices.append(numpy.arange(at, at + 3, dtype=numpy.uint32))
+      at += 3
+    turned = numpy.vstack(allNormals)
+    turned /= numpy.maximum(numpy.linalg.norm(turned, axis=1,
+                                              keepdims=True), 1e-12)
+    out.append((numpy.vstack(allPlaces), turned,
+                numpy.concatenate(newIndices), look))
+  return out
+
+
+def _clipped(polygon: list, normal: numpy.ndarray, offset: float) -> list:
+  """Returns 'polygon' (corners: (place, normal)) clipped to the half
+  space where 'normal' . place - 'offset' is at most nought, an edge
+  crossing its plane cut where it crosses (Sutherland-Hodgman)."""
+  out = []
+  for k, (place, turned) in enumerate(polygon):
+    after, afterTurned = polygon[(k + 1) % len(polygon)]
+    here = float(place @ normal) - offset
+    there = float(after @ normal) - offset
+    if here <= 0.0:
+      out.append((place, turned))
+    if (here < 0.0 < there) or (there < 0.0 < here):
+      t = here / (here - there)
+      out.append((place + t * (after - place),
+                  turned + t * (afterTurned - turned)))
+  return out

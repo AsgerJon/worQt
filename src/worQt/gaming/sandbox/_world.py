@@ -47,8 +47,9 @@ class World:
   A subclass says what the world is: 'solverOf' (the physics stepping
   its assembly), 'spawnPoint' (where an avatar enters), 'fixtures' (what
   is drawn fixed in it, by look), 'LOOKS' (each look's colour, 0 to 255
-  a channel, metalness and roughness: the world's own; 'looks' holds
-  them and any a spawned thing adds) and 'readied' (loading its
+  a channel, metalness and roughness, and maybe a picture file and its
+  glow: the world's own; 'looks' holds them and any a spawned thing
+  adds) and 'readied' (loading its
   physics, on the world's thread, before the first step).
   """
 

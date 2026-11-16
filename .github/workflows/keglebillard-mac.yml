@@ -1,0 +1,98 @@
+#  Keglebillard for the Mac (user, 2026-11-16: a self-contained pack of
+#  the billiards part of worQt for a 2024 MacBook): builds
+#  'Keglebillard.app' on one of GitHub's Apple Silicon Macs with
+#  PyInstaller (packaging/keglebillard), tries it (its Warp kernels
+#  compiled, the room opened, a picture of it kept), and hands it out in
+#  a '.dmg' on a release of its own. Runs only by hand (user: "on
+#  dispatch ... rather than just running on every push"): the Actions
+#  tab, 'Keglebillard for Mac', 'Run workflow'.
+name: Keglebillard for Mac
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install what the billiards needs
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyside6==6.12.0 numpy==2.5.5 \
+            warp-lang==1.19.0 worktoy==1.2.2 pyinstaller==6.22.3 pillow
+
+      - name: Build the app
+        run: |
+          pyinstaller --noconfirm --distpath dist --workpath build \
+            packaging/keglebillard/keglebillard.spec
+          codesign --force --deep --sign - dist/Keglebillard.app
+          du -sh dist/Keglebillard.app
+
+      - name: Try it
+        run: |
+          perl -e 'alarm 600; exec @ARGV' env KEGLEBILLARD_SMOKE=20 \
+            KEGLEBILLARD_SHOT="$PWD/smoke.png" \
+            dist/Keglebillard.app/Contents/MacOS/Keglebillard \
+            > smoke.log 2>&1 || echo "it ended with $?"
+          cat smoke.log
+          grep -q '\[smoke\] kernels ready' smoke.log
+          ! grep -q 'Traceback' smoke.log
+
+      - name: Keep what the try showed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Keglebillard-tried
+          path: |
+            smoke.log
+            smoke.png
+          if-no-files-found: ignore
+
+      - name: Make the disk image
+        run: |
+          mkdir dmg
+          cp -R dist/Keglebillard.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Keglebillard -srcfolder dmg -ov \
+            -format UDZO Keglebillard.dmg
+          du -sh Keglebillard.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Keglebillard
+          path: Keglebillard.dmg
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: keglebillard-${{ github.run_number }}
+          name: Keglebillard for Mac (${{ github.run_number }})
+          files: Keglebillard.dmg
+          body: |
+            Keglebillard and three-cushion carambole, for a Mac with
+            Apple Silicon (M1 or newer).
+
+            1. Download Keglebillard.dmg below and open it.
+            2. Drag Keglebillard onto Applications.
+            3. Open it from Applications. The first time, the Mac says
+               it cannot check the app (it is not from the App Store):
+               open System Settings, Privacy & Security, scroll down and
+               click "Open Anyway" by Keglebillard (on older systems:
+               right-click the app, Open, Open).
+
+            You start in the billiard room: walk with W A S D, look with
+            the mouse, walk over to the kegler table and press E.
+            The first shot takes a few seconds longer: the physics is
+            readied once.

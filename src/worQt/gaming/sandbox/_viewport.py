@@ -436,10 +436,17 @@ class Viewport(QWidget):
 
 def _lookOf(world: World, look: str, entry: dict) -> dict:
   """Returns 'entry' with the colour, metalness and roughness of the
-  world's 'look'."""
-  rgb, metal, rough = world.looks[look]
+  world's 'look', and its picture and glow ('' and nought: none; a look
+  of five: (colour, metalness, roughness, picture file, glow), the
+  picture laid by the mesh's own places on it, as bright as 'glow' of
+  its own: a poster lit from behind)."""
+  rgb, metal, rough, *pictured = world.looks[look]
   entry['colour'], entry['metal'], entry['rough'] = (QColor(*rgb), metal,
                                                      rough)
+  picture, glow = pictured if pictured else ('', 0.0)
+  entry['picture'] = QUrl.fromLocalFile(picture).toString() if (
+    picture) else ''
+  entry['glow'] = float(glow)
   return entry
 
 
