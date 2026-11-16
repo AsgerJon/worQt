@@ -206,7 +206,7 @@ class AscentGuidance:
       vessel.anchor].radius) / CLIMB_UNTIL)
     wanted = mu / (r * r) - level * level / r + CLIMB_GAIN * (
       least - climb)
-    push = vessel.engine.thrust / MASS
+    push = vessel.engine.most / MASS
     return math.asin(max(-1.0, min(1.0, wanted / push)))
 
   def _apoapsis(self, vessel: Vessel, system: SolarSystem) -> float:
@@ -259,7 +259,7 @@ class AscentGuidance:
       self.phase = 'done'
       return
     left = self._speedLeft(vessel, system)
-    most = engine.thrust / MASS
+    most = engine.most / MASS
     engine.throttled(max(EASIEST, min(1.0, left / (most * EASE))))
 
   def _speedLeft(self, vessel: Vessel, system: SolarSystem) -> float:
@@ -280,4 +280,4 @@ class AscentGuidance:
     far = conic.apoapsis
     there = math.sqrt(mu * (2.0 / far - 1.0 / conic.a))
     return max(0.0, math.sqrt(mu / far) - there) / (
-      vessel.engine.thrust / MASS)
+      vessel.engine.most / MASS)

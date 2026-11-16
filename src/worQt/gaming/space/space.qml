@@ -52,6 +52,47 @@ Item {
   property vector3d candleLight: Qt.vector3d(0, 0, 0)
   property real candleGlow: 1.0
   property real glintPhase: 0.0
+  //  Asger's bars (user, 2026-11-17: "AsgerJon should have a health bar
+  //  and hunger bar like in minecraft"): health and food, points of
+  //  twenty (ten hearts, ten drumsticks; our own pixels); how red he
+  //  sees being hurt; how much of a ration he has eaten; dead, what
+  //  killed him.
+  property real health: 20
+  property real food: 20
+  property real hurtShown: 0
+  property real eatingShown: 0
+  property string deathText: ""
+  readonly property var heartPixels: [
+    ".oo...oo.", "ohfo.offo", "ohffofffo", "offfffffo", ".offfffo.",
+    "..offfo..", "...ofo...", "....o...."]
+  readonly property var drumstickPixels: [
+    "..ooo....", ".offfo...", "ofhfffo..", "offfffo..", "offffo...",
+    ".offob...", "..oo.bb..", "......bb.", "......b.b"]
+
+  //  Paints one icon of 'pixels' (9 a row: '.' none, 'o' outline, 'b'
+  //  bone, else filled: 'h' its highlight) on 'ctx' 'size' px a side:
+  //  'fill' two points whole, one half (its 'side': -1 the left, 1 the
+  //  right), none its empty colour.
+  function paintIcon(ctx, size, pixels, fill, side, full, light, empty) {
+    var s = size / 9
+    ctx.reset()
+    for (var r = 0; r < pixels.length; r++) {
+      for (var c = 0; c < 9; c++) {
+        var p = pixels[r].charAt(c)
+        if (p === ".")
+          continue
+        var colour = "#1c1010"
+        if (p === "b") {
+          colour = "#efe6d2"
+        } else if (p !== "o") {
+          var lit = fill >= 2 || (fill >= 1 && (side < 0 ? c < 5 : c > 3))
+          colour = lit ? (p === "h" ? light : full) : empty
+        }
+        ctx.fillStyle = colour
+        ctx.fillRect(c * s, r * s, Math.ceil(s), Math.ceil(s))
+      }
+    }
+  }
   NumberAnimation on glintPhase {
     from: 0.0
     to: 1.0
@@ -136,6 +177,7 @@ Item {
   property string boardTarget: ""
   property bool boardMap: false
   property string boardGravity: "0 g"
+  property string boardLimit: "4 g"
   property bool boardUp: false
   property string boardHeld: "|"
   signal boardPicked(string action)
@@ -922,6 +964,9 @@ Item {
         }
         Lamp { label: "Full"; keys: ["Z"]; action: "full"; tint: "#ffb347"
                lit: root.boardThrottle >= 0.999 }
+        Lamp { label: "Limit: " + root.boardLimit; keys: ["Y", "U"]
+               action: "limit"; tint: "#ffb347"
+               lit: root.boardLimit !== "4 g" }
         Lamp { label: "Cut"; keys: ["X"]; action: "cut"; tint: "#ffb347"
                lit: root.boardThrottle <= 0.0 }
       }
@@ -1050,6 +1095,107 @@ Item {
     font.pixelSize: 14
     style: Text.Outline
     styleColor: "#000000"
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    visible: root.hurtShown > 0.01 && !root.mapOpen
+    color: "#c00000"
+    opacity: 0.35 * root.hurtShown
+  }
+
+  Column {
+    visible: !root.mapOpen
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: 40
+    spacing: 3
+    Row {
+      spacing: 36
+      Row {
+        spacing: 2
+        Repeater {
+          model: 10
+          Canvas {
+            width: 20
+            height: 20
+            property int fill: Math.max(0, Math.min(2, Math.ceil(
+              root.health) - 2 * index))
+            y: root.health <= 4 ? 2.5 * Math.sin(2 * Math.PI * 6
+                                                 * root.glintPhase
+                                                 + 1.7 * index) : 0
+            onFillChanged: requestPaint()
+            onPaint: root.paintIcon(getContext("2d"), width,
+                                    root.heartPixels, fill, -1,
+                                    "#e01c1c", "#ff9a9a", "#3a2626")
+          }
+        }
+      }
+      Row {
+        spacing: 2
+        layoutDirection: Qt.RightToLeft
+        Repeater {
+          model: 10
+          Canvas {
+            width: 20
+            height: 20
+            property int fill: Math.max(0, Math.min(2, Math.ceil(
+              root.food) - 2 * index))
+            onFillChanged: requestPaint()
+            onPaint: root.paintIcon(getContext("2d"), width,
+                                    root.drumstickPixels, fill, 1,
+                                    "#b8642a", "#e2a064", "#3a3026")
+          }
+        }
+      }
+    }
+    Item {
+      width: parent.width
+      height: 4
+      Rectangle {
+        visible: root.eatingShown > 0
+        anchors.right: parent.right
+        width: 218 * root.eatingShown
+        height: 4
+        radius: 2
+        color: "#e2a064"
+      }
+    }
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    visible: root.deathText !== ""
+    color: "#a0580000"
+    Column {
+      anchors.centerIn: parent
+      spacing: 16
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "Asger died"
+        color: "#ffffff"
+        font.pixelSize: 56
+        font.bold: true
+        style: Text.Outline
+        styleColor: "#000000"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: root.deathText
+        color: "#ffe2e2"
+        font.pixelSize: 24
+        style: Text.Outline
+        styleColor: "#000000"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "B: wake up in the chair"
+        color: "#ffffff"
+        font.pixelSize: 18
+        style: Text.Outline
+        styleColor: "#000000"
+      }
+    }
   }
 
   Text {

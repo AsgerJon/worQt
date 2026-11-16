@@ -102,7 +102,8 @@ FRAME = 0.025
 SECTIONS = (('AUTOPILOT', -0.39, -0.055, -0.112, 0.095),
             ('ASCENT GUIDANCE', 0.112, -0.055, 0.39, 0.112),
             ('TIME AND GRAVITY', -0.39, -0.235, -0.09, -0.085),
-            ('VIEW', 0.12, -0.235, 0.39, -0.085))
+            ('ENGINE', 0.1, -0.235, 0.262, -0.085),
+            ('VIEW', 0.272, -0.235, 0.39, -0.085))
 #  On the panel (right, up from its middle, m), its outputs: the dials
 #  (each its name and middle; their radius): the altimeter by the orbit
 #  knob, its pink mark at the guidance's target ("The orbit knob is
@@ -140,13 +141,17 @@ SCREEN_AT, SCREEN_HALF, MONITOR_OUT = (0.0, -0.165), (0.052, 0.039), 0.03
 #  warp (user, 2026-11-17: "Next to the warp enchantment? Let's have a
 #  gravity one as well going from 0 - 1 and measures in g's. And has
 #  lots o glint. It starts off"): the cabin's pull to its floor, a notch
-#  a tenth of a g.
+#  a tenth of a g. The engine's limiter right of the monitor (user,
+#  2026-11-17: "for deep space missinos... We need to have another engine
+#  control that restricts the engine output to a particular g, for
+#  example 1. Then no need for magic gravity"): the most the engine may
+#  push, g ('LIMITS', its notches; the last its full thrust: no limit).
 SWITCHES = (('HOLD', 'T', 'hold', (-0.35, 0.0)),
             ('PRO', 'F', 'prograde', (-0.285, 0.0)),
             ('RETRO', 'R', 'retrograde', (-0.22, 0.0)),
             ('AIM', 'W', 'aim', (-0.155, 0.0)),
             ('ASCENT', 'J', 'ascent', (0.352, 0.01)),
-            ('MAP', 'M', 'map', (0.255, -0.175)))
+            ('MAP', 'M', 'map', (0.331, -0.175)))
 BAT_LONG = 0.03
 BAT_OFF, BAT_ON = 0.5, -0.5
 LEGEND_UP = 0.042
@@ -155,6 +160,8 @@ KNOBS = (('WARP', '. ,', 'warp', (-0.335, -0.165), 8, math.radians(105),
           -math.radians(30)),
          ('GRAV', 'K L', 'gravity', (-0.225, -0.165), 11,
           math.radians(150), -math.radians(30)),
+         ('LIMIT', 'Y U', 'limit', (0.181, -0.165), 8, math.radians(105),
+          -math.radians(30)),
          ('ORBIT', '[ ]', 'orbit', (0.27, 0.025), len(TARGETS),
           math.radians(150), -math.radians(30)))
 KNOB_RADIUS = 0.022
@@ -162,6 +169,7 @@ KEYS = (('REAL', '/', 'stop', (-0.13, -0.125)),
         ('TO AP', 'G', 'toAp', (-0.13, -0.19)))
 GRAVITY_NOTCHES = 11
 GRAVITY_STEP = 0.1
+LIMITS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
 KEY_HALF, KEY_TRAVEL = (0.02, 0.014), 0.006
 GUARD_SWITCH = (0.017, 0.025, 0.022)
 GUARD_KNOB = (KNOB_RADIUS + 0.006, KNOB_RADIUS + 0.006, 0.02)
@@ -268,6 +276,17 @@ def _negative(axis: tuple) -> tuple:
   return tuple(-x for x in axis)
 
 
+def _galley() -> tuple:
+  """Returns what he may work away from the dashboard: the rations'
+  crate (look at it within reach and click: he eats one)."""
+  from ._furnishings import rationCrate
+  middle, axes, half = rationCrate()
+  top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))
+  peep = Pushbutton('RCIR', None, top, (0.0, 0.0, -1.0), 0.01,
+                    ('Eat a ration (RCIR)',) * 2)
+  return (Control('RCIR', 'E', 'eat', middle, axes, half, peep),)
+
+
 def _controls() -> tuple:
   """Returns the dashboard's inputs, each a 'Control' with its
   FourthPeep: the panel's switches, knobs and keys, the consoles' keys
@@ -286,8 +305,9 @@ def _controls() -> tuple:
     pivot = panelPoint(u, v, face)
     peep = Knob(name, None, pivot, PANEL_AXES[2], KNOB_RADIUS, near, step,
                 notches)
-    if action == 'orbit':
-      peep.set(TARGETS.index(TARGET))
+    first = {'orbit': TARGETS.index(TARGET), 'limit': len(LIMITS) - 1}
+    if action in first:
+      peep.set(first[action])
       peep.value = float(peep.notch)
     out.append(Control(name, key, action, panelPoint(u, v, face + 0.012),
                        PANEL_AXES, (KNOB_RADIUS, KNOB_RADIUS, 0.012), peep))
@@ -334,7 +354,9 @@ class Cockpit:
   micro-gravity?") his head turns from his body's up and ahead, his eyes
   and figure are his body's, and he reaches what is near his eyes. The
   cabin's gravity enchantment is set at 'gravity' (its knob's notch: a
-  tenth of a g each; 'heavier', 'weight').
+  tenth of a g each; 'heavier', 'weight'). What he may work away from
+  the dashboard is the 'galley' (the rations' crate: user, 2026-11-17:
+  "To eat, Asger goes to the kitchen"), looked at as the inputs are.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -348,6 +370,7 @@ class Cockpit:
   controls: tuple
   crewman: Crewman
   gravity: int
+  galley: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -356,7 +379,7 @@ class Cockpit:
   def __init__(self, ) -> None:
     from ._crewman import Crewman
     self.yaw, self.pitch, self.glancing = 0.0, -0.12, None
-    self.controls = _controls()
+    self.controls, self.galley = _controls(), _galley()
     self.crewman, self.gravity = Crewman(), 0
     self._shaker = random.Random(2026)
 
@@ -405,6 +428,12 @@ class Cockpit:
     self.pitch = max(-PITCH_MOST, min(PITCH_MOST, math.asin(max(
       -1.0, min(1.0, look[2])))))
     return True
+
+  def strappedIn(self, ) -> None:
+    """The 'strappedIn' method puts him in his chair wherever he is (he
+    wakes there), looking ahead."""
+    self.crewman.strappedIn()
+    self.yaw, self.pitch, self.glancing = 0.0, -0.12, None
 
   def eye(self, ) -> tuple:
     """The 'eye' method returns his eyes' place (seated: 'EYE')."""
@@ -478,7 +507,7 @@ class Cockpit:
     (the nearest within 'REACH'), None if none."""
     way, eye = self.looking()[0], self.eye()
     best, nearest = None, REACH
-    for control in self.controls:
+    for control in self.controls + self.galley:
       far = control.hitBy(eye, way)
       if far is not None and far < nearest:
         best, nearest = control, far

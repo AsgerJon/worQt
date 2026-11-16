@@ -6,7 +6,9 @@ pine planks, the floor's oak boards, a braided rag rug, a knitted
 blanket; and the warp knob's enchantment glint ("give it a sort of
 enchantment glint, as it is kinda... magic") and the gravity knob's,
 more of it (2026-11-17: "And has lots o glint"). Each tiles: its right
-edge meets its left, its top its foot.
+edge meets its left, its top its foot. And the rations' print (2026-11-17:
+"an endless supply of RCIR from the French armed forces"): their sand
+card stencilled in black, no mark of anyone's.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -18,7 +20,7 @@ import random
 from ._looks import cacheFolder
 
 #  The pictures' version (a change paints them anew) and sizes, pixels.
-VERSION = 5
+VERSION = 6
 SIZE = 512
 #  How many m one picture of each covers (its tile).
 PINE_TILE = 1.2
@@ -27,14 +29,16 @@ BOARD_TILE = 1.6
 
 def cabinPicturesReady() -> dict:
   """Returns the cabin's pictures' files by name ('pine', 'boards',
-  'rug', 'blanket', 'glint', 'sparkle'), painted if not kept yet."""
+  'rug', 'blanket', 'glint', 'sparkle', 'rcir'), painted if not kept
+  yet."""
   folder = cacheFolder()
   folder.mkdir(parents=True, exist_ok=True)
   out = {}
   for name, painter in (('pine', pinePainted), ('boards', boardsPainted),
                         ('rug', rugPainted), ('blanket', blanketPainted),
                         ('glint', glintPainted),
-                        ('sparkle', sparklePainted)):
+                        ('sparkle', sparklePainted),
+                        ('rcir', rcirPainted)):
     target = folder / ('cabin-%s-%d.png' % (name, VERSION))
     if not target.exists() and not painter().save(str(target)):
       raise OSError('the picture %s could not be kept in %s' % (name,
@@ -227,5 +231,46 @@ def sparklePainted() -> object:
         glow.setColorAt(1.0, QColor(0, 0, 0))
         painter.setBrush(glow)
         painter.drawEllipse(QPointF(x + dx, y + dy), radius, radius)
+  painter.end()
+  return image
+
+
+def rcirPainted() -> object:
+  """Returns the rations' print: sand card, an olive band, RCIR in big
+  black stencil, what it is in small letters under it, a day's menu
+  number; its corner (where unprinted faces sample it) plain sand."""
+  from PySide6.QtCore import QRectF, Qt
+  from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+  image = QImage(SIZE, SIZE, QImage.Format.Format_RGB32)
+  image.fill(QColor(196, 178, 134))
+  painter = QPainter(image)
+  painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+  painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+  painter.fillRect(QRectF(0, 0.08 * SIZE, SIZE, 0.14 * SIZE),
+                   QColor(84, 92, 58))
+  painter.setPen(QPen(QColor(40, 36, 28), 6))
+  painter.drawRect(QRectF(0.05 * SIZE, 0.05 * SIZE, 0.9 * SIZE,
+                          0.9 * SIZE))
+  big = QFont('DejaVu Sans Mono')
+  big.setBold(True)
+  big.setPixelSize(int(0.3 * SIZE))
+  big.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 110)
+  painter.setFont(big)
+  painter.setPen(QColor(28, 26, 22))
+  painter.drawText(QRectF(0, 0.24 * SIZE, SIZE, 0.34 * SIZE),
+                   Qt.AlignmentFlag.AlignCenter, 'RCIR')
+  small = QFont('DejaVu Sans')
+  small.setBold(True)
+  small.setPixelSize(int(0.05 * SIZE))
+  painter.setFont(small)
+  for row, words in ((0.62, 'RATION DE COMBAT'),
+                     (0.69, 'INDIVIDUELLE R\u00c9CHAUFFABLE'),
+                     (0.8, 'MENU N\u00b0 7  \u2022  24 H')):
+    painter.drawText(QRectF(0, row * SIZE, SIZE, 0.07 * SIZE),
+                     Qt.AlignmentFlag.AlignCenter, words)
+  painter.setPen(QColor(230, 222, 196))
+  painter.setFont(small)
+  painter.drawText(QRectF(0, 0.08 * SIZE, SIZE, 0.14 * SIZE),
+                   Qt.AlignmentFlag.AlignCenter, '1 JOUR')
   painter.end()
   return image

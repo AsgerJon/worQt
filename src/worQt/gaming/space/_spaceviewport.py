@@ -118,7 +118,9 @@ HYGGE_LOOKS = {'sofa': ((128, 118, 106), 0.0, 0.95),
                'book green': ((52, 92, 60), 0.0, 0.8),
                'book blue': ((46, 62, 104), 0.0, 0.8),
                'book ochre': ((196, 146, 60), 0.0, 0.8),
-               'book cream': ((220, 206, 176), 0.0, 0.8)}
+               'book cream': ((220, 206, 176), 0.0, 0.8),
+               'olive': ((86, 94, 60), 0.0, 0.75),
+               'rcir': ((255, 255, 255), 0.0, 0.85)}
 #  The cabin's lights' looks and whether light plays on them: the
 #  candles' flames and the fairy lights glow alone, the lamp's paper
 #  shade is lit and glows.
@@ -367,8 +369,8 @@ class SpaceViewport(QWidget):
   def boardShown(self, board: dict) -> None:
     """The 'boardShown' method shows the control board: its 'throttle',
     'mode', 'warp', 'toAp', 'ascent', 'phase', 'target', 'map', the
-    cabin's 'gravity' (its words) and whether Asger is 'up' out of his
-    chair, and the keys 'held' (their names)."""
+    cabin's 'gravity' and the engine's 'limit' (their words), whether
+    Asger is 'up' out of his chair, and the keys 'held' (their names)."""
     root = self._root()
     if root is None:
       return
@@ -376,9 +378,25 @@ class SpaceViewport(QWidget):
                       ('warp', 'boardWarp'), ('toAp', 'boardToAp'),
                       ('ascent', 'boardAscent'), ('phase', 'boardPhase'),
                       ('target', 'boardTarget'), ('map', 'boardMap'),
-                      ('gravity', 'boardGravity'), ('up', 'boardUp')):
+                      ('gravity', 'boardGravity'), ('up', 'boardUp'),
+                      ('limit', 'boardLimit')):
       root.setProperty(key, board[name])
     root.setProperty('boardHeld', '|' + '|'.join(board['held']) + '|')
+
+  def vitalsShown(self, health: float, food: float, hurt: float,
+                  eating: float, death: str) -> None:
+    """The 'vitalsShown' method shows Asger's bars: his 'health' and
+    'food' (points of twenty: ten hearts, ten drumsticks), how red he
+    sees from being hurt ('hurt'), how much of a ration he has eaten
+    ('eating', nought to one; nought: none) and, dead, what killed him
+    ('death', '' alive)."""
+    root = self._root()
+    if root is None:
+      return
+    for key, value in (('health', health), ('food', food),
+                       ('hurtShown', hurt), ('eatingShown', eating),
+                       ('deathText', death)):
+      root.setProperty(key, value)
 
   def cockpitShown(self, inside: bool, prompt: tuple | None,
                    paper: tuple, stamp: str) -> None:

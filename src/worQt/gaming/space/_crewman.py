@@ -110,6 +110,11 @@ class Crewman:
     self._stood()
     return True
 
+  def strappedIn(self, ) -> None:
+    """The 'strappedIn' method puts him in his chair wherever he is."""
+    self.buckled = True
+    self._stood()
+
   def seatFar(self, ) -> float:
     """The 'seatFar' method returns how far his middle is from his
     seat's, m."""

@@ -18,8 +18,12 @@ MAGIC_ISP = 600.0
 class Aerospike:
   """
   Aerospike holds an engine: its full 'thrust' (N), its specific impulse
-  'isp' (s) and how far it is opened ('throttle', nought to one); what
-  it pushes ('push', N) and the fuel it burns doing so ('flow', kg/s).
+  'isp' (s) and how far it is opened ('throttle', nought to one); the
+  most it may push ('most', N: its limiter, user, 2026-11-17: "another
+  engine control that restricts the engine output to a particular g";
+  'limited'); what it pushes ('push', N: the throttle's share of its
+  thrust, no more than 'most') and the fuel it burns doing so ('flow',
+  kg/s).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -30,6 +34,7 @@ class Aerospike:
   thrust: float
   isp: float
   throttle: float
+  most: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -39,6 +44,7 @@ class Aerospike:
     if thrust <= 0.0 or isp <= 0.0:
       raise ValueError('no engine pushes %r N at %r s' % (thrust, isp))
     self.thrust, self.isp, self.throttle = float(thrust), float(isp), 0.0
+    self.most = self.thrust
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -46,8 +52,9 @@ class Aerospike:
 
   @property
   def push(self, ) -> float:
-    """The 'push' property is the thrust at the throttle, N."""
-    return self.thrust * self.throttle
+    """The 'push' property is the thrust at the throttle, no more than
+    the limiter lets it ('most'), N."""
+    return min(self.most, self.thrust * self.throttle)
 
   @property
   def flow(self, ) -> float:
@@ -62,3 +69,10 @@ class Aerospike:
     """The 'throttled' method opens the engine to 'throttle', kept
     within nought and one."""
     self.throttle = min(1.0, max(0.0, float(throttle)))
+
+  def limited(self, most: float) -> None:
+    """The 'limited' method lets the engine push no more than 'most' N
+    (its thrust at most)."""
+    if most <= 0.0:
+      raise ValueError('an engine limited to %r N pushes nothing' % most)
+    self.most = min(self.thrust, float(most))

@@ -25,13 +25,13 @@ from worQt.gaming.sandbox._speaker import Speaker
 from ._accelerometer import Accelerometer
 from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
-from ._cabinmixer import THUD, THUDS, TOLD
+from ._cabinmixer import EATS, HURTS, THUD, THUDS, TOLD
 from ._chasecamera import ChaseCamera
-from ._cockpit import Cockpit
+from ._cockpit import EYE, LIMITS, Cockpit
 from ._crewman import SIT
 from ._dashpictures import picturesReady
 from ._furnishings import candleLight
-from ._instruments import Instruments
+from ._instruments import Instruments, limitNotch
 from ._navball import Navball
 from ._orrery import Orrery, lengthText, timeText
 from ._planets import PAD, julianOf, solarSystemOn
@@ -40,7 +40,8 @@ from ._spaceviewport import SpaceViewport
 from ._teleprinter import ICONS
 from ._timekeeper import Timekeeper
 from ._turns import dot, norm, rotated, unit
-from ._vessel import Vessel
+from ._vessel import MASS, Vessel
+from ._vitals import EATING, Vitals
 
 #  A frame, ms; the longest step a frame takes, s.
 TICK = 16
@@ -93,7 +94,8 @@ CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Control: 'Ctrl',
         Qt.Key.Key_BracketRight: ']', Qt.Key.Key_M: 'M',
         Qt.Key.Key_Backspace: '⌫', Qt.Key.Key_V: 'V',
         Qt.Key.Key_P: 'P', Qt.Key.Key_O: 'O', Qt.Key.Key_I: 'I',
-        Qt.Key.Key_K: 'K', Qt.Key.Key_L: 'L', Qt.Key.Key_B: 'B'}
+        Qt.Key.Key_K: 'K', Qt.Key.Key_L: 'L', Qt.Key.Key_B: 'B',
+        Qt.Key.Key_Y: 'Y', Qt.Key.Key_U: 'U'}
 #  The action each key asks for.
 KEY_ACTIONS = {Qt.Key.Key_Z: 'full', Qt.Key.Key_X: 'cut',
                Qt.Key.Key_T: 'hold', Qt.Key.Key_F: 'prograde',
@@ -105,13 +107,18 @@ KEY_ACTIONS = {Qt.Key.Key_Z: 'full', Qt.Key.Key_X: 'cut',
                Qt.Key.Key_Backspace: 'pad', Qt.Key.Key_V: 'view',
                Qt.Key.Key_P: 'play', Qt.Key.Key_O: 'halt',
                Qt.Key.Key_I: 'eject', Qt.Key.Key_K: 'lighter',
-               Qt.Key.Key_L: 'heavier', Qt.Key.Key_B: 'buckle'}
+               Qt.Key.Key_L: 'heavier', Qt.Key.Key_B: 'buckle',
+               Qt.Key.Key_Y: 'limit down', Qt.Key.Key_U: 'limit up'}
 #  The cabin's input each action is worked by (Asger glances at it: user,
 #  2026-11-16: "When I press a keyboard key my view will turn to center
 #  on that key"), where it differs from the action's own.
 WORKED_BY = {'faster': 'warp', 'slower': 'warp', 'higher': 'orbit',
              'lower': 'orbit', 'aim': 'aim', 'throttle': 'throttle',
-             'lighter': 'gravity', 'heavier': 'gravity'}
+             'lighter': 'gravity', 'heavier': 'gravity',
+             'limit down': 'limit', 'limit up': 'limit'}
+#  Dead (user, 2026-11-17: "4g would kill Asger in 20 seconds"), these
+#  keys still do their work (B wakes him in his chair).
+DEAD_KEYS = ('map', 'view', 'buckle')
 #  Out of his chair (user, 2026-11-17: getting up, "FAFO rules") Asger
 #  works the dashboard only by reaching it (a click on what he looks at);
 #  these keys still do their work (the view's own; B sits him down), his
@@ -160,6 +167,7 @@ class SpaceWindow(QMainWindow):
     self.guidance = AscentGuidance()
     self.accelerometer, self.world, self._leaping = (Accelerometer(), None,
                                                      False)
+    self.vitals = Vitals()
     self._padded()
     self.chase, self.orrery, self.scenery = (ChaseCamera(), Orrery(),
                                              Scenery())
@@ -278,10 +286,12 @@ class SpaceWindow(QMainWindow):
     keeper.ticked(seconds)
     self.accelerometer.measured(vessel, system, seconds, keeper.factor > 1)
     self._cabinMoved(real)
+    self._lived(real)
     self.instruments.acted(real, vessel, system, keeper, self.guidance,
                            self.mapOpen, self.inside, self._header())
     told = list(self.instruments.told(vessel, system, self.inside))
     told[THUDS], told[THUD] = self.world.thuds, self.world.loudest
+    told[HURTS], told[EATS] = self.vitals.hurts, self.vitals.meals
     self.speaker.heard(tuple(told))
     right, down = self.pointer.moved()
     if right or down:
@@ -309,6 +319,10 @@ class SpaceWindow(QMainWindow):
                           self.instruments.printer.paper(), stamp)
     viewport.hudShown(self._readout(), MAP_HINT if self.mapOpen else HINT,
                       '')
+    vitals = self.vitals
+    viewport.vitalsShown(vitals.health, vitals.food, vitals.hurt,
+                         1.0 - vitals.eating / EATING if vitals.eating
+                         else 0.0, vitals.cause or '')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -412,6 +426,11 @@ class SpaceWindow(QMainWindow):
     if key == Qt.Key.Key_Escape:
       self.pointer.letGo()
       return True
+    if self.vitals.cause is not None:
+      action = KEY_ACTIONS.get(key)
+      if action in DEAD_KEYS:
+        self._acted(action)
+      return True
     if key == Qt.Key.Key_E and self.inside:
       self._used(False)
       return True
@@ -504,6 +523,10 @@ class SpaceWindow(QMainWindow):
       self.inside = not self.inside
     elif action == 'buckle':
       self._buckled()
+    elif action in ('limit', 'limit up', 'limit down'):
+      self._limited(action == 'limit down' or (action == 'limit' and back))
+    elif action == 'eat':
+      self._noteOf(self.vitals.ate() or 'Asger eats a ration (RCIR)')
     elif action in ('gravity', 'heavier', 'lighter'):
       lighter = action == 'lighter' or (action == 'gravity' and back)
       if self.cockpit.heavier(-1 if lighter else 1):
@@ -538,9 +561,13 @@ class SpaceWindow(QMainWindow):
 
   def _buckled(self, ) -> None:
     """Gets Asger up out of his chair, or sits him down if he is near
-    enough to it (said either way)."""
+    enough to it (said either way); dead, wakes him whole in it."""
     cockpit = self.cockpit
-    if cockpit.crewman.buckled:
+    if self.vitals.cause is not None:
+      self.vitals.revived()
+      cockpit.strappedIn()
+      self._noteOf('Asger wakes in his chair')
+    elif cockpit.crewman.buckled:
       cockpit.gotUp()
       self._noteOf('Asger is up: W A S D, Space, B to sit again')
     elif cockpit.satDown():
@@ -549,6 +576,31 @@ class SpaceWindow(QMainWindow):
       self._noteOf('Too far from the chair (%.1f m): within %.0f m'
                    % (cockpit.crewman.seatFar(), SIT))
 
+  def _limited(self, down: bool) -> None:
+    """Moves the engine's limiter a notch down (or up), said."""
+    engine = self.vessel.engine
+    notch = max(0, min(len(LIMITS) - 1, limitNotch(engine)
+                       + (-1 if down else 1)))
+    engine.limited(LIMITS[notch] * G0 * MASS)
+    self._noteOf('Engine limited to %g g' % LIMITS[notch]
+                 if notch < len(LIMITS) - 1 else 'Engine unlimited (%g g)'
+                 % LIMITS[notch])
+
+  def _lived(self, real: float) -> None:
+    """Lives Asger 'real' s on, pulled as hard as the cabin pulls where
+    he is (in his chair: at his eyes); says it if that killed him."""
+    cockpit, crewman = self.cockpit, self.cockpit.crewman
+    if crewman.buckled:
+      pull = self.accelerometer.pullAt(EYE, (0.0, 0.0, 0.0),
+                                       cockpit.weight())
+    else:
+      pull = self.accelerometer.pullAt(crewman.middle, crewman.velocity,
+                                       cockpit.weight())
+    alive = self.vitals.cause is None
+    self.vitals.lived(real, norm(pull) / G0)
+    if alive and self.vitals.cause is not None:
+      self._noteOf('Asger died: %s' % self.vitals.cause)
+
   def _cabinMoved(self, real: float) -> None:
     """Moves what is loose in the cabin 'real' s on: Asger (righted
     against the pull on him, his legs as the keys held want, a leap
@@ -556,7 +608,7 @@ class SpaceWindow(QMainWindow):
     cockpit, accelerometer = self.cockpit, self.accelerometer
     crewman, weight = cockpit.crewman, cockpit.weight()
     want = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
-    if not crewman.buckled:
+    if not crewman.buckled and self.vitals.cause is None:
       pull = accelerometer.pullAt(crewman.middle, crewman.velocity, weight)
       crewman.righted(pull, real)
       held = {MOVING[key] for key in self.held if key in MOVING}
@@ -598,9 +650,9 @@ class SpaceWindow(QMainWindow):
 
   def _used(self, back: bool) -> None:
     """Works the input Asger looks at ('back': a right click, the other
-    way: the slide down, the knobs back)."""
+    way: the slide down, the knobs back); dead, nothing."""
     action = self._looked()
-    if action:
+    if action and self.vitals.cause is None:
       self._acted(action, back)
 
   def _steered(self, real: float) -> None:
@@ -608,7 +660,7 @@ class SpaceWindow(QMainWindow):
     aim on while its keys are held past a tap."""
     held, engine, vessel = self.held, self.vessel.engine, self.vessel
     now = time.perf_counter()
-    if not self.cockpit.crewman.buckled:
+    if not self.cockpit.crewman.buckled or self.vitals.cause is not None:
       vessel.steered(0.0, 0.0, 0.0)
       return
     if Qt.Key.Key_Shift in held:
@@ -682,6 +734,7 @@ class SpaceWindow(QMainWindow):
             'target': lengthText(guidance.target),
             'map': self.mapOpen, 'held': sorted(held),
             'gravity': _gravityText(self.cockpit.weight()),
+            'limit': '%g g' % LIMITS[limitNotch(self.vessel.engine)],
             'up': not self.cockpit.crewman.buckled}
 
   def _mapMouse(self, kind: object, event: object) -> bool:

@@ -22,13 +22,15 @@ from worQt.gaming.sandbox._slider import SLIDE
 
 from . import _cabinmixer as mixer
 from ._ascentguidance import TARGET
+from ._aerospike import G0
 from ._tapedeck import LEAD_IN, TapeDeck
-from ._cockpit import DIALS, GUARD_HOLD, LAMPS
+from ._cockpit import DIALS, GUARD_HOLD, LAMPS, LIMITS
 from ._dashboard import LEGENDS, dialShare
 from ._flightlog import FlightLog
 from ._teleprinter import WIDTH, Teleprinter
 from ._timekeeper import WARPS
 from ._turns import dot, norm, unit
+from ._vessel import MASS
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._ascentguidance import AscentGuidance
@@ -124,7 +126,8 @@ class Instruments:
           self._held[control.action] = GUARD_HOLD
       elif isinstance(peep, Knob):
         notch = {'warp': WARPS.index(keeper.factor),
-                 'gravity': self.cockpit.gravity}.get(control.action)
+                 'gravity': self.cockpit.gravity,
+                 'limit': limitNotch(vessel.engine)}.get(control.action)
         if notch is None:
           notch = guidance.notch()
         if notch != peep.notch:
@@ -175,7 +178,7 @@ class Instruments:
       vessel.heightOver(system)) / air.densities[0])
     out = [0.0] * mixer.TOLD
     out[mixer.VOLUME] = VOLUME
-    out[mixer.ENGINE] = vessel.engine.throttle
+    out[mixer.ENGINE] = vessel.engine.push / vessel.engine.thrust
     out[mixer.INSIDE] = 1.0 if inside else 0.0
     out[mixer.AIR] = thick
     out[mixer.CLICKS], out[mixer.SNAPS] = self.clicks, self.snaps
@@ -253,9 +256,16 @@ class Instruments:
     top = air.top if air is not None else 0.0
     orbit = conic is not None and conic.closed and (
       conic.periapsis - body.radius) > top
-    lit = {'ENGINE': vessel.engine.throttle > 0.0, 'AIR': inAir,
+    lit = {'ENGINE': vessel.engine.push > 0.0, 'AIR': inAir,
            'GROUND': vessel.touching > 0, 'WARP': keeper.factor > 1,
            'GUIDE': guidance.on, 'ORBIT': orbit}
     now = [lit[name] for name, _ in LAMPS]
     self.relays += sum(1 for a, b in zip(now, self.lamps) if a != b)
     self.lamps = now
+
+
+def limitNotch(engine: object) -> int:
+  """Returns the notch of the limiter's knob the engine's limit is on
+  ('LIMITS', g: the nearest)."""
+  gees = engine.most / (MASS * G0)
+  return min(range(len(LIMITS)), key=lambda k: abs(LIMITS[k] - gees))

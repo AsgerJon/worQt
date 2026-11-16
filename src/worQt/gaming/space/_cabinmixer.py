@@ -35,11 +35,13 @@ from ._tapedeck import LEAD_IN
 #  how many lamps have changed, how often the deck has been announced
 #  (its clicks getting ready for the music), how many thuds there have
 #  been in the cabin (Asger or a loose thing meeting something hard) and
-#  how hard the last frame's hardest was (m/s, by its heft).
+#  how hard the last frame's hardest was (m/s, by its heft), how often
+#  Asger has been hurt (a point of health lost) and how many rations he
+#  has begun.
 VOLUME, ENGINE, INSIDE, AIR, CLICKS, SNAPS, TICKS = range(7)
 SLIDE, TYPED, BELLS, RETURNS, DECK, REWINDS, RELAYS = range(7, 14)
-ANNOUNCED, THUDS, THUD = range(14, 17)
-TOLD = 17
+ANNOUNCED, THUDS, THUD, HURTS, EATS = range(14, 19)
+TOLD = 19
 #  A thud this hard (m/s, by its heft) is as loud as a thud gets.
 LOUDEST = 4.0
 #  How fast the engine's roar and the ear's place ease, s.
@@ -167,6 +169,39 @@ def thudOf(rate: int) -> numpy.ndarray:
   return 0.8 * knock + 0.3 * wood
 
 
+def oofOf(rate: int) -> numpy.ndarray:
+  """Returns Asger hurt: a short grunt, a voice's buzz falling through a
+  vowel's two formants; 0.3 s."""
+  t = numpy.arange(int(0.3 * rate)) / rate
+  pitch = 150.0 - 60.0 * t / 0.3
+  buzz = numpy.sign(numpy.sin(2.0 * math.pi * numpy.cumsum(pitch) / rate))
+  voice = numpy.zeros(len(t))
+  for middle, weight in ((650.0, 1.0), (1100.0, 0.6)):
+    b, a = bandOf(rate, middle, 4.0)
+    voice += weight * lfilter(b, a, buzz)
+  envelope = numpy.minimum(1.0, t / 0.02) * numpy.exp(-t / 0.12)
+  voice *= envelope
+  return 0.5 * voice / max(1e-9, numpy.abs(voice).max())
+
+
+def eatOf(rate: int) -> numpy.ndarray:
+  """Returns Asger eating a ration: its pack torn open (a crackle of
+  foil), then four chews; 2 s."""
+  random = numpy.random.default_rng(50)
+  sound = numpy.zeros(int(2.0 * rate))
+  tear = int(0.45 * rate)
+  b, a = bandOf(rate, 3800.0, 0.8)
+  crackle = lfilter(b, a, random.standard_normal(tear) * (
+    random.random(tear) < 0.25))
+  crackle *= numpy.sin(math.pi * numpy.arange(tear) / tear)
+  sound[:tear] += 0.35 * crackle / max(1e-9, numpy.abs(crackle).max())
+  for k in range(4):
+    at = int((0.7 + 0.32 * k) * rate)
+    chew = _burst(rate, 0.16, 420.0 + 40.0 * k, 1.2, 0.04, 51 + k)
+    sound[at:at + len(chew)] += 0.4 * chew[:len(sound) - at]
+  return sound
+
+
 def motorOf(rate: int, length: float) -> numpy.ndarray:
   """Returns the deck's capstan motor spinning up over 'length' s: a hum
   rising from 30 to 120 Hz with its overtones, swelling in."""
@@ -253,7 +288,8 @@ class CabinMixer:
     self.shots = {'clicks': clickOf(rate), 'snaps': snapOf(rate),
                   'ticks': tickOf(rate), 'relays': relayOf(rate),
                   'returns': returnOf(rate), 'bells': bellOf(rate),
-                  'thuds': thudOf(rate)}
+                  'thuds': thudOf(rate), 'hurts': oofOf(rate),
+                  'eats': eatOf(rate)}
     self.clacks = [clackOf(rate, k) for k in range(4)]
     self.playing, self.seen = [], None
     self.tape, self.tapeAt, self.tapeGain, self.rewound = None, 0, 0.0, None
@@ -344,13 +380,15 @@ class CabinMixer:
 
   def _shots(self, told: list, count: int) -> numpy.ndarray:
     """Returns the clicks, snaps, ticks, relays, clacks, carriage returns,
-    bells and thuds playing (a thud as loud as it was hard), one more of
+    bells, thuds (each as loud as it was hard), Asger's grunts and meals
+    playing, one more of
     each started as its count grows (the first counts heard are taken as
     they are)."""
     counts = {'clicks': told[CLICKS], 'snaps': told[SNAPS],
               'ticks': told[TICKS], 'relays': told[RELAYS],
               'typed': told[TYPED], 'returns': told[RETURNS],
-              'bells': told[BELLS], 'thuds': told[THUDS]}
+              'bells': told[BELLS], 'thuds': told[THUDS],
+              'hurts': told[HURTS], 'eats': told[EATS]}
     hard = min(1.0, told[THUD] / LOUDEST)
     if self.seen is None:
       self.seen = dict(counts)

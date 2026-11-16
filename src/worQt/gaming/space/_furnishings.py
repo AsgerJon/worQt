@@ -24,7 +24,7 @@ import numpy
 
 from ._cockpit import FLOOR, WALL, capsuleRadius
 from ._shapes import UNTURNED, ballRows, boxRows, cylinderRows
-from ._shapes import discRows, frustumRows, joined, pointAlong
+from ._shapes import discRows, frustumRows, joined, pointAlong, quadRows
 
 #  Each piece of furniture: where it stands (x, y on the floor, m) and
 #  the way its front faces (deg from x toward y: into the room).
@@ -35,6 +35,13 @@ SHELF = ((-4.05, 0.0), 0.0)
 COUNTER = ((-2.95, -2.85), 44.0)
 BED = ((-3.05, 2.35), -38.0)
 PLANT = ((3.1, -2.45), 140.0)
+#  The rations (user, 2026-11-17: "To eat, Asger goes to the kitchen
+#  where an endless supply of RCIR from the French armed forces"): a
+#  crate on the floor at the counter's right end, its half sizes, a
+#  ration box's half sizes, m.
+RATIONS = (1.0, 0.0)
+CRATE = (0.22, 0.17, 0.16)
+RATION_BOX = (0.105, 0.075, 0.045)
 RUG = ((0.2, -2.55), 1.45)
 #  The candles on the coffee table (x, y on its top from its middle,
 #  radius, height), the lamp's shade's middle height, the fairy lights'
@@ -152,6 +159,7 @@ def _built() -> tuple:
   _counter(room)
   _bed(room)
   _plant(room)
+  _rations(room)
   (x, y), radius = RUG
   put('rug', discRows((x, y, FLOOR + 0.004), ((1.0, 0.0, 0.0),
                                               (0.0, 1.0, 0.0),
@@ -342,6 +350,36 @@ def _bed(room: tuple) -> None:
   half = (0.14, 0.3, 0.07)
   loose('pillow', (('cream', _block(b, -0.8, 0.0, 0.572, half)),),
         _placed(b, -0.8, 0.0, 0.572), half, _frame(b[1]), 0.6)
+
+
+def _rations(room: tuple) -> None:
+  """The rations by the kitchen counter, endless: an olive crate on the
+  floor, its stencilled label on its front, ration boxes stacked on it
+  (their tops printed RCIR); all solid, fixed."""
+  put, solid, block, loose = room
+  c = COUNTER
+  along, toward = RATIONS
+  block('olive', c, along, toward, CRATE[2], CRATE)
+  _, front, _ = _frame(c[1])
+  label = _placed(c, along, toward + CRATE[1] + 0.001, CRATE[2])
+  side, _, up = _frame(c[1])
+  right = tuple(-x for x in side)
+  put('rcir', quadRows(label, (right, up, front), (0.17, 0.1),
+                       (0.0, 0.0, 1.0, 1.0)))
+  low = 2.0 * CRATE[2] + RATION_BOX[2]
+  for shift, high in ((-0.1, low), (0.1, low),
+                      (0.0, low + 2.0 * RATION_BOX[2])):
+    block('rcir', c, along + shift, toward, high, RATION_BOX,
+          (0.0, 0.0, 1.0, 1.0))
+
+
+def rationCrate() -> tuple:
+  """Returns the rations' stack (to be looked at and eaten from): its
+  middle, its axes (along, toward its front, up) and half sizes."""
+  along, toward = RATIONS
+  high = CRATE[2] + 2.0 * RATION_BOX[2]
+  return (_placed(COUNTER, along, toward, high), _frame(COUNTER[1]),
+          (CRATE[0], CRATE[1], high))
 
 
 def _plant(room: tuple) -> None:

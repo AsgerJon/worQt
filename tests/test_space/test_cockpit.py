@@ -85,12 +85,12 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 19 inputs, each its own action and key: six
-    switches and the view's, three knobs (warp, orbit, gravity), eight
-    keys, the slide; the switches plain FourthPeeps, the rest their
-    kinds."""
+    """The dashboard has its 20 inputs, each its own action and key: six
+    switches and the view's, four knobs (warp, orbit, gravity, the
+    engine's limit), eight keys, the slide; the switches plain
+    FourthPeeps, the rest their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 19)
+    self.assertEqual(len(controls), 20)
     actions = [control.action for control in controls]
     keys = [control.key for control in controls]
     self.assertEqual(len(set(actions)), len(actions))
@@ -99,7 +99,7 @@ class TestCockpit(SpaceTest):
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 7, 'Knob': 3, 'Pushbutton': 8,
+    self.assertEqual(kinds, {'FourthPeep': 7, 'Knob': 4, 'Pushbutton': 8,
                              'Slider': 1})
     switch = Cockpit().controlOf('hold').peep
     self.assertIs(type(switch), FourthPeep)
