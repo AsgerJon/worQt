@@ -16,7 +16,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    #  Apple Silicon; 'latest', never a version (macos-14's image was
+    #  retired: "The configuration 'macos-14-arm64-us-default' is not
+    #  supported"). The app runs on older systems than it is built on:
+    #  everything in it comes from wheels with their own minimums.
+    runs-on: macos-latest
     timeout-minutes: 60
     env:
       PYTHONPATH: src
