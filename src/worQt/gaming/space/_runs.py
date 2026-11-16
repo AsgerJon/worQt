@@ -20,7 +20,8 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_solarsystem',
                'tests.test_space.test_timekeeper',
                'tests.test_space.test_flight',
-               'tests.test_space.test_autopilot')
+               'tests.test_space.test_autopilot',
+               'tests.test_space.test_ascentguidance')
 
 
 def spaceTests() -> int:

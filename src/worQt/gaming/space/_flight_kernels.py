@@ -75,12 +75,15 @@ SLOTS = 5
 #  at once (one copy each way): its place and velocity (big parts and
 #  small rests), turn (x y z w), spin (its own axes), height over the
 #  ground where the call begins, push (N), the keys on the wheels, its
-#  autopilot's mode and held turn, its anchor; out, its legs touching
-#  and the steps taken.
+#  autopilot's mode and held turn, its anchor, its aim (pitch over the
+#  horizon, turn off the path, compass heading, rad; whether it is from
+#  the path); out, its legs touching and the steps taken.
 PLACE_HI, PLACE_LO, SPEED_HI, SPEED_LO = 0, 3, 6, 9
 TURN, SPIN, HEIGHT, PUSH, STEER = 12, 16, 19, 20, 21
-MODE, HELD, ANCHOR, TOUCHING, STEPS = 24, 25, 29, 30, 31
-STATE = 32
+MODE, HELD, ANCHOR = 24, 25, 29
+AIM_PITCH, AIM_TURN, AIM_HEADING, AIM_TRAVEL = 30, 31, 32, 33
+TOUCHING, STEPS = 34, 35
+STATE = 36
 #  The shortest step, s, and the most a launch takes (a guard).
 LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
@@ -100,6 +103,7 @@ PI = _single(3.14159265358979)
 HOLD = wp.constant(1)
 PROGRADE = wp.constant(2)
 RETROGRADE = wp.constant(3)
+AIM = wp.constant(4)
 
 
 @wp.struct
@@ -452,6 +456,55 @@ def pointed(q: wp.quat, aim: wp.vec3) -> wp.quat:
   return wp.normalize(wp.mul(turn, q))
 
 
+@wp.func
+def aimed(p: wp.vec3, path: wp.vec3, spin: wp.vec3, pitch: float,
+          turn: float, heading: float, travel: float) -> wp.vec3:
+  """Returns where the aim mode points ('_autopilot.aimOf', line for
+  line): 'pitch' over the horizon at 'p', along the path's heading
+  ('path' flattened onto the horizon) and 'turn' off it to the right
+  when 'travel', else along the compass 'heading' (from north toward
+  east; the north of the body turning at 'spin')."""
+  up = wp.normalize(p)
+  axis = wp.vec3(0.0, 0.0, 1.0)
+  if wp.length(spin) > 1e-12:
+    axis = wp.normalize(spin)
+  east = wp.cross(axis, up)
+  if wp.length(east) < 1e-6:
+    east = wp.cross(wp.vec3(1.0, 0.0, 0.0), up)
+  east = wp.normalize(east)
+  north = wp.cross(up, east)
+  way = north * wp.cos(heading) + east * wp.sin(heading)
+  if travel > 0.5:
+    flat = path - up * wp.dot(path, up)
+    if wp.length(flat) > 1e-3:
+      way = wp.normalize(flat)
+  right = wp.cross(way, up)
+  level = way * wp.cos(pitch) + up * wp.sin(pitch)
+  return wp.normalize(level * wp.cos(turn) + right * wp.sin(turn))
+
+
+@wp.func
+def aimFor(mode: int, p: wp.vec3, v: wp.vec3, ground: wp.vec3,
+           inAir: bool, spin: wp.vec3, pitch: float, turn: float,
+           heading: float, travel: float) -> wp.vec4:
+  """Returns the autopilot's aim for 'mode' (x, y, z) and whether it has
+  one (w: 1 or 0): along or against the path (over the ground in the
+  air, the orbit's above), or the aim mode's."""
+  path = v
+  if inAir:
+    path = ground
+  if mode == AIM:
+    aim = aimed(p, path, spin, pitch, turn, heading, travel)
+    return wp.vec4(aim[0], aim[1], aim[2], 1.0)
+  size = wp.length(path)
+  if (mode == PROGRADE or mode == RETROGRADE) and size > 1.0:
+    aim = path / size
+    if mode == RETROGRADE:
+      aim = -aim
+    return wp.vec4(aim[0], aim[1], aim[2], 1.0)
+  return wp.vec4(0.0, 0.0, 0.0, 0.0)
+
+
 @wp.kernel
 def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
           longest: float):
@@ -487,9 +540,12 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   steer = vecAt(states, i, STEER)
   mode = int(states[i, MODE])
   held = quatAt(states, i, HELD)
+  aimPitch = states[i, AIM_PITCH]
+  aimTurn = states[i, AIM_TURN]
+  aimHeading = states[i, AIM_HEADING]
+  aimTravel = states[i, AIM_TRAVEL]
   spin = sky.spins[b]
   airTop = sky.airTops[b]
-  steering = wp.length(steer) > 0.0
   done = float(0.0)
   free = float(1e30)
   anchorMu = sky.mus[b]
@@ -587,38 +643,32 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
             force = force + push2
             torque = torque + wp.cross(arm, push2)
             touching = touching + 1
-    # the wheels: the keys, else the autopilot
+    # the wheels: the autopilot, each key taking its own axis over
     own = wp.quat_rotate(wp.quat_inverse(q), torque)
-    aim = wp.vec3(0.0, 0.0, 0.0)
-    aiming = False
-    if mode == PROGRADE or mode == RETROGRADE:
-      path = v
-      if height < airTop:
-        path = ground
-      size = wp.length(path)
-      if size > 1.0:
-        aim = path / size
-        if mode == RETROGRADE:
-          aim = -aim
-        aiming = True
+    target = aimFor(mode, p, v, ground, height < airTop, spin, aimPitch,
+                    aimTurn, aimHeading, aimTravel)
+    aim = wp.vec3(target[0], target[1], target[2])
+    aiming = target[3] > 0.5
     railed = dt > SNAP_STEP
-    if steering and not railed:
-      own = own + wp.cw_mul(steer, wheels)
-    elif mode > 0 and not railed:
-      error = wp.vec3(0.0, 0.0, 0.0)
-      if mode == HOLD:
-        error = rotationOf(wp.mul(wp.quat_inverse(q), held))
-      elif aiming:
-        error = pointing(q, aim)
-      want = error * RATE_GAIN
-      size = wp.length(want)
-      if size > RATE_MOST:
-        want = want * (RATE_MOST / size)
-      if mode != HOLD:
-        want = wp.vec3(want[0], want[1], 0.0)
-      wanted = wp.cw_mul(inertia, want - w) * TORQUE_GAIN
+    if not railed:
+      wanted = wp.vec3(0.0, 0.0, 0.0)
+      if mode > 0:
+        error = wp.vec3(0.0, 0.0, 0.0)
+        if mode == HOLD:
+          error = rotationOf(wp.mul(wp.quat_inverse(q), held))
+        elif aiming:
+          error = pointing(q, aim)
+        want = error * RATE_GAIN
+        size = wp.length(want)
+        if size > RATE_MOST:
+          want = want * (RATE_MOST / size)
+        if mode != HOLD:
+          want = wp.vec3(want[0], want[1], 0.0)
+        wanted = wp.cw_mul(inertia, want - w) * TORQUE_GAIN
       for k in range(3):
         wanted[k] = wp.clamp(wanted[k], -wheels[k], wheels[k])
+        if steer[k] != 0.0:
+          wanted[k] = steer[k] * wheels[k]
       own = own + wanted
     # kick
     pair = pairAdded(vhi, vlo, (accel + force / mass) * dt)
@@ -647,16 +697,13 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
       q = held
     elif railed and mode > 0:
       p = hi + lo
-      path = vhi + vlo
-      if heightOf(base, height0, radius, (hi - baseHi) + (lo - baseLo)) \
-          < airTop:
-        path = path - wp.cross(spin, p)
-      size = wp.length(path)
-      if size > 1.0:
-        aim = path / size
-        if mode == RETROGRADE:
-          aim = -aim
-        q = pointed(q, aim)
+      v = vhi + vlo
+      inAir = heightOf(base, height0, radius, (hi - baseHi)
+                       + (lo - baseLo)) < airTop
+      target = aimFor(mode, p, v, v - wp.cross(spin, p), inAir, spin,
+                      aimPitch, aimTurn, aimHeading, aimTravel)
+      if target[3] > 0.5:
+        q = pointed(q, wp.vec3(target[0], target[1], target[2]))
     done = done + dt
     steps = steps + 1
   vecPut(states, i, PLACE_HI, hi)

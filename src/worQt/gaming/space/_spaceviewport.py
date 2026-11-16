@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QPointF, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QQuaternion, QVector3D
 from PySide6.QtQml import QQmlComponent
 from PySide6.QtQuick import QQuickView
@@ -21,6 +21,7 @@ from worQt.gaming.sandbox._mesh import Mesh
 
 from ._line import Line
 from ._meshes import capRows, padRows, ringRows, rocketParts, sphereRows
+from ._navball import mirroredRows
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
@@ -44,6 +45,10 @@ ROCKET_LOOKS = {'plug': ((70, 72, 78), 0.3, 0.45),
 PAD_LOOK = ((150, 148, 142), 0.0, 0.9)
 #  The near layer's slots: the pad, the rocket.
 PAD_SLOT, ROCKET_SLOT = 0, 1
+#  The artificial horizon's sphere (spokes, rings).
+NAV_SPHERE = (96, 48)
+#  What on the scene takes its own clicks (by its object's name).
+CLICKED = ('board', 'navball')
 #  The map's lines' colours: a body's path, the vessel's.
 ORBIT_COLOUR = '#3f5f8f'
 PATH_COLOUR = '#7dff9a'
@@ -60,6 +65,12 @@ class SpaceViewport(QWidget):
   keys and the mouse come to that window. 'fps' counts the frames the
   GPU draws a second; 'problems' says why the scene would not load.
   """
+
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  #  SIGNALS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  boardPicked = Signal(str)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -113,13 +124,14 @@ class SpaceViewport(QWidget):
     else:
       self._compiled()
 
-  def furnished(self, system: SolarSystem, files: dict,
-                orbits: list) -> bool:
+  def furnished(self, system: SolarSystem, files: dict, orbits: list,
+                navball: object) -> bool:
     """The 'furnished' method puts in what is drawn all along: each body's
     sphere wearing its look ('files': each look's picture by name),
     Saturn's rings, the pad, the rocket, the map's bodies and each
-    body's path ('orbits', 'Scenery.orbitsOf') and the vessel's. Returns
-    whether it could (the scene loaded)."""
+    body's path ('orbits', 'Scenery.orbitsOf') and the vessel's, the
+    artificial horizon (its picture, 'navball'). Returns whether it could
+    (the scene loaded)."""
     root = self._root()
     if root is None:
       return False
@@ -157,6 +169,11 @@ class SpaceViewport(QWidget):
     root.setProperty('mapLines', lines)
     root.setProperty('capPicture', QUrl.fromLocalFile(str(files[
       'terra'])).toString())
+    rows, indices = sphereRows(*NAV_SPHERE)
+    root.setProperty('navGeometry', self._kept1(Mesh(mirroredRows(rows),
+                                                     indices)))
+    root.setProperty('navPicture', QUrl.fromLocalFile(str(navball))
+                     .toString())
     self._files = files
     self.furnishedYet = True
     return True
@@ -219,6 +236,44 @@ class SpaceViewport(QWidget):
                                 'colour': QColor(m['colour'])}
                                for m in frame['marks']])
 
+  def navballShown(self, frame: dict | None) -> None:
+    """The 'navballShown' method shows the artificial horizon as
+    'Navball.frameOf' has it (None: hidden)."""
+    root = self._root()
+    if root is None or not self.furnishedYet:
+      return
+    root.setProperty('navShown', frame is not None)
+    if frame is None:
+      return
+    root.setProperty('navTurn', QQuaternion(*frame['turn']))
+    root.setProperty('navMarks', frame['marks'])
+    root.setProperty('navPitch', frame['pitch'])
+    root.setProperty('navHeading', frame['heading'])
+    root.setProperty('navKind', frame['kind'])
+
+  def boardShown(self, board: dict) -> None:
+    """The 'boardShown' method shows the control board: its 'throttle',
+    'mode', 'warp', 'toAp', 'ascent', 'phase', 'target', 'map' and the
+    keys 'held' (their names)."""
+    root = self._root()
+    if root is None:
+      return
+    for name, key in (('throttle', 'boardThrottle'), ('mode', 'boardMode'),
+                      ('warp', 'boardWarp'), ('toAp', 'boardToAp'),
+                      ('ascent', 'boardAscent'), ('phase', 'boardPhase'),
+                      ('target', 'boardTarget'), ('map', 'boardMap')):
+      root.setProperty(key, board[name])
+    root.setProperty('boardHeld', '|' + '|'.join(board['held']) + '|')
+
+  def takesClick(self, at: QPointF) -> bool:
+    """The 'takesClick' method says whether the scene takes a click at
+    'at' itself (on the control board or the horizon)."""
+    root = self._root()
+    if root is None:
+      return False
+    under = root.childAt(at.x(), at.y())
+    return under is not None and under.objectName() in CLICKED
+
   def hudShown(self, readout: str, hint: str, status: str) -> None:
     """The 'hudShown' method shows what the flight says ('readout'), the
     keys ('hint') and a word in the middle ('status', '' none)."""
@@ -263,7 +318,10 @@ class SpaceViewport(QWidget):
       return
     self.quick.setSource(component.url())
     self.problems = tuple(error.toString() for error in self.quick.errors())
-    self.loaded = self.quick.rootObject() is not None
+    root = self.quick.rootObject()
+    self.loaded = root is not None
+    if root is not None:
+      root.boardPicked.connect(self.boardPicked)
 
 
 def _partOf(geometry: object, look: tuple, slot: int, culled: bool) -> dict:

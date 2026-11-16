@@ -7,6 +7,7 @@ import os
 import sys
 
 from worQt.gaming.billiards.gui import BilliardsApp
+from worQt.gaming.space._runs import mainSpace
 from worQt.gaming.trains._runs import mainSteam
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -46,4 +47,4 @@ def tester01() -> int:
 
 
 if __name__ == '__main__':
-  yolo(mainSteam)
+  yolo(mainSpace)

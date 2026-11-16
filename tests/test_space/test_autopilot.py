@@ -101,3 +101,77 @@ class TestAutopilot(SpaceTest):
     flight.flown((vessel,), system, 1000.0, 1000.0)
     self.assertLess(_degrees(vessel.nose, rotated(turn, (0.0, 0.0, 1.0))),
                     1e-3)
+
+  def test_aimed(self) -> None:
+    """Aimed 10 degrees over the horizon along the path, the nose is
+    there within a degree in 30 s: as the host reckons the aim, 10 over
+    the horizon, square with the path's plane."""
+    from worQt.gaming.space._turns import cross
+    system, flight = self.systemOf(), self.flightOf()
+    vessel = self.orbiting(system, 300e3, 300e3)
+    vessel.autopilot.aimedAt(math.radians(10.0), 0.0, 0.0, True)
+    self.flownFrames(flight, vessel, system, 30.0)
+    self.assertLess(_degrees(vessel.nose, vessel.aimDirection(system)), 1.0)
+    up = unit(vessel.place)
+    self.assertAlmostEqual(math.degrees(math.asin(dot(vessel.nose, up))),
+                           10.0, delta=1.0)
+    side = unit(cross(vessel.velocity, up))
+    self.assertLess(abs(dot(vessel.nose, side)), 0.02)
+
+  def test_roll_blind(self) -> None:
+    """Aimed alike, two vessels rolled differently point alike: the aim
+    knows no roll."""
+    from worQt.gaming.space._turns import aboutAxis, product
+    system, flight = self.systemOf(), self.flightOf()
+    noses = []
+    for roll in (0.0, 2.0):
+      vessel = self.orbiting(system, 300e3, 300e3)
+      turn = product(vessel.turn, aboutAxis((0.0, 0.0, 1.0), roll))
+      vessel.placed(vessel.anchor, vessel.place, vessel.velocity, turn,
+                    vessel.spin)
+      vessel.autopilot.aimedAt(math.radians(-20.0), math.radians(15.0),
+                               0.0, True)
+      self.flownFrames(flight, vessel, system, 30.0)
+      noses.append(vessel.nose)
+    self.assertLess(_degrees(*noses), 0.5)
+
+  def test_nudged(self) -> None:
+    """Nudged from prograde the aim starts where the nose is (level,
+    along the path) and moves the nudge: up 5 degrees; on the pad it
+    keeps a compass heading, east, nudged right round the compass."""
+    system, flight = self.systemOf(), self.flightOf()
+    vessel = self.orbiting(system, 300e3, 300e3, 'ahead')
+    vessel.autopilot.engaged('prograde', vessel.turn)
+    vessel.aimNudged(system, math.radians(5.0), 0.0)
+    pilot = vessel.autopilot
+    self.assertEqual(pilot.mode, 'aim')
+    self.assertTrue(pilot.travel)
+    self.assertAlmostEqual(math.degrees(pilot.pitch), 5.0, delta=0.1)
+    self.assertAlmostEqual(pilot.turn, 0.0, delta=1e-3)
+    padded = self.padded(system)
+    padded.aimNudged(system, math.radians(-5.0), math.radians(10.0))
+    pilot = padded.autopilot
+    self.assertFalse(pilot.travel)
+    self.assertAlmostEqual(math.degrees(pilot.pitch), 85.0, delta=0.1)
+    self.assertAlmostEqual(math.degrees(pilot.heading), 100.0, delta=0.1)
+
+  def test_launched(self) -> None:
+    """From the pad at full throttle aimed 80 degrees up on a compass
+    heading of east, the vessel leans east, takes up its path once it
+    has one (the aim not moving) and holds 80 over the horizon."""
+    system, flight = self.systemOf(), self.flightOf()
+    vessel = self.padded(system)
+    vessel.autopilot.aimedAt(math.radians(80.0), 0.0, math.radians(90.0),
+                             False)
+    vessel.engine.throttled(1.0)
+    t = 0.0
+    for _ in range(int(40.0 / FRAME)):
+      before = vessel.aimDirection(system)
+      vessel.aimKept(system)
+      self.assertLess(_degrees(before, vessel.aimDirection(system)), 0.01)
+      flight.flown((vessel,), system, t, FRAME)
+      t += FRAME
+    self.assertTrue(vessel.autopilot.travel)
+    pitch, heading = vessel.noseAngles(system)
+    self.assertAlmostEqual(math.degrees(pitch), 80.0, delta=1.5)
+    self.assertAlmostEqual(math.degrees(heading), 90.0, delta=3.0)

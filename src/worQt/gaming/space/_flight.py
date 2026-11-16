@@ -162,7 +162,12 @@ class Flight:
       row[k.PUSH] = vessel.engine.push
       row[k.STEER:k.STEER + 3] = vessel.steer
       row[k.MODE] = vessel.autopilot.index
-      row[k.HELD:k.HELD + 4] = _warpQuat(vessel.autopilot.held)
+      pilot = vessel.autopilot
+      row[k.HELD:k.HELD + 4] = _warpQuat(pilot.held)
+      row[k.AIM_PITCH] = pilot.pitch
+      row[k.AIM_TURN] = pilot.turn
+      row[k.AIM_HEADING] = pilot.heading
+      row[k.AIM_TRAVEL] = 1.0 if pilot.travel else 0.0
       row[k.ANCHOR] = vessel.anchor
     self._fleet.states.assign(rows)
     return self._fleet

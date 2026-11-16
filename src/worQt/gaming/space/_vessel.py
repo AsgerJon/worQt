@@ -12,10 +12,10 @@ import math
 from typing import TYPE_CHECKING
 
 from ._aerospike import MAGIC_ISP, Aerospike
-from ._autopilot import Autopilot
+from ._autopilot import Autopilot, aimOf
 from ._conic import Conic
-from ._turns import cross, matrixBack, matrixTimes, norm, quaternionOf
-from ._turns import rotated, unit
+from ._turns import cross, dot, matrixBack, matrixTimes, norm
+from ._turns import quaternionOf, rotated, unit
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
@@ -53,6 +53,9 @@ WHEELS = (150e3, 150e3, 30e3)
 #  How far its legs give standing (the legs' stiffness is the kernel's:
 #  'LEG_STIFF'), m.
 SAG = 0.0049
+#  Going this fast over the horizon, m/s, a vessel has a path for the aim
+#  to follow (before, its aim keeps a compass heading: on the pad, east).
+TRAVEL_SPEED = 20.0
 
 
 class Vessel:
@@ -172,3 +175,100 @@ class Vessel:
                              self.velocity)
     except ValueError:
       return None
+
+  def pathOf(self, system: SolarSystem) -> tuple:
+    """The 'pathOf' method returns the velocity its autopilot's path
+    is: over the ground (and the air) in the air, the orbit's above
+    it."""
+    air = system.bodies[self.anchor].air
+    if air is not None and self.heightOver(system) < air.top:
+      return self.groundVelocity(system)
+    return self.velocity
+
+  def aimDirection(self, system: SolarSystem) -> tuple:
+    """The 'aimDirection' method returns where the aim mode points now
+    (a unit vector), as the kernel reckons it."""
+    pilot = self.autopilot
+    return aimOf(self.place, self.pathOf(system), system.bodies[
+      self.anchor].spinVector, pilot.pitch, pilot.turn, pilot.heading,
+                 pilot.travel)
+
+  def noseAngles(self, system: SolarSystem) -> tuple:
+    """The 'noseAngles' method returns its nose's pitch over the horizon
+    and its compass heading (from north toward east), rad."""
+    up, north, east = self._horizon(system)
+    nose = self.nose
+    return (math.asin(max(-1.0, min(1.0, dot(nose, up)))),
+            math.atan2(dot(nose, east), dot(nose, north)) % (2.0 * math.pi))
+
+  def aimNudged(self, system: SolarSystem, pitch: float,
+                turn: float) -> None:
+    """The 'aimNudged' method moves the aim 'pitch' rad up and 'turn' rad
+    right (off the path; before there is one, round the compass); not
+    aiming yet, it aims first where the nose points (the user: "roll-
+    insensitive controls that work only in the parallel of travel")."""
+    pilot = self.autopilot
+    if pilot.mode != 'aim':
+      self._aimSeeded(system)
+    if pilot.travel:
+      pilot.aimedAt(pilot.pitch + pitch, pilot.turn + turn, pilot.heading,
+                    True)
+    else:
+      pilot.aimedAt(pilot.pitch + pitch, 0.0, pilot.heading + turn, False)
+
+  def aimKept(self, system: SolarSystem) -> None:
+    """The 'aimKept' method lets the aim follow the path once there is
+    one (going 'TRAVEL_SPEED' over the horizon): the compass heading it
+    kept is taken up into the path, the aim not moving."""
+    pilot = self.autopilot
+    if pilot.mode != 'aim' or pilot.travel:
+      return
+    if self._flatPath(system) is None:
+      return
+    aim = self.aimDirection(system)
+    pitch, turn = self._anglesOnPath(system, aim)
+    pilot.aimedAt(pitch, turn, pilot.heading, True)
+
+  def _aimSeeded(self, system: SolarSystem) -> None:
+    """Aims the autopilot where the nose points: along the path if it
+    has one, else on the compass (straight up: east)."""
+    nose = self.nose
+    if self._flatPath(system) is not None:
+      pitch, turn = self._anglesOnPath(system, nose)
+      self.autopilot.aimedAt(pitch, turn, 0.5 * math.pi, True)
+      return
+    pitch, heading = self.noseAngles(system)
+    if pitch > 1.55:
+      heading = 0.5 * math.pi
+    self.autopilot.aimedAt(pitch, 0.0, heading, False)
+
+  def _anglesOnPath(self, system: SolarSystem, way: tuple) -> tuple:
+    """Returns the pitch over the horizon and the turn off the path of
+    the unit 'way', rad (the aim mode's)."""
+    up = unit(self.place)
+    flat = self._flatPath(system)
+    right = cross(flat, up)
+    turn = math.asin(max(-1.0, min(1.0, dot(way, right))))
+    return math.atan2(dot(way, up), dot(way, flat)), turn
+
+  def _flatPath(self, system: SolarSystem) -> tuple | None:
+    """Returns the way of its path over the horizon (a unit vector);
+    None going slower than 'TRAVEL_SPEED' over it."""
+    up = unit(self.place)
+    path = self.pathOf(system)
+    along = dot(path, up)
+    flat = tuple(a - along * b for a, b in zip(path, up))
+    if norm(flat) < TRAVEL_SPEED:
+      return None
+    return unit(flat)
+
+  def _horizon(self, system: SolarSystem) -> tuple:
+    """Returns the up, north and east where it is (unit vectors)."""
+    up = unit(self.place)
+    spin = system.bodies[self.anchor].spinVector
+    axis = unit(spin) if norm(spin) > 1e-12 else (0.0, 0.0, 1.0)
+    east = cross(axis, up)
+    if norm(east) < 1e-6:
+      east = cross((1.0, 0.0, 0.0), up)
+    east = unit(east)
+    return up, cross(up, east), east
