@@ -28,6 +28,12 @@ curvature come from the rigid body's own motion: nothing is added for
 them. Spin creep, the contact's longitudinal shift with yaw and the
 rails' own give are left out (the spec's first slice).
 
+The track may be several, joined by turnouts ('Turnout', user,
+2026-11-16: "do all the things", the points among them): each wheelset
+on one of them, stepped along the way the turnouts send it ('wayOf':
+the tracks within its reach, back and ahead, piece by piece); where its
+way leaves one track for another, it is on the other.
+
 A wheelset may ride in a vehicle's frame ('Axlebox', user, 2026-11-16:
 a minecart "fr"): the frame stays in the inner world (solid: walked in,
 loaded, punted), and the two worlds trade every 'exchange' s: each
@@ -49,7 +55,8 @@ import math
 from .._assembly import Assembly
 from .._body import State
 from .._vectors import matrixOf, solved, turnOf as quaternionOf
-from ._axlebox import JOURNAL_AT, Axlebox, brakeOf, palmgrenOf
+from ._axlebox import JOURNAL_AT, Axlebox, brakeOf, motorOf, palmgrenOf
+from ._turnout import wayOf
 from ._wheelset import GAUGE_CORNER, NOMINAL, RADIUS, RAIL_TOP, profileAt
 
 #  The step, s.
@@ -80,12 +87,20 @@ POINTS = (RAIL_TOP, GAUGE_CORNER)
 #  How often the rail world and the inner world trade the axleboxes'
 #  pushes, s.
 EXCHANGE = 2e-3
+#  How far either way of a wheelset its way reaches at least in a call
+#  (and half again as far as it may go in it), m.
+REACH = 0.5
+#  How far apart the places a wheelset is first looked for at lie along
+#  each track, m; how near a branch's start must be to its points, m.
+SAMPLES, TOE_NEAR = 0.5, 1e-6
 
 
 class RailWorld:
   """
   RailWorld steps the wheelsets of an assembly (its bodies that are
-  'body') rolling on 'track' every 'step' s, their rails gripping at
+  'body') rolling on 'track' (and on 'others', tracks joined to it and
+  to each other by 'turnouts': 'tracks' holds them all, 'track' first)
+  every 'step' s, their rails gripping at
   'friction' (nought: none, frictionless), and hands the rest to 'inner'
   (another world, 'advancedAll' alike), the connections touching a
   wheelset dropped but its axleboxes ('Axlebox'), stepped here, traded
@@ -95,8 +110,9 @@ class RailWorld:
   too every trade stays there, nothing back in Python till the call's
   end. None steps them in plain Python, the reference the kernel is
   held to. 'rolling' holds each
-  wheelset's own state by its index: where it is along the track
-  ('s'), each contact's elastic slip ('slips') and its last loads
+  wheelset's own state by its index: which track it is on ('track', its
+  index among 'tracks') and where along it ('s'), each contact's elastic
+  slip ('slips') and its last loads
   ('loads', N, by contact); 'boxLoads' each axlebox's push over the last
   call, N, its mean (its last step's swings with the trade), by the
   axlebox. A wheelset off the rails ('OFF_ACROSS' across, 'OFF_UP' up,
@@ -109,20 +125,27 @@ class RailWorld:
   def __init__(self, inner: object, track: object, body: object,
                step: float = RAIL_STEP,
                friction: float = FRICTION,
-               exchange: float = EXCHANGE, device: str = None) -> None:
+               exchange: float = EXCHANGE, device: str = None,
+               others: tuple = (), turnouts: tuple = ()) -> None:
     self.inner, self.track, self.body, self.step = inner, track, body, step
     self.friction, self.exchange, self.boxLoads = friction, exchange, {}
     self.device, self._run, self.derailed = device, None, set()
-    self.segments = track.segments()
+    self.tracks = (track,) + tuple(others)
+    self.turnouts = tuple(turnouts)
+    self.lengths = tuple(t.length for t in self.tracks)
+    self.tracksSegments = tuple(t.segments() for t in self.tracks)
+    self.segments = self.tracksSegments[0]
     self.split, self.rolling = None, {}
     inertia = body.inertia
     self.mass = body.mass
     self.moments = (inertia[0][0], inertia[1][1], inertia[2][2])
+    self._joined()
     self.samples = []
-    for k in range(int(track.length / 0.5) + 1):
-      place, frame = track.frameAt(0.5 * k)
-      self.samples.append((0.5 * k, tuple(
-        float(x) for x in place + RADIUS * frame[:, 2])))
+    for t, ribbon in enumerate(self.tracks):
+      for k in range(int(ribbon.length / SAMPLES) + 1):
+        place, frame = ribbon.frameAt(SAMPLES * k)
+        self.samples.append((t, SAMPLES * k, tuple(
+          float(x) for x in place + RADIUS * frame[:, 2])))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -154,10 +177,15 @@ class RailWorld:
     return tuple(out)
 
   def frameAt(self, s: float) -> tuple:
-    """The 'frameAt' method returns the track at 's' m along, as plain
-    floats: its centre line's place, its frame (nine numbers, row by
-    row) and its turn rates there."""
-    starts, places, frames, rates = self.segments
+    """The 'frameAt' method returns the first track at 's' m along, as
+    plain floats: its centre line's place, its frame (nine numbers, row
+    by row) and its turn rates there."""
+    return self.frameOn(0, s)
+
+  def frameOn(self, track: int, s: float) -> tuple:
+    """The 'frameOn' method returns track 'track' (its index) at 's' m
+    along, as 'frameAt' does."""
+    starts, places, frames, rates = self.tracksSegments[track]
     i = max(0, bisect.bisect_right(starts, s) - 1)
     h = s - starts[i]
     kx, ky, kz = rates[i]
@@ -190,28 +218,75 @@ class RailWorld:
     return place, frame, rates[i]
 
   def along(self, place: tuple, s: float = None) -> float:
-    """The 'along' method returns where along the track 'place' (a
-    wheelset's centre) lies (its foot on the centre line: the s whose
-    frame's x is square to it), by Newton from 's' (None: from the half
-    metre whose wheelset's centre, a wheel's radius up from the rails,
-    lies nearest: where the track passes near itself, a loop's end by its
-    start, the rails alone are no guide)."""
+    """The 'along' method returns where along the first track 'place' (a
+    wheelset's centre) lies, as 'foundOn' does, from 's' (None: from the
+    nearest of its samples)."""
+    way = (((0.0, self.lengths[0], 0, 0.0),), True, True)
     if s is None:
-      s = min(self.samples, key=lambda sample: (
-        (sample[1][0] - place[0]) ** 2 + (sample[1][1] - place[1]) ** 2
-        + (sample[1][2] - place[2]) ** 2))[0]
+      s = min((sample for sample in self.samples if sample[0] == 0),
+              key=lambda sample: _apart(sample[2], place))[1]
+    return self.alongWay(way, place, s)
+
+  def foundOn(self, place: tuple) -> tuple:
+    """The 'foundOn' method returns which track 'place' (a wheelset's
+    centre) lies on and where along it (its foot on the centre line: the
+    s whose frame's x is square to it): by Newton from the sample (every
+    'SAMPLES' m of every track) whose wheelset's centre, a wheel's radius
+    up from the rails, lies nearest (where the track passes near itself,
+    a loop's end by its start, the rails alone are no guide)."""
+    track, s, _ = min(self.samples, key=lambda sample: _apart(sample[2],
+                                                              place))
+    way = (((0.0, self.lengths[track], track, 0.0),), True, True)
+    return track, self.alongWay(way, place, s)
+
+  def wayFor(self, track: int, s: float, reach: float) -> tuple:
+    """The 'wayFor' method returns the way a wheelset at 's' m along
+    track 'track' may go within 'reach' m either way, as the turnouts
+    are set now ('wayOf')."""
+    return wayOf(self.lengths, self.turnouts, track, s, reach, reach)
+
+  def frameOnWay(self, way: tuple, u: float) -> tuple:
+    """The 'frameOnWay' method returns the track 'u' m along 'way' (as
+    'wayFor' returns it), as 'frameAt' does: on its piece there."""
+    pieces = way[0]
+    piece = pieces[0]
+    for candidate in pieces:
+      if candidate[0] <= u:
+        piece = candidate
+      else:
+        break
+    return self.frameOn(piece[2], u + piece[3])
+
+  def onWay(self, way: tuple, u: float) -> tuple:
+    """The 'onWay' method returns which track 'u' m along 'way' is on
+    and where along it, m (held within the way's ends)."""
+    pieces = way[0]
+    u = min(max(u, pieces[0][0]), pieces[-1][1])
+    piece = pieces[0]
+    for candidate in pieces:
+      if candidate[0] <= u:
+        piece = candidate
+      else:
+        break
+    return piece[2], u + piece[3]
+
+  def alongWay(self, way: tuple, place: tuple, u: float) -> float:
+    """The 'alongWay' method returns where along 'way' 'place' lies (its
+    foot on the centre line), by Newton from 'u', held within the way's
+    ends."""
+    low, high = way[0][0][0], way[0][-1][1]
     for _ in range(4):
-      at, f, k = self.frameAt(s)
+      at, f, k = self.frameOnWay(way, u)
       dx, dy, dz = place[0] - at[0], place[1] - at[1], place[2] - at[2]
       ahead = f[0] * dx + f[3] * dy + f[6] * dz
       left = f[1] * dx + f[4] * dy + f[7] * dz
       up = f[2] * dx + f[5] * dy + f[8] * dz
       slope = -1.0 + k[2] * left - k[1] * up
       move = -ahead / slope
-      s = min(max(s + move, 0.0), self.track.length)
+      u = min(max(u + move, low), high)
       if abs(move) < 1e-10:
         break
-    return s
+    return u
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PRIVATE METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -224,10 +299,29 @@ class RailWorld:
     its slips let go)."""
     memory = self.rolling.get(index)
     if memory is None or memory['state'] is not state:
-      memory = {'s': self.along(state.place), 'slips': {}, 'loads': {},
+      track, s = self.foundOn(state.place)
+      memory = {'track': track, 's': s, 'slips': {}, 'loads': {},
                 'state': None}
       self.rolling[index] = memory
     return memory
+
+  def _joined(self, ) -> None:
+    """Refuses a turnout whose tracks are not the world's, or whose
+    branch does not begin at its points, along its track there."""
+    for turnout in self.turnouts:
+      count = len(self.tracks)
+      if not (0 <= turnout.track < count and 0 <= turnout.branch < count):
+        raise ValueError('a turnout joins tracks %d and %d of %d' % (
+          turnout.track, turnout.branch, count))
+      if turnout.at > self.lengths[turnout.track]:
+        raise ValueError('points %.3f m along a track %.3f m long' % (
+          turnout.at, self.lengths[turnout.track]))
+      place, frame, _ = self.frameOn(turnout.track, turnout.at)
+      start, first, _ = self.frameOn(turnout.branch, 0.0)
+      if _apart(place, start) > TOE_NEAR ** 2 or max(
+          abs(a - b) for a, b in zip(frame, first)) > TOE_NEAR:
+        raise ValueError('track %d does not begin at its points on track '
+                         '%d' % (turnout.branch, turnout.track))
 
   def _runOf(self, ) -> object:
     """Returns the kernel's run on the world's device, made at first
@@ -355,27 +449,32 @@ class RailWorld:
     v, omega = list(state.velocity), list(state.spin)
     count = max(1, math.ceil(seconds / self.step - 1e-9))
     h = seconds / count
+    speed = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    way = self.wayFor(memory['track'], memory['s'],
+                      REACH + 1.5 * speed * seconds)
     try:
       for k in range(count):
-        self._stepped(memory, p, q, v, omega, h,
+        self._stepped(memory, way, p, q, v, omega, h,
                       (boxes, seen, pushes, k * h, 1.0 / count)
                       if boxes else None)
     except _Derailment:
       self.derailed.add(index)
+    memory['track'], memory['s'] = self.onWay(way, memory['s'])
     out = State(tuple(p), tuple(q), tuple(v), tuple(omega))
     memory['state'] = out
     return out
 
-  def _stepped(self, memory: dict, p: list, q: list, v: list,
-               omega: list, h: float, held: tuple = None) -> None:
-    """Steps one wheelset 'h' s in place: found on the track, its four
+  def _stepped(self, memory: dict, way: tuple, p: list, q: list,
+               v: list, omega: list, h: float, held: tuple = None) -> None:
+    """Steps one wheelset 'h' s in place: found on its 'way' (where it
+    is along it kept in its 'memory''s 's' for the call), its four
     contacts' forces and torques summed with gravity and its axleboxes'
     ('held': the boxes, as seen, the frames' pushes, the time since the
     trade began; None: free), its motion integrated (semi-implicit
     Euler; its turn by its body-frame spin)."""
-    s = self.along(p, memory['s'])
+    s = self.alongWay(way, p, memory['s'])
     memory['s'] = s
-    at, f, _ = self.frameAt(s)
+    at, f, _ = self.frameOnWay(way, s)
     d = (p[0] - at[0], p[1] - at[1], p[2] - at[2])
     if abs(f[1] * d[0] + f[4] * d[1] + f[7] * d[2]) > OFF_ACROSS or (
         f[2] * d[0] + f[5] * d[1] + f[8] * d[2] - RADIUS > OFF_UP):
@@ -420,8 +519,9 @@ class RailWorld:
              force: list, torque: list, h: float) -> None:
     """Adds to 'force' and 'torque' what the wheelset's axleboxes push
     it with (each journal sprung and damped back into its box, the
-    bearing's torque against the axle's turning in it), and to their
-    frames' pushes the like back, over 'h' s."""
+    bearing's and the brake's torque against the axle's turning in it,
+    the motor's driving it), and to their frames' pushes the like back,
+    over 'h' s."""
     boxes, seen, pushes, since, share = held
     axle = (m[0][2], m[1][2], m[2][2])
     for box in boxes:
@@ -445,8 +545,11 @@ class RailWorld:
                   + (omega[1] - spin[1]) * axle[1]
                   + (omega[2] - spin[2]) * axle[2])
       load = math.sqrt(push[0] ** 2 + push[1] ** 2 + push[2] ** 2)
+      lean = 1.0 if (axle[0] * axes[1][0] + axle[1] * axes[1][1]
+                     + axle[2] * axes[1][2]) >= 0.0 else -1.0
       drag = palmgrenOf(relative, load, box.bearing) + brakeOf(
-        relative, box.brake)
+        relative, box.brake) - lean * motorOf(lean * relative, box.drive,
+                                              box.power)
       self.boxLoads[id(box)] += share * load
       force[0] += push[0]
       force[1] += push[1]
@@ -606,6 +709,12 @@ def wheelsetOn(track: object, s: float, speed: float) -> State:
   return State(tuple(float(c) for c in centre), turn,
                tuple(float(c) * speed for c in x),
                tuple(float(c) * speed / RADIUS for c in y))
+
+
+def _apart(one: tuple, two: tuple) -> float:
+  """Returns how far apart places 'one' and 'two' are, squared, m²."""
+  return ((one[0] - two[0]) ** 2 + (one[1] - two[1]) ** 2
+          + (one[2] - two[2]) ** 2)
 
 
 def _boxSeen(body: object, state: State, box: Axlebox) -> tuple:

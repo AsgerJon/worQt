@@ -2,7 +2,11 @@
 TestRibbon covers the track as a ribbon ('rail._ribbon', the spec
 "Trains: the math first", Track geometry): a circle drawn by one
 constant pitch lies on its circle and its frame comes back to itself;
-a loop drifts as it says, its frame back as it was; a clothoid ends
+a loop drifts as it says, its frame back as it was; a loop eased in
+and out (user, 2026-11-16: the wheels hopped at the loop's exit) turns
+its rates up from nought and back with no step, its frame back as it
+was exactly, its way out beside its way in, no taller than a few
+decimetres over the plain loop; a clothoid ends
 turned by the integral of its curvature and lies where Fresnel's
 integrals put it; an easing that twists and pitches at once (rates off
 one axis) matches a fine integration (Magnus' commutator term); the
@@ -20,7 +24,8 @@ import math
 
 import numpy
 
-from worQt.phys.rail import GRAVITY, Ribbon, bend, eased, loop, straight
+from worQt.phys.rail import GRAVITY, LEVEL, Ribbon, bend, eased
+from worQt.phys.rail import easedLoop, loop, straight
 from worQt.phys.rail import loopSpan, loopTrack
 from worQt.phys.rail import _stage
 
@@ -72,6 +77,34 @@ class TestRibbon(PhysTest):
     highest = max(float(ribbon.frameAt(s)[0][2])
                   for s in numpy.linspace(0.0, ribbon.length, 721))
     self.assertNear(highest, 2.0 * RADIUS, 1e-3)
+
+  def test_eased_loop(self) -> None:
+    """Eased over 8 m: its rates nought at either end and the helix's
+    between, with no step; one whole turn, the frame back as it was to
+    1e-9; its way out level with its way in, 2.5 to 3 m to the left
+    and further on; its top under 0.5 m over the plain loop's; easing
+    over nothing, or over more than the loop, refused."""
+    pieces = easedLoop(RADIUS, DRIFT, 8.0)
+    self.assertEqual(len(pieces), 3)
+    self.assertEqual(pieces[0].start, LEVEL)
+    self.assertEqual(pieces[2].end, LEVEL)
+    self.assertEqual(pieces[0].end, pieces[1].start)
+    self.assertEqual(pieces[1].end, pieces[2].start)
+    ribbon = Ribbon((straight(1.0),) + pieces + (straight(1.0),))
+    place, frame = ribbon.frameAt(ribbon.length)
+    self.assertLess(float(numpy.abs(frame - numpy.eye(3)).max()), 1e-9)
+    self.assertLess(abs(float(place[2])), 1e-9)
+    self.assertGreater(float(place[1]), 2.5)
+    self.assertLess(float(place[1]), DRIFT)
+    self.assertGreater(float(place[0]), 2.0)
+    top = max(float(ribbon.frameAt(s)[0][2])
+              for s in numpy.linspace(0.0, ribbon.length, 2000))
+    self.assertGreater(top, 2.0 * RADIUS)
+    self.assertLess(top, 2.0 * RADIUS + 0.5)
+    for ease in (0.0, 2.0 * math.pi * RADIUS + 1.0):
+      with self.subTest(ease=ease):
+        with self.assertRaises(ValueError):
+          easedLoop(RADIUS, DRIFT, ease)
 
   def test_clothoid(self) -> None:
     """A level clothoid from straight to 1/R over L: turned by L/(2R) at

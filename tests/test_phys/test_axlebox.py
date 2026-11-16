@@ -33,7 +33,7 @@ from worQt.phys._vectors import UNTURNED, turnOf
 from worQt.phys.rail import JOURNAL_AT, PALMGREN, Axlebox, RailWorld
 from worQt.phys.rail import Ribbon, loopSpan, loopTrack, palmgrenOf
 from worQt.phys.rail import straight, wheelsetBody, wheelsetOn
-from worQt.phys.rail._axlebox import brakeOf
+from worQt.phys.rail._axlebox import brakeOf, motorOf
 from worQt.phys.rail._wheelset import RADIUS
 
 from . import PhysTest
@@ -82,7 +82,10 @@ def _cart(track: object, along: float) -> tuple:
 
 
 class TestAxlebox(PhysTest):
-  """Tests for the axlebox and the cart (seconds)."""
+  """Tests for the axlebox and the cart (a minute or so)."""
+
+  #  The cart driven in plain Python and in the kernel besides the rest.
+  __time_out__ = 180.0
 
   def test_palmgren(self) -> None:
     """The spec's example: 1.6 + 4.0 = 5.6 N m at 922 rpm under 55 kN;
@@ -158,6 +161,48 @@ class TestAxlebox(PhysTest):
         lost = 30.0 - abs(states[1].spin[1])
         self.assertAlmostEqual(lost, 30.0 - spin, None, None,
                                0.03 * (30.0 - spin))
+
+  def test_motor(self) -> None:
+    """A motor drives as much as it may within its power: nought driving
+    nought; its torque while slow; its power shared over its spin when
+    fast; its own way either way round."""
+    self.assertEqual(motorOf(10.0, 0.0, 1e3), 0.0)
+    self.assertEqual(motorOf(1.0, 300.0, 1e3), 300.0)
+    self.assertEqual(motorOf(10.0, 300.0, 1e3), 100.0)
+    self.assertEqual(motorOf(-10.0, -300.0, 1e3), -100.0)
+    self.assertEqual(motorOf(0.0, 300.0, 1e3), 300.0)
+    self.assertEqual(motorOf(10.0, 300.0, 0.0), 300.0)
+
+  def test_driven(self) -> None:
+    """Driven from standing on the level, each box's motor at 600 N m
+    within 1.5 kW, the cart gains speed as its torque says till its
+    power takes over, then as its power does (within 3 %, in plain
+    Python and in the kernel, CPU)."""
+    track = Ribbon((straight(60.0),))
+    preloaded('cpu')
+    drive, power, seconds = 600.0, 1500.0, 3.0
+    for device in (None, 'cpu'):
+      with self.subTest(device=device):
+        assembly, boxes, states = _cart(track, 20.0)
+        for box in boxes:
+          box.drive, box.power = drive, power
+        inner = SmallSteps((0.0, 0.0, -9.81), None, 2.5e-4, 1, 0.0, 'cpu',
+                           THREADS, False)
+        world = RailWorld(inner, track, wheelsetBody(), STEP, 0.3, TRADE,
+                          device)
+        for k in range(round(seconds / FRAME)):
+          states = world.advancedAll(assembly, states, FRAME, k * FRAME)
+        wheels = assembly.bodies[1]
+        moving = sum(body.mass for body in assembly.bodies) + (
+          2.0 * wheels.inertia[2][2] / RADIUS ** 2)
+        pulled = 4.0 * drive / RADIUS
+        turning = power / drive
+        reached = turning * RADIUS
+        taken = reached * moving / pulled
+        wanted = math.sqrt(reached ** 2 + 2.0 * 4.0 * power * (
+          seconds - taken) / moving)
+        self.assertAlmostEqual(states[0].velocity[0], wanted, None, None,
+                               0.03 * wanted)
 
   def test_stands(self) -> None:
     """On the level platform the cart stands: still to 2 cm/s after a

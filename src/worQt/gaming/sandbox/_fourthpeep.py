@@ -28,6 +28,8 @@ class FourthPeep:
   is how far toward its far end it stands (nought to one), 'target' the
   end the hand last threw it to; 'used' throws it to the other end, the
   hand moving it there over 'THROW' s as the world steps ('acted').
+  'prompts' says what using it does, thrown to its near end and to its
+  far (None: 'Pull' and 'Release' its 'name').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -44,13 +46,15 @@ class FourthPeep:
   far: float
   value: float
   target: float
+  prompts: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, name: str, body: object, pivot: tuple, axis: tuple,
-               length: float, near: float, far: float) -> None:
+               length: float, near: float, far: float,
+               prompts: tuple = None) -> None:
     self.name, self.body, self.length = name, body, float(length)
     self.pivot = tuple(float(x) for x in pivot)
     size = math.sqrt(sum(x * x for x in axis))
@@ -59,6 +63,8 @@ class FourthPeep:
     self.axis = tuple(float(x) / size for x in axis)
     self.near, self.far = float(near), float(far)
     self.value, self.target = 0.0, 0.0
+    self.prompts = (('Pull %s' % name, 'Release %s' % name)
+                    if prompts is None else tuple(prompts))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -99,7 +105,7 @@ class FourthPeep:
     return base, turn, tuple(b + r for b, r in zip(base, reach))
 
   def prompt(self, ) -> str:
-    """The 'prompt' method returns what using the lever does: 'Pull
-    brake' or 'Release brake'."""
-    return '%s %s' % ('Pull' if self.target < 0.5 else 'Release',
-                      self.name)
+    """The 'prompt' method returns what using the lever does now (its
+    'prompts': 'Pull brake' at its near end, 'Release brake' at its
+    far)."""
+    return self.prompts[0 if self.target < 0.5 else 1]

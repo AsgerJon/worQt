@@ -5,8 +5,10 @@ A stretch of track as its frame turns along it ('Piece'; user,
 centre line and a frame along it, both exact functions of the distance
 along it), and the stretches a track is built from: 'straight', 'bend'
 (a circular arc about one of the frame's own axes), 'eased' (the turn
-rates going linearly from one to another: a clothoid) and 'loop' (one
-whole turn up and over, drifting sideways as it goes, a helix).
+rates going linearly from one to another: a clothoid), 'loop' (one
+whole turn up and over, drifting sideways as it goes, a helix) and
+'easedLoop' (a loop eased in and out, its turn rates growing from
+nought and back: no step in what a vehicle feels).
 
 The frame is the track's: x along it, y to its left, z up from the
 rails' plane; its turn rates per metre (twist, pitch, yaw) are about
@@ -73,3 +75,29 @@ def loop(radius: float, drift: float) -> Piece:
   across = radius * radius + pitch * pitch
   rate = (-pitch / across, -radius / across, 0.0)
   return Piece(2.0 * math.pi * math.sqrt(across), rate, rate)
+
+
+def easedLoop(radius: float, drift: float, ease: float) -> tuple:
+  """The 'easedLoop' function returns a loop as 'loop' does, eased in
+  and out over 'ease' m each (user, 2026-11-16: the wheels hopped where
+  the loop's curvature stepped to straight): its turn rates growing from
+  nought to the helix's and back (clothoids), the helix between as long
+  as makes the whole turn once, the rates' axis the same throughout (so
+  the frame is back as it was after it, exactly); 'drift' m along that
+  axis over the whole length (its way out beside its way in, nearly
+  'drift' m to the left and some 'ease' m further on). Three pieces."""
+  if ease <= 0.0:
+    raise ValueError('a loop is eased over a positive length, not %r' % (
+      ease,))
+  pitch = drift / (2.0 * math.pi)
+  for _ in range(64):
+    turned = math.sqrt(radius * radius + pitch * pitch)
+    pitch = drift / (2.0 * math.pi + ease / turned)
+  across = radius * radius + pitch * pitch
+  rate = (-pitch / across, -radius / across, 0.0)
+  middle = 2.0 * math.pi * math.sqrt(across) - ease
+  if middle <= 0.0:
+    raise ValueError('a loop of %.2f m cannot be eased over %.2f m' % (
+      radius, ease))
+  return (eased(ease, LEVEL, rate), Piece(middle, rate, rate),
+          eased(ease, rate, LEVEL))

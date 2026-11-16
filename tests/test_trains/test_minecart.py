@@ -1,9 +1,10 @@
 """
 TestMinecart covers the loop's minecart ('Minecart', a 'Vehicle'): it
-waits on the start platform, standing, each axlebox carrying its share
+waits in the headshunt, standing, each axlebox carrying its share
 of the body (by the lever, its centre of mass a little behind the
 middle); the body meets what is spawned but not the track; the avatar
-boards it; punted toward the edge with the avatar in it, it rolls over
+boards one by the platform's edge; punted toward the edge with the
+avatar in it, it rolls over
 and down the grade, the rider tied in the seat, the eyes' up tilting
 with the cart, rumbling (its speed, its wheels' load near its weight,
 the flanges' share) and reading its speed; pushed back it stops at the
@@ -31,6 +32,7 @@ from worQt.phys._assembly import Spring
 from worQt.phys.rail import Axlebox, wheelsetBody
 
 from worQt.gaming.trains import Minecart
+from worQt.gaming.trains._layout import EDGE
 from worQt.gaming.trains._loopworld import MINECART_AT
 from worQt.gaming.trains._minecart import HALF_BASE, offRailsBody
 
@@ -44,9 +46,11 @@ class TestMinecart(TrainsTest):
   __time_out__ = 90.0
 
   def boarded(self, ) -> tuple:
-    """Returns the loop's world, its avatar seated in its minecart."""
+    """Returns the loop's world, its avatar seated in a minecart put on
+    the platform, its front wheels half a metre before its edge."""
     world, avatar = self.loopWorld()
-    cart = world.vehicles[0]
+    cart = Minecart(EDGE - HALF_BASE - 0.5, 0, False, None)
+    world.addVehicle(cart)
     states = list(world.states)
     tub = states[cart.frame].place
     states[avatar.index] = type(states[avatar.index])(
@@ -180,9 +184,10 @@ class TestMinecart(TrainsTest):
     for index in cart.bodies[1:]:
       self.assertIs(world.assembly.bodies[index], offRailsBody())
     connections = world.assembly.connections
-    self.assertFalse([c for c in connections if isinstance(c, Axlebox)])
-    self.assertEqual(len([c for c in connections
-                          if isinstance(c, Spring)]), 4)
+    self.assertFalse([c for c in connections if isinstance(c, Axlebox)
+                      and c.frame == cart.frame])
+    self.assertEqual(len([c for c in connections if isinstance(c, Spring)
+                          and cart.frame in (c.first, c.second)]), 4)
     self.assertIsNone(world.trouble)
     self.assertGreater(world.states[cart.frame].place[2], 29.5)
     cart.restored()

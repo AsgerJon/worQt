@@ -3,7 +3,7 @@ TestFourthPeep covers a control in the world ('FourthPeep'), a lever:
 used, it is thrown to its other end over 'THROW' s as the world steps,
 and used again back; its handle turns from its near angle to its far
 one with it, its knob at the handle's end, carried by its body; its
-prompt says what using it does.
+prompt says what using it does (its own, given).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -67,11 +67,18 @@ class TestFourthPeep(SandboxTest):
     self.assertAlmostEqual(math.dist(base, knob), 0.5, 12)
 
   def test_prompt(self) -> None:
-    """Its prompt says what using it does."""
+    """Its prompt says what using it does: 'Pull' and 'Release' its name,
+    or its own prompts for its two ends."""
     lever = self.lever()
     self.assertEqual(lever.prompt(), 'Pull brake')
     lever.used()
     self.assertEqual(lever.prompt(), 'Release brake')
+    points = FourthPeep('points', None, (0.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+                        0.8, -0.4, 0.4, ('Set for the siding',
+                                         'Set for the line'))
+    self.assertEqual(points.prompt(), 'Set for the siding')
+    points.used()
+    self.assertEqual(points.prompt(), 'Set for the line')
 
   def test_refused(self) -> None:
     """A lever about no axis is refused."""

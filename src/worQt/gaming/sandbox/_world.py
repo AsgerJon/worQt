@@ -285,14 +285,18 @@ class World:
 
   def _stepped(self, seconds: float) -> None:
     """Steps the world on 'seconds': its actors act, the physics steps;
-    a body turned non-finite is refused loudly."""
+    a body turned non-finite is refused loudly (those held still never
+    move: not looked at)."""
     states = list(self.states)
     for actor in self.actors:
       actor.acted(states, seconds)
     self._fallenBack(states)
     stepped = tuple(self.solver.advancedAll(self.assembly, tuple(states),
                                             seconds, self.time))
+    still = self.still
     for index, state in enumerate(stepped):
+      if index in still:
+        continue
       if not all(math.isfinite(x) for x in state.place + state.velocity):
         raise ValueError('body %d turned non-finite at %.3f s' % (
           index, self.time))

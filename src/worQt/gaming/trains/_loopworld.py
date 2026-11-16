@@ -1,10 +1,13 @@
 """
 LoopWorld is the loop de loop's world (user, 2026-11-15: "a void world,
 like in skyblock, where there is only enough terrain for the loop de
-loop"): the loop's track in the void and the floating island of grass
-on dirt under its start, both solid (user, 2026-11-15: "the curvy bit
-of the track does not appear to have collision with the Avatar"). Nothing
-else is in it until spawned.
+loop"): the trains' line in the void ('_layout': a headshunt, points,
+the station's platform, the loop eased in and out) with its siding,
+and the floating island of grass on dirt under the station, all solid
+(user, 2026-11-15: "the curvy bit of the track does not appear to have
+collision with the Avatar"); a minecart waiting in the headshunt, a
+train on the siding (user, 2026-11-16: "do all the things": a powered
+cart and a cart coupled behind it), the points' lever beside them.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -12,6 +15,8 @@ from __future__ import annotations
 
 import math
 from typing import TYPE_CHECKING
+
+import numpy
 
 from worQt.phys._body import Body, State
 from worQt.phys._compiled import gpuDevice
@@ -23,16 +28,16 @@ from worQt.phys.rail._trackshape import RAIL_SECTION, SLEEPER_DEEP
 from worQt.phys.rail._trackshape import SLEEPER_HALF, SLEEPER_LONG
 from worQt.phys.rail._trackshape import SLEEPER_PITCH, SLEEPER_TOP
 from worQt.phys.rail._trackshape import trackQuads
-from worQt.phys.rail import RailWorld, loopTrack, wheelsetBody
+from worQt.phys.rail import RailWorld, Turnout, wheelsetBody
 from worQt.phys.rail._railrun import preloadedRails
 from worQt.phys.rail._railworld import FRICTION
-from worQt.phys.rail._stage import DIRT, DROP, EARTH, GRASS, ISLAND_FROM
-from worQt.phys.rail._stage import ISLAND_HALF, ISLAND_TO, ISLAND_UNDER
-from worQt.phys.rail._stage import WALKER_AT
+from worQt.phys.rail._stage import DIRT, DROP, EARTH, GRASS, ISLAND_UNDER
 
 from worQt.gaming.sandbox import EARTH_GRAVITY, World
+from worQt.gaming.sandbox._fourthpeep import FourthPeep
 
-from ._minecart import Minecart
+from ._layout import EDGE, TOE, mainLine, sidingLine
+from ._minecart import COUPLED, Minecart
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from worQt.gaming.sandbox import Universe
@@ -43,10 +48,11 @@ LOOP_STEP = 2.5e-4
 #  Fallen below this, m, a body has left the world (the island's top is
 #  29.6 m up, the loop's foot at nought).
 LOOP_LOWEST = -20.0
-#  The track is solid in pieces this long, m (two sleepers each: on the
-#  loop a piece lies within 18 mm of the curve); a rail's head, as
-#  wide and as tall as the rail, m.
-CHUNK = 2.0 * SLEEPER_PITCH
+#  The track is solid in straight pieces lying within 'SAG' m of its
+#  curve (1.2 m long on the loop, two sleepers), 'CHUNK' m long at most
+#  (on its straights: fewer bodies for every step to go over); a rail's
+#  head, as wide and as tall as the rail, m.
+SAG, CHUNK = 0.018, 12.0
 RAIL_WIDE = RAIL_SECTION[1][0] - RAIL_SECTION[0][0]
 RAIL_HIGH = -RAIL_SECTION[6][1]
 #  The rail world as the window runs it, s: the spec's reference, its
@@ -66,24 +72,50 @@ LIVE_STEP, LIVE_EXCHANGE = 1e-4, 2e-3
 BEAM, BEAM_WIDE, BEAM_HIGH, BEAM_AT = 0.3, 2.6, 0.5, 0.5
 POST = 0.2
 STEEL = 7850.0
-#  Where the minecart waits, m along the track: on the start platform,
-#  its front wheels 0.5 m before its edge (user, 2026-11-16: "let's get
-#  a 'minecart' but fr on that track").
+#  Where the minecart waits, m along the line: in the headshunt, its
+#  back end 0.5 m before the start's buffer stop (user, 2026-11-16:
+#  "let's get a 'minecart' but fr on that track").
 MINECART_AT = 8.5
+#  Where the train's powered cart stands on the siding, m from its
+#  buffer stop's end of the track (its nose 1.55 m short of it); the
+#  cart coupled behind it 'COUPLED' m further back.
+TRAIN_SHORT = 5.5
+#  The island (grass on dirt, its top 'ISLAND_UNDER' under the rails'
+#  top): one block under the headshunt, the points and the platform, m
+#  (from x, to x, from y, to y), one under the siding's far part.
+ISLAND = (-6.0, EDGE + 2.0, -6.0, 9.0)
+SIDING_ISLAND_BESIDE = 2.4
+#  Where the avatar enters, m (x, y: on the island, right of the line,
+#  before the points), looking along the line.
+WALKER_AT = (TOE - 6.0, -4.0)
+#  The points' lever (user, 2026-11-16: "do all the things", points
+#  among them): on the island right of the line before the points
+#  (x back from them, y), its handle long, m, turning about the world's
+#  across from leaning back toward the line's start (set for the line)
+#  to leaning ahead (for the siding), rad.
+POINTS_BACK, POINTS_BESIDE = 3.0, -2.8
+POINTS_LONG, POINTS_NEAR, POINTS_FAR = 0.8, -0.4, 0.4
+#  How far under the line's the siding's dress is drawn, m (where the
+#  two run together their beds and rails would fight to be seen).
+SIDING_UNDER = 0.005
 
 
 class LoopWorld(World):
   """
-  LoopWorld is the loop's world: its track (drawn: rails, sleepers, a
-  bed of grass on dirt; solid: a body held still every 'CHUNK' m along
-  it, its bed, sleepers and rails as boxes, not drawn) and the island
-  under the start platform (its grass and its dirt, bodies held still);
-  a 'Minecart' waiting on the start platform ('MINECART_AT', among its
-  'vehicles'); a buffer stop past either end of the track ('buffers',
-  their indices); the void about them. Its
-  physics is the small steps (on the GPU where there is one), the
-  wheelsets on its track rolled by the rail world. The rail world knows
-  only the earth's gravity, so another universe is refused.
+  LoopWorld is the loop's world: its 'tracks', the line ('track', the
+  first) and the siding off its 'points' (a 'Turnout' set by its lever,
+  'pointsLever', a 'FourthPeep' on the island), each drawn (rails,
+  sleepers, a bed of grass on dirt) and solid (a body held still every
+  'CHUNK' m along it, its bed, sleepers and rails as boxes, not drawn);
+  the island under the station (its grass and its dirt, bodies held
+  still, in two blocks); a 'Minecart' waiting in the headshunt
+  ('MINECART_AT', first among its 'vehicles'), a train on the siding (a
+  powered minecart and one coupled behind it); a buffer stop past the
+  line's two ends and the siding's ('buffers', their indices); the void
+  about them. Its physics is the small steps (on the GPU where there is
+  one), the wheelsets on its tracks rolled by the rail world. The rail
+  world knows only the earth's gravity, so another universe is
+  refused.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -94,6 +126,8 @@ class LoopWorld(World):
   LOOKS = {'rail': ((148, 150, 154), 0.3, 0.35),
            'wheel': ((148, 150, 154), 0.3, 0.35),
            'cart': ((196, 28, 32), 0.1, 0.45),
+           'powered': ((32, 72, 168), 0.1, 0.45),
+           'coupler': ((70, 72, 78), 0.3, 0.4),
            'buffer': ((196, 48, 40), 0.2, 0.5),
            'sleeper': ((168, 166, 158), 0.0, 0.8),
            'grass': ((86, 128, 54), 0.0, 0.95),
@@ -109,21 +143,32 @@ class LoopWorld(World):
       raise NotImplementedError('the rail world knows only the earth\'s '
                                 'gravity, not %r m/s²' % universe.gravity)
     World.__init__(self, universe, None)
-    self.track, self.device = loopTrack(), gpuDevice() or 'cpu'
-    top = DROP - ISLAND_UNDER
-    long, wide = ISLAND_TO - ISLAND_FROM, 2.0 * ISLAND_HALF
-    middle = 0.5 * (ISLAND_FROM + ISLAND_TO)
-    self.fixed(Body.of(boxShape(long, wide, GRASS), EARTH),
-               State((middle, 0.0, top - 0.5 * GRASS)), 'grass')
-    self.fixed(Body.of(boxShape(long, wide, DIRT), EARTH),
-               State((middle, 0.0, top - GRASS - 0.5 * DIRT)), 'dirt')
-    pieces = math.ceil(self.track.length / CHUNK - 1e-9)
-    for k in range(pieces):
-      begins = k * CHUNK
-      self._fixedChunk(begins, min(self.track.length, begins + CHUNK))
-    self.buffers = (self._fixedBuffer(0.0, -1.0),
-                    self._fixedBuffer(self.track.length, 1.0))
-    self.addVehicle(Minecart(MINECART_AT))
+    self.tracks = (mainLine(), sidingLine())
+    self.track, self.device = self.tracks[0], gpuDevice() or 'cpu'
+    self.points = Turnout(0, TOE, 1)
+    siding = self.tracks[1]
+    end, _ = siding.frameAt(siding.length)
+    self._fixedIsland(ISLAND)
+    self._fixedIsland((ISLAND[1], float(end[0]) + 2.0,
+                       SIDING_ISLAND_BESIDE, ISLAND[3]))
+    for track, ribbon in enumerate(self.tracks):
+      for begins, ends in _chunksOf(ribbon):
+        self._fixedChunk(track, begins, ends)
+    self.buffers = (self._fixedBuffer(0, 0.0, -1.0),
+                    self._fixedBuffer(0, self.track.length, 1.0),
+                    self._fixedBuffer(1, siding.length, 1.0))
+    self.addVehicle(Minecart(MINECART_AT, 0, False, None))
+    powered = Minecart(siding.length - TRAIN_SHORT, 1, True, None)
+    self.addVehicle(powered)
+    self.addVehicle(Minecart(siding.length - TRAIN_SHORT - COUPLED, 1,
+                             False, powered))
+    self.pointsLever = FourthPeep(
+      'points', None, (TOE - POINTS_BACK, POINTS_BESIDE,
+                       DROP - ISLAND_UNDER), (0.0, 1.0, 0.0), POINTS_LONG,
+      POINTS_NEAR, POINTS_FAR, ('Set the points for the siding',
+                                'Set the points for the line'))
+    self.addFourthPeep(self.pointsLever)
+    self.addActor(self)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PARENT METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -136,16 +181,28 @@ class LoopWorld(World):
     inner = SmallSteps(self.universe.gravityVector(), None, LOOP_STEP, 1,
                        0.0, self.device, THREADS, False)
     return RailWorld(inner, self.track, wheelsetBody(), LIVE_STEP,
-                     FRICTION, LIVE_EXCHANGE, self.device)
+                     FRICTION, LIVE_EXCHANGE, self.device, self.tracks[1:],
+                     (self.points,))
 
   def spawnPoint(self, ) -> tuple:
     """The 'spawnPoint' method returns where an avatar enters: on the
-    island, beside the start platform, looking along the track."""
+    island right of the line, before the points, looking along it."""
     return (WALKER_AT[0], WALKER_AT[1], DROP - ISLAND_UNDER), 0.0
 
   def fixtures(self, ) -> dict:
-    """The 'fixtures' method returns the track's quads by look."""
-    return trackQuads(self.track)
+    """The 'fixtures' method returns the tracks' quads by look (the
+    siding's drawn 'SIDING_UNDER' under the line's)."""
+    out = trackQuads(self.track)
+    for key, quads in trackQuads(self.tracks[1]).items():
+      lowered = numpy.array(quads)
+      lowered[:, :, 2] -= SIDING_UNDER
+      out[key] = numpy.concatenate((out[key], lowered))
+    return out
+
+  def acted(self, states: list, seconds: float) -> None:
+    """The 'acted' method sets the points as their lever stands: for the
+    siding once it is more than half way over."""
+    self.points.thrown = self.pointsLever.value > 0.5
 
   def readied(self, ) -> None:
     """The 'readied' method loads (or compiles) the small steps' kernels
@@ -161,10 +218,23 @@ class LoopWorld(World):
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def _fixedBuffer(self, along: float, way: float) -> int:
-    """Puts a buffer stop past the track's end at 'along' ('way': -1 its
-    start, 1 its end) and returns its index: a beam across at the tub's
-    end walls' height and two posts under it, held still, drawn."""
+  def _fixedIsland(self, block: tuple) -> None:
+    """Puts a block of the island in the world, 'block' (from x, to x,
+    from y, to y, m): its grass on its dirt, its top 'ISLAND_UNDER'
+    under the rails' top, held still, drawn."""
+    x0, x1, y0, y1 = block
+    top, long, wide = DROP - ISLAND_UNDER, x1 - x0, y1 - y0
+    middle = (0.5 * (x0 + x1), 0.5 * (y0 + y1))
+    self.fixed(Body.of(boxShape(long, wide, GRASS), EARTH),
+               State((middle[0], middle[1], top - 0.5 * GRASS)), 'grass')
+    self.fixed(Body.of(boxShape(long, wide, DIRT), EARTH),
+               State((middle[0], middle[1], top - GRASS - 0.5 * DIRT)),
+               'dirt')
+
+  def _fixedBuffer(self, track: int, along: float, way: float) -> int:
+    """Puts a buffer stop past an end of track 'track' at 'along' ('way':
+    -1 its start, 1 its end) and returns its index: a beam across at the
+    cart's ends' height and two posts under it, held still, drawn."""
     beam = boxShape(BEAM, BEAM_WIDE, BEAM_HIGH).moved(
       (way * 0.5 * BEAM, 0.0, BEAM_AT), UNTURNED)
     low = BED_TOP - BED_DEEP
@@ -173,18 +243,18 @@ class LoopWorld(World):
       beam = beam.joined(boxShape(POST, POST, high - low).moved(
         (way * 0.5 * BEAM, side, 0.5 * (low + high)), UNTURNED))
     body = Body.of(beam, STEEL)
-    place, frame = self.track.frameAt(along)
+    place, frame = self.tracks[track].frameAt(along)
     rows = tuple(tuple(float(x) for x in row) for row in frame)
     centre = tuple(float(place[i]) + sum(rows[i][j] * body.centre[j]
                                          for j in range(3))
                    for i in range(3))
     return self.fixed(body, State(centre, turnOf(rows)), 'buffer')
 
-  def _fixedChunk(self, begins: float, ends: float) -> None:
-    """Puts the track from 'begins' to 'ends' m along in the world as one
-    body held still, straight along the track's frame at its middle:
-    the bed, the sleepers whose middles lie in it, the two rails' heads,
-    each a box; not drawn (the track's dress is)."""
+  def _fixedChunk(self, track: int, begins: float, ends: float) -> None:
+    """Puts track 'track' from 'begins' to 'ends' m along in the world as
+    one body held still, straight along the track's frame at its
+    middle: the bed, the sleepers whose middles lie in it, the two
+    rails' heads, each a box; not drawn (the track's dress is)."""
     middle, long = 0.5 * (begins + ends), ends - begins
     shape = boxShape(long, 2.0 * BED_HALF, BED_DEEP).moved(
       (0.0, 0.0, BED_TOP - 0.5 * BED_DEEP), UNTURNED)
@@ -199,9 +269,28 @@ class LoopWorld(World):
       shape = shape.joined(boxShape(long, RAIL_WIDE, RAIL_HIGH).moved(
         (0.0, side, -0.5 * RAIL_HIGH), UNTURNED))
     body = Body.of(shape, EARTH)
-    place, frame = self.track.frameAt(middle)
+    place, frame = self.tracks[track].frameAt(middle)
     rows = tuple(tuple(float(x) for x in row) for row in frame)
     centre = tuple(float(place[i]) + sum(rows[i][j] * body.centre[j]
                                          for j in range(3))
                    for i in range(3))
     self.fixed(body, State(centre, turnOf(rows)), None)
+
+
+def _chunksOf(ribbon: object) -> list:
+  """Returns where the track along 'ribbon' is cut into its solid pieces
+  (from, to, m along): each of its own pieces cut evenly into lengths
+  whose sag over its sharpest curve stays within 'SAG' (L^2 k / 8),
+  'CHUNK' at most."""
+  out, s = [], 0.0
+  for piece in ribbon.pieces:
+    sharpest = max(math.sqrt(sum(x * x for x in piece.start)),
+                   math.sqrt(sum(x * x for x in piece.end)))
+    longest = CHUNK if sharpest <= 0.0 else min(
+      CHUNK, math.sqrt(8.0 * SAG / sharpest))
+    count = max(1, math.ceil(piece.length / longest - 1e-9))
+    for k in range(count):
+      out.append((s + piece.length * k / count,
+                  s + piece.length * (k + 1) / count))
+    s += piece.length
+  return out

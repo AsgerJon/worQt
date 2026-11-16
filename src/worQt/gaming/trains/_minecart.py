@@ -7,7 +7,10 @@ fomula one shaped kinda but with real rail wheel wheelbase
 dimensions"): an open-wheeled body on two real wheelsets a standard
 two-axle wagon's wheelbase apart, each journal held in an axlebox
 (rubber, Palmgren's bearing); the body solid in the world (sat in,
-loaded, punted), the wheels rolled by the rail world.
+loaded, punted), the wheels rolled by the rail world. A powered one
+(user, 2026-11-16: "do all the things": a train) has a traction motor
+in every axlebox, worked by a throttle and a reverser beside its brake;
+a cart may be coupled to the one ahead of it by a drawbar.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -17,7 +20,7 @@ import functools
 import math
 from typing import TYPE_CHECKING
 
-from worQt.phys._assembly import Contact, Spring
+from worQt.phys._assembly import Contact, Spring, Tie
 from worQt.phys._body import Body, State
 from worQt.phys._shape import Shape, boxShape, cylinderShape
 from worQt.phys._vectors import UNTURNED, product, turnAbout, turnOf
@@ -118,6 +121,25 @@ SEAT = (0.0, 0.0, 0.35 + 0.305)
 LEVER = (0.05, -0.27, 0.35)
 LEVER_LONG, LEVER_NEAR, LEVER_FAR = 0.55, 0.35, -0.55
 BRAKE_MOST = 1000.0
+#  A powered cart's throttle, left of the seat as the brake is right of
+#  it, and its reverser behind the throttle (pivots, m, as the brake's;
+#  thrown back each: open, reversed); each box's motor at full throttle,
+#  N m and W (2.4 kN m on the two wheelsets, ~5.2 kN at the rails: ~1.3
+#  kN a wheel against the ~2 kN its rail grips; 200 kW all four, so its
+#  torque holds up to ~38 m/s).
+THROTTLE = (0.05, 0.27, 0.35)
+REVERSER = (-0.30, 0.27, 0.35)
+DRIVE_MOST, POWER_MOST = 600.0, 50e3
+#  The coupling (a drawbar, steel, square, 'BAR_THICK' m, on a ball
+#  joint at either end): its joints on the cars' noses and tails (the
+#  front wing's and the rear beam's faces, x, m) at the same height (z,
+#  m), the gap between the cars, m (in the 10 m loop the cars' ends
+#  close up on the inside: their tops, 1.15 m up, ~0.5 m of it); how
+#  far apart the coupled cars' middles are, m.
+NOSE, TAIL, HITCH_UP = 3.95, -3.95, 0.56
+BAR_THICK, COUPLER_GAP = 0.1, 1.2
+COUPLED = NOSE - TAIL + COUPLER_GAP
+STEEL = 7850.0
 #  A wheelset off its rails (user, 2026-11-16: "derail shouldn't mean
 #  RuntimeError!") is a free body of the world: the wheelset's own mass,
 #  centre and inertia, its shape two wheels (each its flange and its
@@ -179,13 +201,20 @@ def offRailsBody() -> Body:
 
 class Minecart(Vehicle):
   """
-  Minecart is a cart on the loop's track at 'along' m (standing still
-  where it is put): its body ('cartBody', the frame: the seat 'SEAT' in
-  its cockpit) and two wheelsets 'HALF_BASE' m either side, each journal
-  in an 'Axlebox' at the end of a fork. Its world has a 'track' (a
-  ribbon) and steps its wheelsets in a rail world. Its 'lever' (a
-  'FourthPeep' beside the seat) works its brake: each box's shoes hold
-  'BRAKE_MOST' times how far it is pulled. It acts each step:
+  Minecart is a cart on its world's track 'line' (its index among the
+  world's 'tracks', ribbons) at 'along' m (standing still where it is
+  put): its body ('cartBody', the frame: the seat 'SEAT' in its
+  cockpit) and two wheelsets ('wheelsets') 'HALF_BASE' m either side,
+  each journal in an 'Axlebox' at the end of a fork; its world steps the
+  wheelsets in a rail world. Its 'lever' (a 'FourthPeep' beside the
+  seat) works its brake: each box's shoes hold 'BRAKE_MOST' times how
+  far it is pulled. A 'powered' one has a motor in each box, its
+  'throttle' left of the seat (each box driving 'DRIVE_MOST' within
+  'POWER_MOST' times how far it is opened) and its 'reverser' behind it
+  (thrown back: driving backward). One coupled to 'leading' (the cart
+  ahead of it, already placed; None: none) holds it by a drawbar from
+  its nose to that one's tail, a ball joint at either end (the bar a
+  body of its own, among its 'bodies', last). It acts each step:
   a wheelset the rail world found off the rails ('derailed') it makes a
   free body of the world ('offRailsBody', held in its boxes by springs
   and dampers), and its body then meets the track and the island too;
@@ -202,18 +231,26 @@ class Minecart(Vehicle):
 
   #  Public Variables
   along: float
+  line: int
+  powered: bool
+  leading: object
+  wheelsets: tuple
   boxes: tuple
   off: dict
   lever: FourthPeep
+  throttle: FourthPeep
+  reverser: FourthPeep
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, along: float) -> None:
+  def __init__(self, along: float, line: int, powered: bool,
+               leading: object) -> None:
     Vehicle.__init__(self, )
-    self.along, self.boxes, self.off = along, (), {}
-    self.lever = None
+    self.along, self.line, self.powered = along, line, powered
+    self.leading, self.wheelsets, self.boxes, self.off = leading, (), (), {}
+    self.lever = self.throttle = self.reverser = None
     self._apart, self._touching = frozenset(), ()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -228,7 +265,7 @@ class Minecart(Vehicle):
     rest of the world's own bodies (the track, the island): held over
     the rails by its wheels it cannot reach them, and the wheels
     leaving the rails stops the rail world loudly first."""
-    track, body = world.track, cartBody()
+    track, body = world.tracks[self.line], cartBody()
     place, frame = track.frameAt(self.along)
     rows = tuple(tuple(float(x) for x in row) for row in frame)
     centre = tuple(float(place[i]) + sum(rows[i][j] * body.centre[j]
@@ -236,22 +273,28 @@ class Minecart(Vehicle):
                    for i in range(3))
     apart = world.still - set(getattr(world, 'buffers', ()))
     index = world.spawned(body, State(centre, turnOf(rows)), BODY_LAW,
-                          'cart', apart)
+                          'powered' if self.powered else 'cart', apart)
     self._apart = frozenset(apart)
-    wheels, bodies, boxes = wheelsetBody(), [index], []
+    wheels, wheelsets, boxes = wheelsetBody(), [], []
     for x in (HALF_BASE, -HALF_BASE):
       wheelset = world.spawned(wheels, wheelsetOn(track, self.along + x,
                                                   0.0), BODY_LAW, 'wheel')
-      bodies.append(wheelset)
+      wheelsets.append(wheelset)
       for side in (1.0, -1.0):
         box = Axlebox(wheelset, side, index, (x, side * JOURNAL_AT, RADIUS),
                       BOX_STIFFNESS, BOX_DAMPING)
         world.connected(box)
         boxes.append(box)
-    self.world, self.bodies, self.boxes = world, tuple(bodies), tuple(boxes)
-    self.lever = FourthPeep('brake', index, LEVER, (0.0, 1.0, 0.0),
-                            LEVER_LONG, LEVER_NEAR, LEVER_FAR)
-    world.addFourthPeep(self.lever)
+    self.world, self.wheelsets = world, tuple(wheelsets)
+    self.bodies, self.boxes = (index,) + self.wheelsets, tuple(boxes)
+    if self.leading is not None:
+      self.bodies += (self._coupled(world, track),)
+    self.lever = self._levered('brake', LEVER, None)
+    if self.powered:
+      self.throttle = self._levered('throttle', THROTTLE, (
+        'Open the throttle', 'Close the throttle'))
+      self.reverser = self._levered('reverser', REVERSER, (
+        'Reverse', 'Drive ahead'))
     world.addActor(self)
 
   def acted(self, states: list, seconds: float) -> None:
@@ -259,17 +302,26 @@ class Minecart(Vehicle):
     found off the rails in its last call ('derailed'), and sets each
     box's brake as its lever stands."""
     derailed = getattr(self.world.solver, 'derailed', ())
-    for index in self.bodies[1:]:
+    for index in self.wheelsets:
       if index in derailed and index not in self.off:
         self.derailed(index, states)
+    opened = self.throttle.value if self.powered else 0.0
+    way = -1.0 if self.powered and self.reverser.value > 0.5 else 1.0
     for box in self.boxes:
       box.brake = BRAKE_MOST * self.lever.value
+      box.drive, box.power = way * DRIVE_MOST * opened, POWER_MOST * opened
 
   def readout(self, states: tuple) -> str:
     """The 'readout' method returns what the cart says of itself: its
-    speed and how far its brake is pulled."""
-    return '%s    brake %.0f %%' % (Vehicle.readout(self, states),
+    speed and how far its brake is pulled (powered, how far its throttle
+    is open and which way it drives)."""
+    text = '%s    brake %.0f %%' % (Vehicle.readout(self, states),
                                     100.0 * self.lever.value)
+    if self.powered:
+      text += '    throttle %.0f %% %s' % (
+        100.0 * self.throttle.value, 'reversed'
+        if self.reverser.value > 0.5 else 'ahead')
+    return text
 
   def derailed(self, index: int, states: list) -> None:
     """The 'derailed' method makes the wheelset at 'index' a free body of
@@ -335,7 +387,7 @@ class Minecart(Vehicle):
     if not rolling:
       return None
     total = flanged = 0.0
-    for index in self.bodies[1:]:
+    for index in self.wheelsets:
       if index in self.off:
         continue
       for (_, kind), load in rolling.get(index, {}).get('loads',
@@ -344,6 +396,48 @@ class Minecart(Vehicle):
         if kind == 1:
           flanged += load
     bodies = self.world.assembly.bodies
-    standing = 9.81 * sum(bodies[index].mass for index in self.bodies)
+    standing = 9.81 * sum(bodies[index].mass for index in (
+      self.frame,) + self.wheelsets)
     speed = sum(v * v for v in states[self.frame].velocity) ** 0.5
     return speed, total / standing, flanged / total if total > 0.0 else 0.0
+
+  def _levered(self, name: str, pivot: tuple, prompts: tuple) -> FourthPeep:
+    """Returns a lever working 'name' at 'pivot' on the body (turning as
+    the brake's does: thrown back), put in the world among its levers."""
+    lever = FourthPeep(name, self.frame, pivot, (0.0, 1.0, 0.0), LEVER_LONG,
+                       LEVER_NEAR, LEVER_FAR, prompts)
+    self.world.addFourthPeep(lever)
+    return lever
+
+  def _coupled(self, world: World, track: object) -> int:
+    """Puts the drawbar between this cart's nose and the tail of the cart
+    ahead ('leading') in 'world' and returns its index: a steel bar from
+    one to the other, a ball joint ('Tie') at either end, touching
+    nothing in the world yet (what is spawned later meets it)."""
+    ahead, frame = self.leading, self.frame
+    body = world.assembly.bodies[frame]
+    states = world.states
+    tail = world.assembly.bodies[ahead.frame].placeOf(
+      states[ahead.frame], (TAIL, 0.0, HITCH_UP))
+    nose = body.placeOf(states[frame], (NOSE, 0.0, HITCH_UP))
+    long = math.dist(tail, nose)
+    bar = Body.of(boxShape(long, BAR_THICK, BAR_THICK), STEEL)
+    along = tuple((t - n) / long for t, n in zip(tail, nose))
+    up = (0.0, 0.0, 1.0)
+    left = (up[1] * along[2] - up[2] * along[1],
+            up[2] * along[0] - up[0] * along[2],
+            up[0] * along[1] - up[1] * along[0])
+    size = math.sqrt(sum(x * x for x in left))
+    left = tuple(x / size for x in left)
+    up = (along[1] * left[2] - along[2] * left[1],
+          along[2] * left[0] - along[0] * left[2],
+          along[0] * left[1] - along[1] * left[0])
+    rows = tuple((along[i], left[i], up[i]) for i in range(3))
+    middle = tuple(0.5 * (t + n) for t, n in zip(tail, nose))
+    index = world.spawned(bar, State(middle, turnOf(rows)), BODY_LAW,
+                          'coupler', frozenset(range(len(states))))
+    world.connected(Tie(index, (0.5 * long, 0.0, 0.0), ahead.frame,
+                        (TAIL, 0.0, HITCH_UP)))
+    world.connected(Tie(index, (-0.5 * long, 0.0, 0.0), frame,
+                        (NOSE, 0.0, HITCH_UP)))
+    return index

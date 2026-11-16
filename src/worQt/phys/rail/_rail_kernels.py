@@ -3,11 +3,15 @@ The Warp kernel 'railRun' steps wheelsets on a track as 'RailWorld'
 does in plain Python ('_stepped', the reference, line for line): each
 wheelset found on the track by Newton from where it was, its four rail
 points' Hertz pushes and relaxed creep taken to Polach's saturation,
-its axleboxes' springs, dampers and Palmgren torques (their pushes on
+its axleboxes' springs, dampers, Palmgren and brake torques and
+traction motors (their pushes on
 their frames summed for the trade, box by box), its motion by
 semi-implicit Euler, its spin by Euler's equations in its own frame.
 One thread a wheelset (user, 2026-11-16: "warp that shit"), a call's
-steps in one launch.
+steps in one launch; trading with the small steps on the device
+('railTraded'), each thread first reads its own boxes off their frames
+there (one launch a trade the fewer: "warp the shit out of it so the
+performance doesn't troll us").
 
 float32 (user: "no! fuck64! float32!"), as the spec has it: nothing is
 a world coordinate. Each wheelset is stepped in the track's frame where
@@ -29,7 +33,7 @@ import math
 import warp as wp
 
 from . import _wheelset
-from ._axlebox import BEARING_EASE, BRAKE_EASE, JOURNAL_AT
+from ._axlebox import BEARING_EASE, BRAKE_EASE, JOURNAL_AT, MOTOR_LEAST
 from ._railworld import A0, B0, C11, C22, CONTACT_DAMPING, EPS_MOST
 from ._railworld import LOST, N0, OFF_ACROSS, OFF_UP, Q0, SHEAR
 
@@ -81,6 +85,7 @@ DAMPING = _single(CONTACT_DAMPING)
 MOST = _single(EPS_MOST)
 LOST_DEPTH = _single(LOST)
 SHOE_EASE = _single(BRAKE_EASE)
+MOTOR_TURNING = _single(MOTOR_LEAST)
 OFF_SIDE = _single(OFF_ACROSS)
 OFF_HIGH = _single(OFF_UP)
 OFF_RAILS = _single(-2.0)
@@ -172,12 +177,34 @@ def segmentAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
 
 
 @wp.func
+def segmentFrom(table: wp.array2d(dtype=wp.float32), first: int,
+                count: int, s: wp.float32, guess: int):
+  """Returns the row 'segmentAt' returns, walked to from row 'guess' (a
+  wheelset moves a few millimetres a step: the row it was on, or the
+  next; a search's dozen loads from memory each time cost the kernel
+  most of its time)."""
+  i = wp.min(wp.max(guess, first), first + count - 1)
+  last = first + count - 1
+  while i < last and table[i + 1, 0] <= s:
+    i = i + 1
+  while i > first and table[i, 0] > s:
+    i = i - 1
+  return i
+
+
+@wp.func
 def frameAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
             s: wp.float32):
   """Returns the track at 's' along: its centre line's place, its frame
   and its turn rates there, as 'RailWorld.frameAt' (its series taken to
   'SERIES_TURN')."""
-  i = segmentAt(table, first, count, s)
+  return frameOfRow(table, segmentAt(table, first, count, s), s)
+
+
+@wp.func
+def frameOfRow(table: wp.array2d(dtype=wp.float32), i: int,
+               s: wp.float32):
+  """Returns the track at 's' along from its row 'i', as 'frameAt'."""
   h = s - table[i, 0]
   k = wp.vec3(table[i, 13], table[i, 14], table[i, 15])
   kx, ky, kz = k[0], k[1], k[2]
@@ -220,11 +247,14 @@ def frameAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
 @wp.func
 def alongAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
             low: wp.float32, high: wp.float32, place: wp.vec3,
-            s: wp.float32):
+            s: wp.float32, guess: int):
   """Returns where along the track 'place' lies, by Newton from 's',
-  kept within 'low' and 'high', as 'RailWorld.along'."""
+  kept within 'low' and 'high', as 'RailWorld.along', and the table's
+  row there (each looked for from the last, 'guess' first)."""
+  row = guess
   for _ in range(4):
-    at, f, k = frameAt(table, first, count, s)
+    row = segmentFrom(table, first, count, s, row)
+    at, f, k = frameOfRow(table, row, s)
     d = place - at
     ahead = f[0, 0] * d[0] + f[1, 0] * d[1] + f[2, 0] * d[2]
     left = f[0, 1] * d[0] + f[1, 1] * d[1] + f[2, 1] * d[2]
@@ -234,7 +264,7 @@ def alongAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
     s = wp.min(wp.max(s + move, low), high)
     if wp.abs(move) < SETTLED:
       break
-  return s
+  return s, segmentFrom(table, first, count, s, row)
 
 
 @wp.func
@@ -322,30 +352,44 @@ def palmgren(spin: wp.float32, load: wp.float32, bearing: wp.vec4):
 
 
 @wp.func
+def motorTorque(spin: wp.float32, drive: wp.float32, power: wp.float32):
+  """Returns a traction motor's torque, N m, as '_axlebox.motorOf'."""
+  if drive == ZERO:
+    return ZERO
+  turning = wp.max(wp.abs(spin), MOTOR_TURNING)
+  if power > ZERO and wp.abs(drive) * turning > power:
+    if drive > ZERO:
+      return power / turning
+    return -power / turning
+  return drive
+
+
+@wp.func
 def vec3At(rows: wp.array2d(dtype=wp.float32), i: int, at: int):
   """Returns three numbers of row 'i' from 'at' as a vector."""
   return wp.vec3(rows[i, at], rows[i, at + 1], rows[i, at + 2])
 
 
-@wp.kernel
-def railRun(count: int, h: wp.float32, friction: wp.float32,
-            mass: wp.float32, moments: wp.vec3,
-            table: wp.array2d(dtype=wp.float32),
-            wheels: wp.array2d(dtype=wp.float32),
-            held: wp.array2d(dtype=int),
-            seen: wp.array2d(dtype=wp.float32),
-            fixed: wp.array2d(dtype=wp.float32),
-            results: wp.array2d(dtype=wp.float32),
-            brakes: wp.array(dtype=wp.float32)):
-  """Steps wheelset 'tid' (its row of 'wheels', in the track's frame
+@wp.func
+def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
+             mass: wp.float32, moments: wp.vec3,
+             table: wp.array2d(dtype=wp.float32),
+             wheels: wp.array2d(dtype=wp.float32),
+             held: wp.array2d(dtype=int),
+             seen: wp.array2d(dtype=wp.float32),
+             fixed: wp.array2d(dtype=wp.float32),
+             results: wp.array2d(dtype=wp.float32),
+             brakes: wp.array(dtype=wp.float32),
+             drives: wp.array2d(dtype=wp.float32)):
+  """Steps wheelset 'i' (its row of 'wheels', in the track's frame
   where it stood) 'count' steps of 'h' s in place, held in its boxes
-  (each one's shoes braking it 'brakes', N m, as the bearing's torque),
+  (each one's shoes braking it 'brakes', N m, as the bearing's torque,
+  its motor driving it 'drives': its most torque, N m, and power, W),
   their pushes on their frames summed in 'results' box by box; gone
   into a rail past 'LOST' (its depth), off its table (-1) or off the
   rails ('OFF_ACROSS' across, 'OFF_UP' up: 'OFF_RAILS'), it says so in
   its row's lost and stops (and in the call's later trades does not
   start: it is derailed)."""
-  i = wp.tid()
   if wheels[i, 26] != ZERO:
     return
   p = vec3At(wheels, i, 0)
@@ -361,12 +405,13 @@ def railRun(count: int, h: wp.float32, friction: wp.float32,
   ix = moments[0]
   iy = moments[1]
   iz = moments[2]
+  row = segmentAt(table, first, rows, s)
   for step in range(count):
-    s = alongAt(table, first, rows, low, high, p, s)
+    s, row = alongAt(table, first, rows, low, high, p, s, row)
     if s <= wheels[i, 32] or s >= wheels[i, 33]:
       wheels[i, 26] = -ONE
       return
-    at, f, k = frameAt(table, first, rows, s)
+    at, f, k = frameOfRow(table, row, s)
     off = p - at
     if wp.abs(off[0] * f[0, 1] + off[1] * f[1, 1] + off[2] * f[2, 1]) > (
         OFF_SIDE) or (off[0] * f[0, 2] + off[1] * f[1, 2]
@@ -429,8 +474,13 @@ def railRun(count: int, h: wp.float32, friction: wp.float32,
       relative = wp.dot(omega - vec3At(seen, j, 21), axle)
       boxed = wp.length(push)
       bearing = wp.vec4(fixed[j, 7], fixed[j, 8], fixed[j, 9], fixed[j, 10])
+      lean = ONE
+      if (axle[0] * seen[j, 13] + axle[1] * seen[j, 16]
+          + axle[2] * seen[j, 19]) < ZERO:
+        lean = -ONE
       drag = palmgren(relative, boxed, bearing) + brakes[j] * wp.tanh(
-        relative / SHOE_EASE)
+        relative / SHOE_EASE) - lean * motorTorque(
+        lean * relative, drives[j, 0], drives[j, 1])
       force = force + push
       torque = torque + wp.cross(a, push) - drag * axle
       lever = vec3At(seen, j, 6) + vec3At(seen, j, 9) * since
@@ -466,30 +516,28 @@ def railRun(count: int, h: wp.float32, friction: wp.float32,
   wheels[i, 13] = s
 
 
-@wp.kernel
-def boxesSeen(place: wp.array(dtype=wp.vec3),
-              shift: wp.array(dtype=wp.vec3),
-              turn: wp.array(dtype=wp.quat),
-              velocity: wp.array(dtype=wp.vec3),
-              spin: wp.array(dtype=wp.vec3),
-              boxBody: wp.array(dtype=int), boxWheel: wp.array(dtype=int),
-              boxArm: wp.array(dtype=wp.vec3),
-              boxAxes: wp.array(dtype=wp.mat33),
-              originHigh: wp.array(dtype=wp.vec3),
-              originLow: wp.array(dtype=wp.vec3),
-              localAxes: wp.array(dtype=wp.mat33),
-              seen: wp.array2d(dtype=wp.float32)):
-  """Writes box 'tid''s row of 'seen' from its frame as the small steps
+@wp.func
+def boxSeen(j: int, w: int, place: wp.array(dtype=wp.vec3),
+            shift: wp.array(dtype=wp.vec3),
+            turn: wp.array(dtype=wp.quat),
+            velocity: wp.array(dtype=wp.vec3),
+            spin: wp.array(dtype=wp.vec3),
+            boxBody: wp.array(dtype=int),
+            boxArm: wp.array(dtype=wp.vec3),
+            boxAxes: wp.array(dtype=wp.mat33),
+            originHigh: wp.array(dtype=wp.vec3),
+            originLow: wp.array(dtype=wp.vec3),
+            localAxes: wp.array(dtype=wp.mat33),
+            seen: wp.array2d(dtype=wp.float32)):
+  """Writes box 'j''s row of 'seen' from its frame as the small steps
   have it on the device (body 'boxBody': its centre a place and a shift
   from their origin, its turn from its principal axes), in its
-  wheelset's frame ('boxWheel': that frame's origin from the small
-  steps' origin as two float32s, high and low, and its axes): its
-  box's place and velocity, its arm ('boxArm', in the frame's principal
-  axes) and the arm's swing, the frame's own axes ('boxAxes', in its
-  principal axes), the frame's spin."""
-  j = wp.tid()
+  wheelset 'w''s frame (that frame's origin from the small steps'
+  origin as two float32s, high and low, and its axes): its box's place
+  and velocity, its arm ('boxArm', in the frame's principal axes) and
+  the arm's swing, the frame's own axes ('boxAxes', in its principal
+  axes), the frame's spin."""
   b = boxBody[j]
-  w = boxWheel[j]
   r = wp.quat_to_matrix(turn[b])
   back = wp.transpose(localAxes[w])
   centre = (place[b] - originHigh[w]) + (shift[b] - originLow[w])
@@ -509,6 +557,58 @@ def boxesSeen(place: wp.array(dtype=wp.vec3),
     seen[j, 21 + c] = spun[c]
     for e in range(3):
       seen[j, 12 + 3 * c + e] = axes[c, e]
+
+
+@wp.kernel
+def railRun(count: int, h: wp.float32, friction: wp.float32,
+            mass: wp.float32, moments: wp.vec3,
+            table: wp.array2d(dtype=wp.float32),
+            wheels: wp.array2d(dtype=wp.float32),
+            held: wp.array2d(dtype=int),
+            seen: wp.array2d(dtype=wp.float32),
+            fixed: wp.array2d(dtype=wp.float32),
+            results: wp.array2d(dtype=wp.float32),
+            brakes: wp.array(dtype=wp.float32),
+            drives: wp.array2d(dtype=wp.float32)):
+  """Steps wheelset 'tid' as 'rolledOn' does, its boxes as 'seen' holds
+  them (written by the host)."""
+  rolledOn(wp.tid(), count, h, friction, mass, moments, table, wheels,
+           held, seen, fixed, results, brakes, drives)
+
+
+@wp.kernel
+def railTraded(count: int, h: wp.float32, friction: wp.float32,
+               mass: wp.float32, moments: wp.vec3,
+               table: wp.array2d(dtype=wp.float32),
+               wheels: wp.array2d(dtype=wp.float32),
+               held: wp.array2d(dtype=int),
+               seen: wp.array2d(dtype=wp.float32),
+               fixed: wp.array2d(dtype=wp.float32),
+               results: wp.array2d(dtype=wp.float32),
+               brakes: wp.array(dtype=wp.float32),
+               drives: wp.array2d(dtype=wp.float32),
+               place: wp.array(dtype=wp.vec3),
+               shift: wp.array(dtype=wp.vec3),
+               turn: wp.array(dtype=wp.quat),
+               velocity: wp.array(dtype=wp.vec3),
+               spin: wp.array(dtype=wp.vec3),
+               boxBody: wp.array(dtype=int),
+               boxArm: wp.array(dtype=wp.vec3),
+               boxAxes: wp.array(dtype=wp.mat33),
+               originHigh: wp.array(dtype=wp.vec3),
+               originLow: wp.array(dtype=wp.vec3),
+               localAxes: wp.array(dtype=wp.mat33)):
+  """Steps wheelset 'tid' as 'rolledOn' does (one trade), each of its
+  boxes first read off its frame as the small steps have it on the
+  device ('boxSeen')."""
+  i = wp.tid()
+  if wheels[i, 26] != ZERO:
+    return
+  for j in range(held[i, 0], held[i, 0] + held[i, 1]):
+    boxSeen(j, i, place, shift, turn, velocity, spin, boxBody, boxArm,
+            boxAxes, originHigh, originLow, localAxes, seen)
+  rolledOn(i, count, h, friction, mass, moments, table, wheels, held,
+           seen, fixed, results, brakes, drives)
 
 
 @wp.kernel

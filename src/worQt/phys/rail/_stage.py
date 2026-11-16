@@ -36,9 +36,10 @@ PLATFORM, RUN = 12.0, 10.0
 _DOWN, _UP = (0.0, 1.0, 0.0), (0.0, -1.0, 0.0)
 
 
-def _graded(height: float) -> float:
-  """Returns how long a straight grade must be for the track to climb or
-  fall 'height' m with its two vertical curves."""
+def gradedFor(height: float) -> float:
+  """The 'gradedFor' function returns how long a straight grade must be
+  for the track to climb or fall 'height' m with its two vertical
+  curves."""
   eased = 2.0 * EASE_RADIUS * (1.0 - math.cos(SLOPE))
   if height <= eased:
     raise ValueError('%.2f m is no more than the curves alone' % height)
@@ -52,13 +53,13 @@ def loopTrack() -> Ribbon:
   the climb, the far platform."""
   pieces = (straight(PLATFORM),
             bend(SLOPE, EASE_RADIUS, _DOWN),
-            straight(_graded(DROP)),
+            straight(gradedFor(DROP)),
             bend(SLOPE, EASE_RADIUS, _UP),
             straight(RUN),
             loop(LOOP_RADIUS, LOOP_DRIFT),
             straight(RUN),
             bend(SLOPE, EASE_RADIUS, _UP),
-            straight(_graded(CLIMB)),
+            straight(gradedFor(CLIMB)),
             bend(SLOPE, EASE_RADIUS, _DOWN),
             straight(PLATFORM))
   return Ribbon(pieces, (0.0, 0.0, DROP))

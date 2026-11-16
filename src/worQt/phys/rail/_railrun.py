@@ -4,7 +4,9 @@ RailRun steps a rail world's wheelsets with the Warp kernel 'railRun'
 Python (the reference, float64), on a device of Warp's. Each call takes
 every wheelset into the track's frame where it stands (the track's
 centre line there its origin) and back, in float64, so the kernel
-handles nothing larger than a metre or so.
+handles nothing larger than a metre or so; its table of track is its
+way as the turnouts send it ('RailWorld.wayFor'), each piece of it from
+its own track's steps.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -66,12 +68,14 @@ class RailRun:
     from . import _rail_kernels
     self.wp, self.kernels = wp, _rail_kernels
     self.world, self.device = world, device
-    starts, places, frames, rates = world.segments
-    self.starts = list(starts)
-    self.places = numpy.array(places)
-    self.frames = numpy.array(frames).reshape(-1, 3, 3)
-    self.rates = numpy.array(rates)
+    self.steps = []
+    for starts, places, frames, rates in world.tracksSegments:
+      self.steps.append((list(starts), numpy.array(starts),
+                         numpy.array(places),
+                         numpy.array(frames).reshape(-1, 3, 3),
+                         numpy.array(rates)))
     self._key, self._tableRows, self._framesKey = None, 0, None
+    self._tradeKey, self._trading = None, None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -124,12 +128,13 @@ class RailRun:
     """The 'traded' method steps the wheelsets at 'rails' and the inner
     world's bodies ('assembly' of 'inner', its bodies 'kept' of the
     world's, 'packed' on the device with their states) 'seconds' on in
-    'trades' trades, all on the device: each trade every box read off
-    its frame there ('boxesSeen'), the wheelsets stepped ('railRun'),
+    'trades' trades, all on the device: each trade the wheelsets stepped,
+    each first reading its boxes off their frames there ('railTraded'),
     the frames pushed ('framesPushed'), the inner world stepped
-    ('steppedOn'); nothing comes back to the host till the end, where
-    the wheelsets are set in 'states' (the inner world's bodies are
-    'packed''s to hand back)."""
+    ('steppedOn'); the two launches recorded once and launched again
+    for as long as their arrays stay; nothing comes back to the host
+    till the end, where the wheelsets are set in 'states' (the inner
+    world's bodies are 'packed''s to hand back)."""
     wp, kernels, device = self.wp, self.kernels, self.device
     windows = [kernels.WINDOW + 1.5 * seconds * math.sqrt(
       sum(v * v for v in states[i].velocity)) for i in rails]
@@ -148,23 +153,52 @@ class RailRun:
     self.originLow.assign(low.astype(numpy.float32))
     self.localAxes.assign(turned.astype(numpy.float32))
     self.results.zero_()
-    bodies, h = packed.bodies, seconds / trades
+    h = seconds / trades
+    stepping, pushing = self._tradingOf(packed.bodies)
+    count = max(1, math.ceil(h / self.world.step - 1e-9))
+    stepping.set_param_at_index(0, count)
+    stepping.set_param_at_index(1, h / count)
     for k in range(trades):
-      if self.boxCount:
-        wp.launch(kernels.boxesSeen, self.boxCount, [
-          bodies.place, bodies.shift, bodies.turn, bodies.velocity,
-          bodies.spin, self.boxBody, self.boxWheel, self.boxArm,
-          self.boxAxes, self.originHigh, self.originLow, self.localAxes,
-          self.seen], [], [], [], device)
-      self._launched(h)
-      if self.boxCount:
-        wp.launch(kernels.framesPushed, self.frameCount, [
-          self.frameBody, self.frameFirst, self.frameCounts,
-          self.frameBoxes, self.boxWheel, self.localAxes, self.results,
-          bodies.turn, bodies.velocity, bodies.spin, bodies.give,
-          bodies.turnGive], [], [], [], device)
+      stepping.launch()
+      if pushing is not None:
+        pushing.launch()
       inner.steppedOn(packed, assembly, h, start + k * h)
     self._ended(rails, states, held, begun, trades)
+
+  def _tradingOf(self, bodies: object) -> tuple:
+    """Returns the launches of a trade (the wheelsets stepped, the
+    frames pushed: None without boxes), recorded once ('record_cmd') for
+    the arrays they take, again when any of those is another."""
+    wp, kernels, world, device = self.wp, self.kernels, self.world, (
+      self.device)
+    arrays = (self.table, self.wheels, self.held, self.seen, self.fixed,
+              self.results, self.brakes, self.drives, bodies.place,
+              bodies.shift, bodies.turn, bodies.velocity, bodies.spin,
+              bodies.give, bodies.turnGive, self.boxBody, self.boxArm,
+              self.boxAxes, self.originHigh, self.originLow,
+              self.localAxes, self.frameBody, self.frameFirst,
+              self.frameCounts, self.frameBoxes, self.boxWheel)
+    key = tuple(id(array) for array in arrays) + (
+      self.wheelCount, self.boxCount, self.frameCount)
+    if key == self._tradeKey:
+      return self._trading
+    stepping = wp.launch(kernels.railTraded, self.wheelCount, [
+      1, world.step, world.friction, world.body.mass,
+      wp.vec3(*world.moments), self.table, self.wheels, self.held,
+      self.seen, self.fixed, self.results, self.brakes, self.drives,
+      bodies.place, bodies.shift, bodies.turn, bodies.velocity,
+      bodies.spin, self.boxBody, self.boxArm, self.boxAxes,
+      self.originHigh, self.originLow, self.localAxes], [], [], [],
+      device, None, False, True, True)
+    pushing = None
+    if self.boxCount:
+      pushing = wp.launch(kernels.framesPushed, self.frameCount, [
+        self.frameBody, self.frameFirst, self.frameCounts,
+        self.frameBoxes, self.boxWheel, self.localAxes, self.results,
+        bodies.turn, bodies.velocity, bodies.spin, bodies.give,
+        bodies.turnGive], [], [], [], device, None, False, True, True)
+    self._tradeKey, self._trading = key, (stepping, pushing)
+    return self._trading
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -178,13 +212,18 @@ class RailRun:
     world, kernels = self.world, self.kernels
     memories = [world.memoryOf(i, states[i]) for i in rails]
     boxes = tuple(box for i in rails for box in held.get(i, ()))
-    there = [self._frameOf(memory['s']) for memory in memories]
-    tables = [self._tableOf(memory['s'], frame, window) for memory, frame,
-              window in zip(memories, there, windows)]
+    ways = [world.wayFor(memory['track'], memory['s'], window)
+            for memory, window in zip(memories, windows)]
+    there = [self._frameOf(memory['track'], memory['s'])
+             for memory in memories]
+    tables = [self._tableOf(memory['s'], frame, way) for memory, frame,
+              way in zip(memories, there, ways)]
     self._readied(rails, held, boxes, sum(len(t[0]) for t in tables))
     if boxes:
       self.brakes.assign(numpy.array([box.brake for box in boxes],
                                      numpy.float32))
+      self.drives.assign(numpy.array([(box.drive, box.power)
+                                      for box in boxes], numpy.float32))
     rows, ranges, at = self._wheelRows, self._heldRows, 0
     rows[:] = 0.0
     table = self._table
@@ -208,7 +247,7 @@ class RailRun:
     self.wheels.assign(rows.astype(numpy.float32))
     self.held.assign(ranges)
     self.table.assign(table.astype(numpy.float32))
-    return there, memories
+    return there, memories, ways
 
   def _launched(self, seconds: float) -> None:
     """Launches the wheelsets' kernel for 'seconds' in the world's
@@ -218,8 +257,8 @@ class RailRun:
     wp.launch(self.kernels.railRun, self.wheelCount, [
       count, seconds / count, world.friction, world.body.mass,
       wp.vec3(*world.moments), self.table, self.wheels, self.held,
-      self.seen, self.fixed, self.results, self.brakes], [], [], [],
-      self.device)
+      self.seen, self.fixed, self.results, self.brakes, self.drives], [],
+      [], [], self.device)
 
   def _ended(self, rails: tuple, states: list, held: dict, begun: tuple,
              trades: int) -> numpy.ndarray:
@@ -229,7 +268,7 @@ class RailRun:
     the boxes' loads (their mean over the 'trades') into the world's
     'boxLoads'; returns the results' rows."""
     world = self.world
-    there, memories = begun
+    there, memories, ways = begun
     got = self.wheels.numpy().astype(numpy.float64)
     for k, i in enumerate(rails):
       if got[k, 26] != 0.0:
@@ -242,7 +281,8 @@ class RailRun:
                   tuple(float(x) for x in axes @ row[7:10]),
                   tuple(float(x) for x in axes @ row[10:13]))
       memory = memories[k]
-      memory['s'] += float(row[13])
+      memory['track'], memory['s'] = world.onWay(
+        ways[k], memory['s'] + float(row[13]))
       memory['slips'] = {key: (float(row[14 + 2 * c]),
                                float(row[15 + 2 * c]))
                          for c, key in enumerate(KEYS) if row[22 + c] > 0.0}
@@ -310,43 +350,48 @@ class RailRun:
     self.localAxes = self._sent(numpy.zeros((n, 3, 3)), wp.mat33)
     self._framesKey = key
 
-  def _frameOf(self, s: float) -> tuple:
-    """Returns the track's frame at 's': its centre line's place there,
-    its axes (columns) and their turn (a quaternion)."""
-    place, frame, _ = self.world.frameAt(s)
+  def _frameOf(self, track: int, s: float) -> tuple:
+    """Returns track 'track''s frame at 's': its centre line's place
+    there, its axes (columns) and their turn (a quaternion)."""
+    place, frame, _ = self.world.frameOn(track, s)
     axes = numpy.array(frame).reshape(3, 3)
     return (numpy.array(place), axes,
             turnOf(tuple(tuple(float(x) for x in row) for row in axes)))
 
-  def _tableOf(self, s: float, there: tuple, window: float) -> tuple:
-    """Returns the track within 'window' m of 's' as table rows in the
-    track's frame at 's' (each step's start along from 's', place,
-    frame, turn rates; the first started at the window's edge or the
-    track's start), how far it may go back and ahead along (the track's
-    ends or the table's), and where it is off its table."""
-    length = self.world.track.length
+  def _tableOf(self, s: float, there: tuple, way: tuple) -> tuple:
+    """Returns 'way' (as 'RailWorld.wayFor' has it, measured as 's' is)
+    as table rows in the track's frame at 's' (each step's start along
+    from 's', place, frame, turn rates; each piece's first started at
+    the piece's own start), how far it may go back and ahead along (the
+    way's ends) and where it is off its table (its ends, but where a
+    track ends)."""
     origin, axes, _ = there
-    back = axes.T
-    begins = max(s - window, 0.0)
-    first = max(0, bisect.bisect_right(self.starts, begins) - 1)
-    last = bisect.bisect_right(self.starts, s + window)
-    place, frame, rate = self.world.frameAt(begins)
-    steps = [(begins, numpy.array(place), numpy.array(frame).reshape(3, 3),
-              numpy.array(rate))]
-    for i in range(first + 1, last):
-      steps.append((self.starts[i], self.places[i], self.frames[i],
-                    self.rates[i]))
-    rows = numpy.zeros((len(steps), self.kernels.TABLE_ROW))
-    for k, (start, there, turned, rate) in enumerate(steps):
-      rows[k, 0] = start - s
-      rows[k, 1:4] = back @ (there - origin)
-      rows[k, 4:13] = (back @ turned).ravel()
-      rows[k, 13:16] = rate
-    ends = min(s + window, length)
-    clamps = (begins - s, ends - s)
-    guards = (begins - s if begins > 0.0 else -NOWHERE,
-              ends - s if ends < length else NOWHERE)
-    return rows, clamps, guards
+    pieces, startsAtEnd, endsAtEnd = way
+    parts = []
+    for begins, ends, track, shift in pieces:
+      listed, starts, places, frames, rates = self.steps[track]
+      low, high = begins + shift, ends + shift
+      place, frame, rate = self.world.frameOn(track, low)
+      first = bisect.bisect_right(listed, low)
+      last = max(first, bisect.bisect_left(listed, high))
+      count = 1 + last - first
+      rows = numpy.zeros((count, self.kernels.TABLE_ROW))
+      rows[0, 0] = begins - s
+      rows[0, 1:4] = (numpy.array(place) - origin) @ axes
+      rows[0, 4:13] = (axes.T @ numpy.array(frame).reshape(3, 3)).ravel()
+      rows[0, 13:16] = rate
+      if count > 1:
+        rows[1:, 0] = starts[first:last] - shift - s
+        rows[1:, 1:4] = (places[first:last] - origin) @ axes
+        rows[1:, 4:13] = numpy.matmul(axes.T, frames[first:last]).reshape(
+          -1, 9)
+        rows[1:, 13:16] = rates[first:last]
+      parts.append(rows)
+    low, high = pieces[0][0] - s, pieces[-1][1] - s
+    clamps = (low, high)
+    guards = (-NOWHERE if startsAtEnd else low,
+              NOWHERE if endsAtEnd else high)
+    return numpy.concatenate(parts), clamps, guards
 
   def _readied(self, rails: tuple, held: dict, boxes: tuple,
                tableRows: int) -> None:
@@ -379,6 +424,8 @@ class RailRun:
     self.seen = self._sent(self._seenRows, wp.float32)
     self.fixed = self._sent(fixed, wp.float32)
     self.brakes = self._sent(numpy.zeros(nb, numpy.float32), wp.float32)
+    self.drives = self._sent(numpy.zeros((nb, 2), numpy.float32),
+                             wp.float32)
     self.results = self._sent(numpy.zeros((nb, kernels.RESULT_ROW)),
                               wp.float32)
     self._key = key

@@ -35,6 +35,9 @@ BEARING_EASE = 0.01
 #  bearing's: below this the shoes hold less than they would; user,
 #  2026-11-16: the FourthPeep's first lever is the cart's brake).
 BRAKE_EASE = 0.02
+#  The least spin a motor's power is shared over, rad/s (standing, its
+#  torque is its most: power over spin would be endless).
+MOTOR_LEAST = 1e-3
 
 
 def brakeOf(spin: float, most: float) -> float:
@@ -42,6 +45,20 @@ def brakeOf(spin: float, most: float) -> float:
   'most' N m against its turning at 'spin' rad/s (of 'spin''s sign),
   eased through standstill over 'BRAKE_EASE'."""
   return most * math.tanh(spin / BRAKE_EASE)
+
+
+def motorOf(spin: float, drive: float, power: float) -> float:
+  """Returns the torque, N m, of a traction motor in an axlebox driving
+  its axle at 'spin' rad/s (rolling the frame ahead: above nought): its
+  'drive' (N m, its most now, of the way it drives: above nought ahead)
+  while that is within its 'power' (W, its most now), else that power
+  shared over the spin ('MOTOR_LEAST' at least); nought driving nought."""
+  if drive == 0.0:
+    return 0.0
+  turning = max(abs(spin), MOTOR_LEAST)
+  if power > 0.0 and abs(drive) * turning > power:
+    return power / turning if drive > 0.0 else -power / turning
+  return drive
 
 
 def palmgrenOf(spin: float, load: float, bearing: tuple) -> float:
@@ -69,8 +86,11 @@ class Axlebox:
   left the box; the axle turning in it against 'bearing''s torque
   ('palmgrenOf', the box's load its push) and against its 'brake' (N m:
   how hard the shoes there hold now, nought released; 'brakeOf'; set as
-  the vehicle goes). The rail world steps it, the wheelset in its own
-  steps, the frame by what the box hands it.
+  the vehicle goes), driven by its traction motor's 'drive' (N m, its
+  most now, above nought rolling the frame ahead along its own x) within
+  its 'power' (W; 'motorOf'), the frame taking the motor's torque back
+  (both nought: no motor). The rail world steps it, the wheelset in its
+  own steps, the frame by what the box hands it.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -86,6 +106,8 @@ class Axlebox:
   damping: tuple
   bearing: tuple
   brake: float
+  drive: float
+  power: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -103,6 +125,7 @@ class Axlebox:
     self.stiffness = tuple(float(x) for x in stiffness)
     self.damping = tuple(float(x) for x in damping)
     self.bearing, self.brake = bearing, 0.0
+    self.drive, self.power = 0.0, 0.0
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -113,5 +136,5 @@ class Axlebox:
     indices 'wheelset' and 'frame' instead."""
     box = Axlebox(wheelset, self.side, frame, self.box, self.stiffness,
                   self.damping, self.bearing)
-    box.brake = self.brake
+    box.brake, box.drive, box.power = self.brake, self.drive, self.power
     return box
