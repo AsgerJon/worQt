@@ -12,12 +12,15 @@ bed, the walker standing on it, clear of the track.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import math
+
 import numpy
 
 from worQt.phys.gui._trackdress import BED_TOP, GAUGE, TrackDress
 from worQt.phys.gui._trackdress import trackQuads
 from worQt.phys.rail import Ribbon, bend, loopSpan, loopStage, loopTrack
 from worQt.phys.rail import straight
+from worQt.phys.rail._trackshape import CUT_LONGEST
 from worQt.phys.rail import _stage
 
 from . import PhysTest
@@ -55,14 +58,15 @@ class TestTrackDress(PhysTest):
 
   def test_rails(self) -> None:
     """On a level straight the rails' heads' tops lie at the centre
-    line's height, their middles a gauge apart; the bed's top under it
+    line's height, their middles a gauge apart (the straight cut into
+    'CUT_LONGEST' m at most: its 10 m in three); the bed's top under it
     by the rail and the sleeper."""
     ribbon = Ribbon((straight(10.0), bend(0.5, 20.0, (0.0, 1.0, 0.0))))
     rails = trackQuads(ribbon)['rail']
     tops = rails[(numpy.abs(rails[:, 0, 5] - 1.0) < 1e-9)
                  & (rails[:, 0, 2] > -0.1)]
     level = tops[tops[:, 0, 0] < 9.0]
-    self.assertEqual(len(level), 2 * 36)
+    self.assertEqual(len(level), 2 * math.ceil(10.0 / CUT_LONGEST))
     self.assertLess(float(numpy.abs(level[:, :, 2]).max()), 1e-12)
     ys = sorted(set(numpy.round(level[:, :, 1].ravel(), 9)))
     middles = (0.5 * (ys[0] + ys[1]), 0.5 * (ys[2] + ys[3]))

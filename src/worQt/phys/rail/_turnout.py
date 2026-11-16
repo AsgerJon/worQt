@@ -49,23 +49,26 @@ class Turnout:
 
 
 def wayOf(lengths: tuple, turnouts: tuple, track: int, s: float,
-          back: float, ahead: float) -> tuple:
+          back: float, ahead: float, closed: frozenset = frozenset()
+          ) -> tuple:
   """The 'wayOf' function returns the way a wheelset at 's' m along
-  track 'track' (of tracks 'lengths' m long, joined by 'turnouts') may
-  go within 'back' m behind it and 'ahead' m ahead, as the turnouts are
-  set: pieces (from, to, track, shift) in order, 'from' and 'to' m along
-  the way (measured as 's' is), each on 'track' at 'from' + 'shift' m
-  along it; and whether the way's two ends are the tracks' own ends
-  (buffer stops) rather than its reach."""
-  behind, startsAtEnd = _behind(lengths, turnouts, track, s, back)
-  onward, endsAtEnd = _onward(lengths, turnouts, track, s, ahead)
+  track 'track' (of tracks 'lengths' m long, joined by 'turnouts'; those
+  in 'closed' run round, their ends one: an oval) may go within 'back'
+  m behind it and 'ahead' m ahead, as the turnouts are set: pieces
+  (from, to, track, shift) in order, 'from' and 'to' m along the way
+  (measured as 's' is), each on 'track' at 'from' + 'shift' m along it;
+  and whether the way's two ends are the tracks' own ends (buffer
+  stops) rather than its reach."""
+  behind, startsAtEnd = _behind(lengths, turnouts, track, s, back, closed)
+  onward, endsAtEnd = _onward(lengths, turnouts, track, s, ahead, closed)
   return behind + onward, startsAtEnd, endsAtEnd
 
 
 def _onward(lengths: tuple, turnouts: tuple, track: int, s: float,
-            ahead: float) -> tuple:
+            ahead: float, closed: frozenset) -> tuple:
   """Returns the way ahead of 's' on 'track' within 'ahead' m (pieces,
-  first to last) and whether it ends where a track does."""
+  first to last; round a closed track's end onto its start) and
+  whether it ends where a track does."""
   pieces, here, shift, end = [], s, 0.0, s + ahead
   while True:
     thrown = [t for t in turnouts if t.track == track and t.thrown
@@ -78,15 +81,20 @@ def _onward(lengths: tuple, turnouts: tuple, track: int, s: float,
       track, shift, here = turnout.branch, -toe, toe
       continue
     last = lengths[track] - shift
+    if track in closed and last < end:
+      if last > here:
+        pieces.append((here, last, track, shift))
+      shift, here = shift - lengths[track], last
+      continue
     pieces.append((here, max(here, min(end, last)), track, shift))
     return pieces, last <= end
 
 
 def _behind(lengths: tuple, turnouts: tuple, track: int, s: float,
-            back: float) -> tuple:
+            back: float, closed: frozenset) -> tuple:
   """Returns the way behind 's' on 'track' within 'back' m (pieces,
-  first to last, the last ending at 's') and whether it begins where a
-  track does."""
+  first to last, the last ending at 's'; round a closed track's start
+  onto its end) and whether it begins where a track does."""
   pieces, here, shift, begins = [], s, 0.0, s - back
   while True:
     first = -shift
@@ -95,6 +103,9 @@ def _behind(lengths: tuple, turnouts: tuple, track: int, s: float,
       return pieces, False
     if here > first:
       pieces.insert(0, (first, here, track, shift))
+    if track in closed:
+      shift, here = shift + lengths[track], first
+      continue
     parent = [t for t in turnouts if t.branch == track]
     if not parent:
       return pieces, True

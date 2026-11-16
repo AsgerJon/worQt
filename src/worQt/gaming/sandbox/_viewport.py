@@ -405,7 +405,8 @@ class Viewport(QWidget):
     return out
 
   def _bodiesOf(self, world: World, assembly: object) -> list:
-    """Returns the world's drawn bodies as the scene takes them. Each
+    """Returns the world's drawn bodies as the scene takes them (a
+    dressed one as its parts, each its own look). Each
     push makes every body's mesh anew (its rows worked out once and
     kept): pushed again with the meshes it had, Qt Quick 3D made its
     models anew and drew none of them (user, 2026-11-16: a ball given,
@@ -413,6 +414,14 @@ class Viewport(QWidget):
     meshes are kept alive while Qt lets go of their old models."""
     out, meshes = [], []
     for index, look in sorted(world.drawn.items()):
+      parts = world.dressed.get(index)
+      if parts:
+        for rows, indices, partLook in parts:
+          mesh = Mesh(rows, indices)
+          meshes.append(mesh)
+          out.append(_lookOf(world, partLook, {'geometry': mesh,
+                                               'body': index}))
+        continue
       body = assembly.bodies[index]
       kept = self._rows.get(id(body))
       if kept is None or kept[0] is not body:

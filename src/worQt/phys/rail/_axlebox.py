@@ -78,7 +78,8 @@ def palmgrenOf(spin: float, load: float, bearing: tuple) -> float:
 class Axlebox:
   """
   Axlebox holds the journal of wheelset 'wheelset' (its index; 'side'
-  +1: the end along its own +z, -1: along -z, 'JOURNAL_AT' m out) in a
+  +1: the end along its own +z, -1: along -z, 'JOURNAL_AT' m out: its
+  'journal', the point in the wheelset's own frame the box holds) in a
   box on body 'frame' (its index) at 'box' (a point in the frame's own
   frame, where the journal sits unloaded): pushed back each way of the
   frame's own axes by 'stiffness' (N/m: along x, across y, up z) and
@@ -100,6 +101,7 @@ class Axlebox:
   #  Public Variables
   wheelset: int
   side: float
+  journal: tuple
   frame: int
   box: tuple
   stiffness: tuple
@@ -121,6 +123,7 @@ class Axlebox:
     if wheelset == frame:
       raise ValueError('a wheelset cannot ride in its own box')
     self.wheelset, self.side, self.frame = wheelset, float(side), frame
+    self.journal = (0.0, 0.0, self.side * JOURNAL_AT)
     self.box = tuple(float(x) for x in box)
     self.stiffness = tuple(float(x) for x in stiffness)
     self.damping = tuple(float(x) for x in damping)
@@ -136,5 +139,6 @@ class Axlebox:
     indices 'wheelset' and 'frame' instead."""
     box = Axlebox(wheelset, self.side, frame, self.box, self.stiffness,
                   self.damping, self.bearing)
+    box.journal = self.journal
     box.brake, box.drive, box.power = self.brake, self.drive, self.power
     return box

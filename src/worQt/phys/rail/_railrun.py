@@ -183,8 +183,7 @@ class RailRun:
     if key == self._tradeKey:
       return self._trading
     stepping = wp.launch(kernels.railTraded, self.wheelCount, [
-      1, world.step, world.friction, world.body.mass,
-      wp.vec3(*world.moments), self.table, self.wheels, self.held,
+      1, world.step, world.friction, self.table, self.wheels, self.held,
       self.seen, self.fixed, self.results, self.brakes, self.drives,
       bodies.place, bodies.shift, bodies.turn, bodies.velocity,
       bodies.spin, self.boxBody, self.boxArm, self.boxAxes,
@@ -241,6 +240,8 @@ class RailRun:
                                                              (0.0, 0.0))
       rows[k, 27:30] = back @ gravity
       rows[k, 30:32], rows[k, 32:34] = clamps, guards
+      mass, moments, radius = world.paramsOf(i)
+      rows[k, 34], rows[k, 35], rows[k, 36:39] = radius, mass, moments
       ranges[k, 2:4] = (at, len(steps))
       table[at:at + len(steps)] = steps
       at += len(steps)
@@ -255,10 +256,9 @@ class RailRun:
     wp, world = self.wp, self.world
     count = max(1, math.ceil(seconds / world.step - 1e-9))
     wp.launch(self.kernels.railRun, self.wheelCount, [
-      count, seconds / count, world.friction, world.body.mass,
-      wp.vec3(*world.moments), self.table, self.wheels, self.held,
-      self.seen, self.fixed, self.results, self.brakes, self.drives], [],
-      [], [], self.device)
+      count, seconds / count, world.friction, self.table, self.wheels,
+      self.held, self.seen, self.fixed, self.results, self.brakes,
+      self.drives], [], [], [], self.device)
 
   def _ended(self, rails: tuple, states: list, held: dict, begun: tuple,
              trades: int) -> numpy.ndarray:
@@ -417,7 +417,7 @@ class RailRun:
       at += len(held.get(i, ()))
     fixed = numpy.zeros((nb, kernels.FIXED_ROW))
     for j, box in enumerate(boxes):
-      fixed[j] = (box.side,) + box.stiffness + box.damping + tuple(
+      fixed[j] = tuple(box.journal) + box.stiffness + box.damping + tuple(
         box.bearing)
     self.wheels = self._sent(self._wheelRows, wp.float32)
     self.held = self._sent(self._heldRows, wp.int32)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import functools
 import math
 
-from worQt.phys.rail import Ribbon, bend, easedLoop, straight
+from worQt.phys.rail import Piece, Ribbon, bend, eased, easedLoop, straight
 from worQt.phys.rail._stage import CLIMB, DROP, EASE_RADIUS, LOOP_DRIFT
 from worQt.phys.rail._stage import LOOP_RADIUS, PLATFORM, RUN, SLOPE
 from worQt.phys.rail._stage import gradedFor
@@ -88,3 +88,39 @@ def loopSpanOf() -> tuple:
   pieces = mainLine().pieces
   begins = sum(piece.length for piece in pieces[:6])
   return begins, begins + sum(piece.length for piece in pieces[6:9])
+
+
+#  The steam train's oval (user, 2026-11-16: a steam locomotive and its
+#  train; a 4-6-2's coupled wheels span 4.5 m, so it cannot take the
+#  10 m loop): two straights 'OVAL_STRAIGHT' m long joined by half
+#  circles of 'OVAL_RADIUS' m, each eased in and out over 'OVAL_EASE' m
+#  (a main line's curves, its transitions; unbanked: at 150 m the
+#  train ran its tender off at 22 m/s, a third of a g across, a tram's
+#  curve; at 400 m that is ~36 m/s); level, its rails' top 'OVAL_UP' m
+#  over the ground (the bed's top a centimetre over it).
+OVAL_STRAIGHT, OVAL_RADIUS, OVAL_EASE = 300.0, 400.0, 60.0
+OVAL_UP = 0.382
+
+
+def _halfTurn() -> tuple:
+  """Returns half a turn to the left of 'OVAL_RADIUS', eased in and out
+  over 'OVAL_EASE' (the arc between as long as makes it half a turn)."""
+  rate = (0.0, 0.0, 1.0 / OVAL_RADIUS)
+  arc = math.pi * OVAL_RADIUS - OVAL_EASE
+  return (eased(OVAL_EASE, (0.0, 0.0, 0.0), rate),
+          Piece(arc, rate, rate),
+          eased(OVAL_EASE, rate, (0.0, 0.0, 0.0)))
+
+
+@functools.lru_cache(maxsize=1)
+def ovalLine() -> Ribbon:
+  """The 'ovalLine' function returns the oval (made once), closed: from
+  the middle of its near straight along x, round to the left, back
+  along the far straight and round again to where it began, its middle
+  over the origin."""
+  pieces = ((straight(0.5 * OVAL_STRAIGHT),) + _halfTurn()
+            + (straight(OVAL_STRAIGHT),) + _halfTurn()
+            + (straight(0.5 * OVAL_STRAIGHT),))
+  first = Ribbon(pieces, (0.0, 0.0, OVAL_UP))
+  across = float(first.frameAt(0.5 * first.length)[0][1])
+  return Ribbon(pieces, (0.0, -0.5 * across, OVAL_UP))

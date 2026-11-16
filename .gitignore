@@ -198,6 +198,9 @@ previews/
 # The gravity gun model (no licence stated, made with meshy-6): kept out
 # of git until its licence is known
 src/worQt/gaming/sandbox/models/
+# The steam locomotive's model (1DesignTool's 3D library licence: free to
+# use, never to hand on as a file on its own)
+src/worQt/gaming/trains/models/
 
 # Scratch kept out of git: commit message drafts and things no longer
 # used

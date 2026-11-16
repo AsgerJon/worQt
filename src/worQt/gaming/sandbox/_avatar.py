@@ -233,8 +233,8 @@ class Avatar:
 
   def nearby(self, ) -> object:
     """The 'nearby' method returns the nearest of its world's vehicles
-    with no rider whose frame's centre is within 'REACH' of the avatar's
-    ball, as the world's last step left them (None: none)."""
+    with no rider whose seat is within 'REACH' of the avatar's ball, as
+    the world's last step left them (None: none)."""
     if self.world is None:
       return None
     _, states, _ = self.world.snapshot()
@@ -405,14 +405,16 @@ class Avatar:
                        + m[2][j] * forward[2] for j in range(3)))
 
   def _nearestOf(self, states: tuple) -> object:
-    """Returns the nearest vehicle with no rider whose frame's centre is
-    within 'REACH' of the avatar's ball in 'states' (None: none)."""
+    """Returns the nearest vehicle with no rider whose seat is within
+    'REACH' of the avatar's ball in 'states' (None: none): a long
+    vehicle (an engine, its seat in the cab) is boarded by its seat,
+    not its middle."""
     here = states[self.index].place
     best, nearest = REACH * REACH, None
     for vehicle in self.world.vehicles:
       if vehicle.rider is not None:
         continue
-      there = states[vehicle.frame].place
+      there = vehicle.seatOf(states).place
       gap = sum((a - b) ** 2 for a, b in zip(here, there))
       if gap <= best:
         best, nearest = gap, vehicle

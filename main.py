@@ -6,6 +6,9 @@ from __future__ import annotations
 import os
 import sys
 
+from worQt.gaming.billiards.gui import BilliardsApp
+from worQt.gaming.trains._runs import mainSteam
+
 here = os.path.dirname(os.path.abspath(__file__))
 src = os.path.join(here, 'src')
 sys.path.append(here)
@@ -18,11 +21,9 @@ os.environ.setdefault('QTEST_NO_FOCUS', '1')
 
 from icecream import ic
 
-from worQt.qtest import testMeBro
-
 ic.configureOutput(includeContext=True)
 
-from yolo import yolo, runTests
+from yolo import yolo
 
 
 def tester00() -> int:
@@ -35,5 +36,14 @@ def tester00() -> int:
   return 0
 
 
+def tester01() -> int:
+  """The 'main' function opens the billiard room, walking, and returns
+  its exit code."""
+  with BilliardsApp(*sys.argv) as app:
+    app.window.show()
+    app.window.startWalking()
+  return app.returnCode
+
+
 if __name__ == '__main__':
-  yolo(tester00)
+  yolo(mainSteam)

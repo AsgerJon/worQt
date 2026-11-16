@@ -26,10 +26,12 @@ class GUI(QObject):
   click emits 'picked' with that item. In a vehicle (user, 2026-11-16:
   "in vehicle key_E should open vehicle relevant menu"), the vehicle's:
   its name, what it says of itself ('readout') and 'Get out' (emits
-  'leaveAsked'). Below either 'Respawn' (emits 'respawnAsked') and
+  'leaveAsked'). Below either 'Respawn' (emits 'respawnAsked'),
   'Reset world' ('resetAsked'; user, 2026-11-16: "the normal E menu
-  needs to have respawn and reset"), each shutting the screen back to
-  looking round. 'opened' opens it, 'shut' shuts it ('closed' says
+  needs to have respawn and reset") and 'Close' (nothing else; user,
+  2026-11-16: the mouse stayed out with no button that did nothing),
+  each shutting the screen back to looking round. 'opened' opens it,
+  'shut' shuts it ('closed' says
   whether back to looking round: by E or a button; by Esc or a click
   beside it, the mouse stays free); 'open' says whether it is.
   """
@@ -69,7 +71,8 @@ class GUI(QObject):
   def opened(self, vehicle: object = None, states: tuple = ()) -> None:
     """The 'opened' method opens the screen: on foot the items to spawn,
     in 'vehicle' its own (its bodies as in 'states')."""
-    world = (('Respawn', 'respawn'), ('Reset world', 'reset'))
+    world = (('Respawn', 'respawn'), ('Reset world', 'reset'),
+             ('Close', 'back'))
     if vehicle is None:
       self.viewport.menuShown('Spawn  (E or Esc closes)', '', [
         (item.name, 'item:%d' % k) for k, item in enumerate(self.items)],
@@ -96,11 +99,14 @@ class GUI(QObject):
   def _picked(self, key: str) -> None:
     """A click on the screen: an item spawned (the screen stays), a
     world's button or 'Get out' (the screen shut back to looking round
-    first), beside it ('close': shut, the mouse free)."""
+    first; 'back', 'Close', nothing more), beside it ('close': shut,
+    the mouse free)."""
     if not self.open:
       return
     if key == 'close':
       self.shut(False)
+    elif key == 'back':
+      self.shut(True)
     elif key.startswith('item:'):
       self.picked.emit(self.items[int(key[5:])])
     else:

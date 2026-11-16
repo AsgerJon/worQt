@@ -101,6 +101,8 @@ class TableView(QQuickWidget, WidgetMixin):
   __view_trails__: tuple | None = None
   __view_kegler__: bool = False
   __pin_rows__: list | None = None
+  __pin_mesh__: numpy.ndarray | None = None
+  __pin_shapes__: tuple = ()
   __sunk_depth__ = 45.0  # mm a ball gone into a pocket sits down in it
   __stick_rise__ = 3.0  # degrees the cue is held up from the cloth
   __watch_view__ = 60.0  # degrees taken in while a shot is watched whole
@@ -903,7 +905,6 @@ class TableView(QQuickWidget, WidgetMixin):
       root.setProperty('idleBoard', self.__view_boards__[1])
     if self.__view_shapes__ is None:
       meshes = {**tableMeshes(table), **kegleMeshes(KegleTable(table)),
-                'pin': latheMesh(KeglePin().profile, 32),
                 'cueTip': latheMesh(CUE_TIP, 24),
                 'cueFerrule': latheMesh(CUE_FERRULE, 24),
                 'cueShaft': latheMesh(CUE_SHAFT, 24),
@@ -935,6 +936,20 @@ class TableView(QQuickWidget, WidgetMixin):
     root.setProperty('pinSpots', [self.scenePlace(x, y, 0.0)
                                   for x, y in kegle.pinSpots()])
     root.setProperty('kegler', self.__view_kegler__)
+    self._pushPinShape(root)
+
+  def _pushPinShape(self, root: object) -> None:
+    """Gives the pins, the played table's and the other's, a pin's shape
+    made anew ('pinShape'; its triangles made once): a shape a pin drew
+    is drawn by none made after that pin is gone (Qt Quick 3D), and
+    changing the game takes one table's pins away and makes the other's
+    (the user, 2026-11-16: the tall pins stood in the room, not on the
+    table played). The last two shapes are kept alive."""
+    if self.__pin_mesh__ is None:
+      self.__pin_mesh__ = latheMesh(KeglePin().profile, 32)
+    shape = Prism(self.__pin_mesh__)
+    self.__pin_shapes__ = self.__pin_shapes__[-1:] + (shape,)
+    root.setProperty('pinShape', shape)
 
   def _pushPins(self, root: object) -> None:
     """Shows the pins as 'setPins' has them: each pin's foot where it

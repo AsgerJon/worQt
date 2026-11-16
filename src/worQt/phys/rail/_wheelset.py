@@ -18,6 +18,12 @@ gauge corner, 14 mm down), each a contact of its own, switched on by
 its own penetration (the spec: tread and flange as two contacts, never
 one that jumps): the knife-edge rails of the textbooks, so the cone's
 closed forms hold.
+
+A wheelset may be of any size (user, 2026-11-16: a steam locomotive's
+drivers, its bogie's, its tender's): its wheels' radius at the nominal
+circle 'radius', the profile the same shifted with it ('profileAt'),
+the rim's inside likewise; 'wheelsetBody(radius)' makes each size once
+and 'radiusOf' tells a wheelset's size by its body.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -80,57 +86,78 @@ _ON_FLANGE_R = _CENTRE[1] - math.sqrt(max(
 _TIP = RADIUS + CONE * (-ROOT_AT) + FLANGE_HIGH
 
 
-def profileAt(e: float) -> tuple[float, float]:
+def profileAt(e: float, radius: float = RADIUS) -> tuple[float, float]:
   """The 'profileAt' function returns the wheel's radius at 'e' m out
   from its nominal rolling circle and its slope dr/de: the tread, the
   root's fillet, the flange's face, its tip (flat: past it the wheel
-  has nothing to stand on)."""
+  has nothing to stand on); for wheels 'radius' m at the nominal circle
+  (the profile shifted by how far that is from 'RADIUS')."""
+  shift = radius - RADIUS
   if e >= _ON_TREAD:
-    return RADIUS - CONE * e, -CONE
+    return radius - CONE * e, -CONE
   if e >= _ON_FLANGE:
     de = e - _CENTRE[0]
     dr = -math.sqrt(max(ROOT * ROOT - de * de, 0.0))
-    return _CENTRE[1] + dr, -de / dr if dr < 0.0 else -1e9
+    return _CENTRE[1] + shift + dr, -de / dr if dr < 0.0 else -1e9
   slope = math.tan(FLANGE_ANGLE)
   r = _ON_FLANGE_R + slope * (_ON_FLANGE - e)
   if r >= _TIP:
-    return _TIP, 0.0
-  return r, -slope
+    return _TIP + shift, 0.0
+  return r + shift, -slope
 
 
-def _halfProfile() -> list:
+def _halfProfile(radius: float) -> list:
   """Returns the right half's outline (w along the axle from the
-  middle out, rho from it), as points walked outward, the solid on the
-  left: axle, hub, web, rim, flange, tread, rim, web, hub, axle,
-  journal."""
+  middle out, rho from it) for wheels 'radius' m at the nominal circle,
+  as points walked outward, the solid on the left: axle, hub, web, rim,
+  flange, tread, rim, web, hub, axle, journal."""
   w0 = NOMINAL
-  tip = _TIP
-  flangeFace = w0 + _ON_FLANGE - (tip - profileAt(_ON_FLANGE)[0]) / (
+  shift = radius - RADIUS
+  tip, rim = _TIP + shift, RIM + shift
+  flangeFace = w0 + _ON_FLANGE - (_TIP - profileAt(_ON_FLANGE)[0]) / (
     math.tan(FLANGE_ANGLE))
   points = [(AXLE, 0.0), (AXLE, HUB_FROM), (HUB, HUB_FROM), (HUB, WEB_FROM),
-            (RIM, WEB_FROM), (RIM, BACK), (tip - CHAMFER, BACK),
+            (rim, WEB_FROM), (rim, BACK), (tip - CHAMFER, BACK),
             (tip, BACK + CHAMFER), (tip, flangeFace)]
   for k in range(9):
     e = _ON_FLANGE + (_ON_TREAD - _ON_FLANGE) * k / 8.0
-    points.append((profileAt(e)[0], w0 + e))
-  points += [(profileAt(FACE - w0)[0], FACE), (RIM, FACE), (RIM, WEB_TO),
-             (HUB, WEB_TO), (HUB, HUB_TO), (AXLE, HUB_TO),
+    points.append((profileAt(e, radius)[0], w0 + e))
+  points += [(profileAt(FACE - w0, radius)[0], FACE), (rim, FACE),
+             (rim, WEB_TO), (HUB, WEB_TO), (HUB, HUB_TO), (AXLE, HUB_TO),
              (AXLE, JOURNAL_FROM), (JOURNAL, JOURNAL_FROM),
              (JOURNAL, AXLE_END), (0.0, AXLE_END)]
   return points
 
 
-@functools.lru_cache(maxsize=1)
-def wheelsetBody() -> Body:
-  """The 'wheelsetBody' function returns the wheelset, turned from steel
-  (its profile mirrored about its middle, both wheels, the axle and its
-  journals), its axle along its own z, made once (the rail world knows
-  a wheelset by this very body)."""
-  half = _halfProfile()
+#  Every wheelset made, its wheels' radius by its body's identity.
+_RADII = {}
+
+
+def wheelsetBody(radius: float = RADIUS) -> Body:
+  """The 'wheelsetBody' function returns the wheelset of wheels 'radius'
+  m at the nominal circle, turned from steel (its profile mirrored
+  about its middle, both wheels, the axle and its journals), its axle
+  along its own z, made once a size (the rail world knows a wheelset by
+  its very body)."""
+  return _wheelsetOf(float(radius))
+
+
+@functools.lru_cache(maxsize=None)
+def _wheelsetOf(radius: float) -> Body:
+  """Returns the wheelset of wheels 'radius' m ('wheelsetBody')."""
+  half = _halfProfile(radius)
   left = [(rho, -w) for rho, w in reversed(half)]
   points = [(0.0, -AXLE_END)] + left[:-1] + half[1:]
   points = [point for k, point in enumerate(points)
             if k == 0 or point != points[k - 1]]
   pieces = tuple(('line', points[k], points[(k + 1) % len(points)])
                  for k in range(len(points)))
-  return Body.of(Turned(pieces, 96), STEEL)
+  body = Body.of(Turned(pieces, 96), STEEL)
+  _RADII[id(body)] = float(radius)
+  return body
+
+
+def radiusOf(body: object) -> float | None:
+  """The 'radiusOf' function returns the radius at the nominal circle of
+  the wheelset 'body' ('wheelsetBody''s), None for any other body."""
+  return _RADII.get(id(body))

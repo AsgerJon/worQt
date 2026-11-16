@@ -10,7 +10,8 @@ yaw: '_piece'), each piece's going linearly along it. A piece turning
 at one rate (a straight, an arc, a loop) is followed exactly: its frame
 turns by the rate's matrix exponential, its centre line by that turn's
 integral (Rodrigues, in closed form). A piece whose rates move (eased,
-a clothoid) is cut into steps of 'EASED_STEP' m at its build, each
+a clothoid) is cut into steps turning 'EASED_TURN' rad at most (and
+'EASED_LONGEST' m long at most) at its build, each
 turning by fourth-order Magnus (its middle rate, and the commutator of
 the rate and its change: exact where the rates keep their axis), its
 centre line along each step's arc; between the cuts the same arcs, so a
@@ -36,9 +37,11 @@ import numpy
 from .._vectors import Vector
 from ._piece import Piece
 
-#  The length of the steps an eased piece is cut into, m (its centre
-#  line then within a micrometre over a hundred metres of easing).
-EASED_STEP = 0.005
+#  How far the steps an eased piece is cut into may turn, rad (the loop's
+#  10 m easing in 5 mm steps: its centre line within a micrometre over a
+#  hundred metres), and how long they may be, m (an easing onto a 400 m
+#  curve in 0.2 m steps, not 5 mm: built 40 times quicker, as true).
+EASED_TURN, EASED_LONGEST = 5e-4, 0.5
 #  Gravity, m/s^2, z up.
 GRAVITY = (0.0, 0.0, -9.81)
 #  Below this turn (rad) a step's turn is summed by its series.
@@ -105,7 +108,11 @@ class Ribbon:
       start = numpy.array(piece.start, numpy.float64)
       end = numpy.array(piece.end, numpy.float64)
       steady = numpy.array_equal(start, end)
-      count = 1 if steady else max(1, math.ceil(piece.length / EASED_STEP))
+      sharpest = max(float(numpy.linalg.norm(start)),
+                     float(numpy.linalg.norm(end)))
+      count = 1 if steady else max(
+        1, math.ceil(piece.length * sharpest / EASED_TURN),
+        math.ceil(piece.length / EASED_LONGEST))
       h = piece.length / count
       change = (end - start) / piece.length
       for k in range(count):

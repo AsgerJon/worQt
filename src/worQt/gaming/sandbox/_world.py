@@ -33,7 +33,9 @@ class World:
   the 'actors' acting in it each step (an avatar, a vehicle: each with
   'acted(states, seconds)', changing the list of states before the
   step) and the 'vehicles' in it ('addVehicle': each puts its bodies
-  in). Bodies are 'fixed' (held still: the world's own, their indices
+  in). A drawn body may be dressed ('dressedWith': meshes of its own,
+  each its look: a model's parts, 'dressed') instead of drawn as its
+  shape. Bodies are 'fixed' (held still: the world's own, their indices
   in 'still') or 'spawned' (free); bodies already in are joined by a
   connection ('connected': a tie, an axlebox) and let go again
   ('loosened'). Once 'start'ed it steps itself on a
@@ -69,6 +71,7 @@ class World:
   actors: list
   vehicles: list
   peeps: list
+  dressed: dict
   time: float
   trouble: str
   loading: str
@@ -85,6 +88,7 @@ class World:
     self.still, self.looks = frozenset(), dict(self.LOOKS)
     self.actors, self.time, self.trouble = [], 0.0, None
     self.vehicles, self.placings, self.peeps = [], {}, []
+    self.dressed = {}
     self.loading, self.share, self.took = None, 1.0, 0.0
     self.solver, self._shown = None, (self.assembly, (), 0.0)
     self._lock = threading.RLock()
@@ -140,6 +144,20 @@ class World:
     and returns its index."""
     with self._lock:
       return self._added(body, state, law, None, look, apart)
+
+  def dressedWith(self, index: int, parts: tuple, looks: dict) -> None:
+    """The 'dressedWith' method draws body 'index' as 'parts' instead of
+    its shape: each (rows, indices, look): a mesh about the body's
+    centre in its own frame ('Mesh''s rows: place and normal, six numbers
+    a corner) and the look it is drawn in, 'looks' adding any it names
+    that the world has not ({look: (colour 0-255, metalness,
+    roughness)})."""
+    with self._lock:
+      self.looks.update(looks)
+      dressed = dict(self.dressed)
+      dressed[index] = tuple(parts)
+      self.dressed, self.drawn = dressed, dict(self.drawn)
+      self._shown = self.assembly, self.states, self.time
 
   def connected(self, connection: object) -> None:
     """The 'connected' method joins bodies already in the world by

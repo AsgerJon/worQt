@@ -30,6 +30,11 @@ GAUGE = 1.507
 SLEEPER_PITCH, SLEEPER_LONG, SLEEPER_HALF, SLEEPER_DEEP = 0.6, 0.25, 1.3, 0.2
 BED_HALF, BED_DEEP = 2.0, 1.0
 RAIL_CUT, BED_CUT = 0.25, 0.5
+#  The cuts grow where the track curves gently: each piece cut so its
+#  straight sections lie within 'CUT_SAG' m of the curve, 'CUT_LONGEST'
+#  m at most (a 400 m curve in 1.8 m sections, a straight in 4 m; the
+#  10 m loop as before).
+CUT_SAG, CUT_LONGEST = 0.001, 4.0
 #  Where the sleepers' tops and the bed's top lie, m (under the rails'
 #  foot, under the sleepers).
 SLEEPER_TOP = -0.172
@@ -47,9 +52,20 @@ def _counterclockwise(outline: tuple) -> numpy.ndarray:
 
 
 def sectionsOf(ribbon: object, cut: float) -> tuple:
-  """The 'sectionsOf' function returns the ribbon cut every 'cut' m and
-  at its end: the centre line's places (n, 3) and the frames (n, 3, 3)."""
-  ss = numpy.append(numpy.arange(0.0, ribbon.length, cut), ribbon.length)
+  """The 'sectionsOf' function returns the ribbon cut every 'cut' m at
+  least, more sparsely where it curves gently ('CUT_SAG', 'CUT_LONGEST'),
+  piece by piece, and at its end: the centre line's places (n, 3) and
+  the frames (n, 3, 3)."""
+  ss, s = [], 0.0
+  for piece in ribbon.pieces:
+    sharpest = max(float(numpy.linalg.norm(piece.start)),
+                   float(numpy.linalg.norm(piece.end)))
+    step = CUT_LONGEST if sharpest <= 0.0 else min(
+      CUT_LONGEST, max(cut, float(numpy.sqrt(8.0 * CUT_SAG / sharpest))))
+    count = max(1, int(numpy.ceil(piece.length / step - 1e-9)))
+    ss.extend(s + piece.length * k / count for k in range(count))
+    s += piece.length
+  ss.append(ribbon.length)
   places, frames = zip(*(ribbon.frameAt(s) for s in ss))
   return numpy.array(places), numpy.array(frames)
 

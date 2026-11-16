@@ -33,7 +33,7 @@ import math
 import warp as wp
 
 from . import _wheelset
-from ._axlebox import BEARING_EASE, BRAKE_EASE, JOURNAL_AT, MOTOR_LEAST
+from ._axlebox import BEARING_EASE, BRAKE_EASE, MOTOR_LEAST
 from ._railworld import A0, B0, C11, C22, CONTACT_DAMPING, EPS_MOST
 from ._railworld import LOST, N0, OFF_ACROSS, OFF_UP, Q0, SHEAR
 
@@ -58,17 +58,16 @@ STEEP = _single(-1e9)
 #  wheelset moves 0.12 m a 4 ms trade at 30 m/s).
 WINDOW = 0.5
 #  The wheel's profile ('_wheelset.profileAt').
-RADIUS = _single(_wheelset.RADIUS)
 NOMINAL = _single(_wheelset.NOMINAL)
 CONE = _single(_wheelset.CONE)
 ROOT = _single(_wheelset.ROOT)
 ON_TREAD = _single(_wheelset._ON_TREAD)
 ON_FLANGE = _single(_wheelset._ON_FLANGE)
-ON_FLANGE_R = _single(_wheelset._ON_FLANGE_R)
+ON_FLANGE_R = _single(_wheelset._ON_FLANGE_R - _wheelset.RADIUS)
 CENTRE_E = _single(_wheelset._CENTRE[0])
-CENTRE_R = _single(_wheelset._CENTRE[1])
+CENTRE_R = _single(_wheelset._CENTRE[1] - _wheelset.RADIUS)
 FLANGE_SLOPE = _single(math.tan(_wheelset.FLANGE_ANGLE))
-TIP = _single(_wheelset._TIP)
+TIP = _single(_wheelset._TIP - _wheelset.RADIUS)
 TOP_ACROSS = _single(_wheelset.RAIL_TOP[0])
 TOP_UP = _single(_wheelset.RAIL_TOP[1])
 CORNER_ACROSS = _single(_wheelset.GAUGE_CORNER[0])
@@ -91,7 +90,6 @@ OFF_HIGH = _single(OFF_UP)
 OFF_RAILS = _single(-2.0)
 PI = _single(math.pi)
 #  The axlebox ('_axlebox').
-JOURNAL = _single(JOURNAL_AT)
 EASE = _single(BEARING_EASE)
 RPM = _single(60.0 / (2.0 * math.pi))
 FAST = _single(2000.0)
@@ -108,21 +106,23 @@ MILLI = _single(1e-3)
 #  how deep into a rail past 'LOST'; below: off its table's ends),
 #  gravity 27-29, how far back and ahead it may go along 30, 31 (the
 #  track's ends or its table's) and where it is off its table 32, 33
-#  (its table's ends, or past reach where the track ends first). A row
+#  (its table's ends, or past reach where the track ends first), its
+#  wheels' radius 34, its mass 35 and its moments 36-38. A row
 #  of the track's 'table': its step's start along 0, place 1-3, frame
 #  4-12 (row by row), turn rates 13-15. An axlebox's row in 'seen' (its
 #  wheelset's frame): its box's place 0-2 and velocity 3-5, its arm 6-8
 #  and the arm's swing 9-11, its frame's axes 12-20 (a matrix row by
 #  row, its columns the axes), the frame's spin 21-23; in 'fixed': its
-#  side 0, stiffness 1-3, damping 4-6, bearing 7-10; in 'results': its
+#  journal 0-2 (the point it holds, in the wheelset's own frame),
+#  stiffness 3-5, damping 6-8, bearing 9-12; in 'results': its
 #  push on its frame over the launch (impulse 0-2, twist about the
 #  frame's centre 3-5; let go once pushed) and its mean load over each
 #  launch, summed over the launches 6. 'held': a wheelset's first box,
 #  how many, its first table row, how many.
-WHEEL_ROW = 34
+WHEEL_ROW = 39
 TABLE_ROW = 16
 SEEN_ROW = 24
-FIXED_ROW = 11
+FIXED_ROW = 13
 RESULT_ROW = 7
 
 
@@ -141,22 +141,23 @@ def matrixOf(q: wp.vec4):
 
 
 @wp.func
-def profileAt(e: wp.float32):
+def profileAt(e: wp.float32, radius: wp.float32):
   """Returns the wheel's radius 'e' m out from its nominal rolling
-  circle and its slope, as '_wheelset.profileAt'."""
+  circle and its slope, as '_wheelset.profileAt' (the wheels 'radius'
+  m at that circle; the profile's points kept from it)."""
   if e >= ON_TREAD:
-    return RADIUS - CONE * e, -CONE
+    return radius - CONE * e, -CONE
   if e >= ON_FLANGE:
     de = e - CENTRE_E
     dr = -wp.sqrt(wp.max(ROOT * ROOT - de * de, ZERO))
     slope = STEEP
     if dr < ZERO:
       slope = -de / dr
-    return CENTRE_R + dr, slope
+    return radius + CENTRE_R + dr, slope
   r = ON_FLANGE_R + FLANGE_SLOPE * (ON_FLANGE - e)
   if r >= TIP:
-    return TIP, ZERO
-  return r, -FLANGE_SLOPE
+    return radius + TIP, ZERO
+  return radius + r, -FLANGE_SLOPE
 
 
 @wp.func
@@ -270,7 +271,8 @@ def alongAt(table: wp.array2d(dtype=wp.float32), first: int, count: int,
 @wp.func
 def contactOf(point: wp.vec3, p: wp.vec3, m: wp.mat33, v: wp.vec3,
               omega: wp.vec3, tangent: wp.vec3, speed: wp.float32,
-              slip: wp.vec2, h: wp.float32, friction: wp.float32):
+              slip: wp.vec2, h: wp.float32, friction: wp.float32,
+              radius: wp.float32):
   """Returns the push one rail point puts on the wheelset, its relaxed
   slip after the step, its load and how deep it went (a load of nought:
   not touching, its slip let go), as 'RailWorld._contact'."""
@@ -279,7 +281,7 @@ def contactOf(point: wp.vec3, p: wp.vec3, m: wp.mat33, v: wp.vec3,
   d = point - p
   b = wp.transpose(m) * d
   rho = wp.sqrt(b[0] * b[0] + b[1] * b[1])
-  r, slope = profileAt(wp.abs(b[2]) - NOMINAL)
+  r, slope = profileAt(wp.abs(b[2]) - NOMINAL, radius)
   if r - rho <= ZERO or rho <= ZERO:
     return nothing, free, ZERO, ZERO
   size = wp.sqrt(ONE + slope * slope)
@@ -372,7 +374,6 @@ def vec3At(rows: wp.array2d(dtype=wp.float32), i: int, at: int):
 
 @wp.func
 def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
-             mass: wp.float32, moments: wp.vec3,
              table: wp.array2d(dtype=wp.float32),
              wheels: wp.array2d(dtype=wp.float32),
              held: wp.array2d(dtype=int),
@@ -402,9 +403,11 @@ def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
   high = wheels[i, 31]
   first = held[i, 2]
   rows = held[i, 3]
-  ix = moments[0]
-  iy = moments[1]
-  iz = moments[2]
+  radius = wheels[i, 34]
+  mass = wheels[i, 35]
+  ix = wheels[i, 36]
+  iy = wheels[i, 37]
+  iz = wheels[i, 38]
   row = segmentAt(table, first, rows, s)
   for step in range(count):
     s, row = alongAt(table, first, rows, low, high, p, s, row)
@@ -415,7 +418,7 @@ def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
     off = p - at
     if wp.abs(off[0] * f[0, 1] + off[1] * f[1, 1] + off[2] * f[2, 1]) > (
         OFF_SIDE) or (off[0] * f[0, 2] + off[1] * f[1, 2]
-                      + off[2] * f[2, 2] - RADIUS > OFF_HIGH):
+                      + off[2] * f[2, 2] - radius > OFF_HIGH):
       wheels[i, 26] = OFF_RAILS
       return
     m = matrixOf(q)
@@ -449,7 +452,7 @@ def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
         slip = wp.vec2(wheels[i, 14 + 2 * key], wheels[i, 15 + 2 * key])
         pushed, slip, load, depth = contactOf(point, p, m, v, omega,
                                               tangent, speed, slip, h,
-                                              friction)
+                                              friction, radius)
         if depth > LOST_DEPTH:
           wheels[i, 26] = depth
           return
@@ -460,20 +463,20 @@ def rolledOn(i: int, count: int, h: wp.float32, friction: wp.float32,
         torque = torque + wp.cross(point - p, pushed)
     since = wp.float32(step) * h
     for j in range(held[i, 0], held[i, 0] + held[i, 1]):
-      reach = fixed[j, 0] * JOURNAL
-      a = axle * reach
+      a = m * wp.vec3(fixed[j, 0], fixed[j, 1], fixed[j, 2])
       moving = vec3At(seen, j, 3)
       out = p + a - vec3At(seen, j, 0) - moving * since
       rate = v + wp.cross(omega, a) - moving
       push = wp.vec3(ZERO, ZERO, ZERO)
       for e in range(3):
         axis = wp.vec3(seen[j, 12 + e], seen[j, 15 + e], seen[j, 18 + e])
-        size = -(fixed[j, 1 + e] * wp.dot(axis, out)
-                 + fixed[j, 4 + e] * wp.dot(axis, rate))
+        size = -(fixed[j, 3 + e] * wp.dot(axis, out)
+                 + fixed[j, 6 + e] * wp.dot(axis, rate))
         push = push + size * axis
       relative = wp.dot(omega - vec3At(seen, j, 21), axle)
       boxed = wp.length(push)
-      bearing = wp.vec4(fixed[j, 7], fixed[j, 8], fixed[j, 9], fixed[j, 10])
+      bearing = wp.vec4(fixed[j, 9], fixed[j, 10], fixed[j, 11],
+                        fixed[j, 12])
       lean = ONE
       if (axle[0] * seen[j, 13] + axle[1] * seen[j, 16]
           + axle[2] * seen[j, 19]) < ZERO:
@@ -561,7 +564,6 @@ def boxSeen(j: int, w: int, place: wp.array(dtype=wp.vec3),
 
 @wp.kernel
 def railRun(count: int, h: wp.float32, friction: wp.float32,
-            mass: wp.float32, moments: wp.vec3,
             table: wp.array2d(dtype=wp.float32),
             wheels: wp.array2d(dtype=wp.float32),
             held: wp.array2d(dtype=int),
@@ -572,13 +574,12 @@ def railRun(count: int, h: wp.float32, friction: wp.float32,
             drives: wp.array2d(dtype=wp.float32)):
   """Steps wheelset 'tid' as 'rolledOn' does, its boxes as 'seen' holds
   them (written by the host)."""
-  rolledOn(wp.tid(), count, h, friction, mass, moments, table, wheels,
+  rolledOn(wp.tid(), count, h, friction, table, wheels,
            held, seen, fixed, results, brakes, drives)
 
 
 @wp.kernel
 def railTraded(count: int, h: wp.float32, friction: wp.float32,
-               mass: wp.float32, moments: wp.vec3,
                table: wp.array2d(dtype=wp.float32),
                wheels: wp.array2d(dtype=wp.float32),
                held: wp.array2d(dtype=int),
@@ -607,7 +608,7 @@ def railTraded(count: int, h: wp.float32, friction: wp.float32,
   for j in range(held[i, 0], held[i, 0] + held[i, 1]):
     boxSeen(j, i, place, shift, turn, velocity, spin, boxBody, boxArm,
             boxAxes, originHigh, originLow, localAxes, seen)
-  rolledOn(i, count, h, friction, mass, moments, table, wheels, held,
+  rolledOn(i, count, h, friction, table, wheels, held,
            seen, fixed, results, brakes, drives)
 
 

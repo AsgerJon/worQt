@@ -8,7 +8,10 @@ points, refused; a lone wheelset rolling at 3 m/s through the points
 stays on the line or takes the branch as they are set, its wheels on
 that track's rails, in plain Python and in the kernel alike; one
 rolling back out of the branch trails through onto the line behind the
-points however they are set.
+points however they are set. A closed track (its end where it began:
+an oval) runs round: its way wraps from its end onto its start and
+back; the rail world finds it closed by itself; a wheelset rolls on
+across the seam of a circle, in plain Python and in the kernel.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -82,6 +85,39 @@ class TestTurnout(PhysTest):
     self.assertEqual(wayOf(lengths, (points,), 1, 28.0, 5.0, 5.0),
                      ([(23.0, 28.0, 1, 0.0), (28.0, 30.0, 1, 0.0)], False,
                       True))
+
+  def test_closed(self) -> None:
+    """A closed track's way wraps round both ways; the rail world finds a
+    circle closed and a straight not; a wheelset rolling at 4 m/s from 5
+    m before a 100 m circle's seam is 7 m past it after 3 s, on the
+    rails, in plain Python and in the kernel (a lone wheelset, nothing
+    steering it, set rolling into a 20 m circle climbs its flange and
+    leaves the rails)."""
+    closed = frozenset((0,))
+    self.assertEqual(wayOf((40.0,), (), 0, 38.0, 5.0, 5.0, closed),
+                     ([(33.0, 38.0, 0, 0.0), (38.0, 40.0, 0, 0.0),
+                       (40.0, 43.0, 0, -40.0)], False, False))
+    self.assertEqual(wayOf((40.0,), (), 0, 2.0, 5.0, 5.0, closed),
+                     ([(-3.0, 0.0, 0, 40.0), (0.0, 2.0, 0, 0.0),
+                       (2.0, 7.0, 0, 0.0)], False, False))
+    circle = Ribbon((bend(2.0 * math.pi, 100.0, (0.0, 0.0, 1.0)),))
+    body = wheelsetBody()
+    self.assertEqual(RailWorld(_Still(), Ribbon((straight(9.0),)),
+                               body).closed, frozenset())
+    preloaded('cpu')
+    for device in (None, 'cpu'):
+      with self.subTest(device=device):
+        world = RailWorld(_Still(), circle, body, 1e-4, 0.3, 2e-3, device)
+        self.assertEqual(world.closed, frozenset((0,)))
+        states = (wheelsetOn(circle, circle.length - 5.0, 4.0),)
+        for k in range(round(3.0 / FRAME)):
+          states = world.advancedAll(Assembly((body,), ()), states, FRAME,
+                                     k * FRAME)
+        memory = world.rolling[0]
+        self.assertEqual(memory['track'], 0)
+        self.assertAlmostEqual(memory['s'], 7.0, None, None, 0.3)
+        self.onRails(world, states[0], 0, memory['s'])
+        self.assertFalse(world.derailed)
 
   def test_refused(self) -> None:
     """A track branching off itself, points off their track, or a

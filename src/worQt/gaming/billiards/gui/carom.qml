@@ -78,8 +78,9 @@ Item {
   //  Keglebillard, the second game: the cloth more cyan, the six holes
   //  milled in, 'holeRadius' each, at 'holePlaces', the pins, pale wood,
   //  three dark grooves round each one's waist, 'pinGrooves' ('y' up, 'r'
-  //  round), its outline 'shapes.pin': each pin by its number, its foot
-  //  at 'pinPlaces', turned 'pinTurns', on the table if 'pinShown'.
+  //  round), its outline 'pinShape' (made anew as the game changes):
+  //  each pin by its number, its foot at 'pinPlaces', turned 'pinTurns',
+  //  on the table if 'pinShown'.
   property bool kegler: false
   property var pinPlaces: []
   property var pinTurns: []
@@ -87,6 +88,7 @@ Item {
   property var holePlaces: []
   property real holeRadius: 40
   property var pinGrooves: []
+  property var pinShape: null
   property vector3d cameraTurn: Qt.vector3d(-16, 180, 0)
   property real cameraDistance: 1900
   property real cameraView: 36
@@ -674,7 +676,7 @@ Item {
           rotation: body.turns[index] || Qt.quaternion(1, 0, 0, 0)
           visible: body.shown[index] === true
           Model {
-            geometry: root.shapes.pin || null
+            geometry: root.pinShape
             materials: PrincipledMaterial {
               baseColor: "#dcbf92"
               metalness: 0
