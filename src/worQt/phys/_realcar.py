@@ -154,9 +154,18 @@ COLUMN_LENGTH = math.sqrt(sum((a - b) ** 2 for a, b in zip(COLUMN_TOP,
 #  engined, the rear's were the stiffer; the rear ones
 #  the struts', a strut rising with its wheel near one to one where the
 #  wishbone's shock did 0.71: the coil softer, the dampers so; all of
-#  them halved again for the car's lightness, 'SOFTER').
-FRONT_SHOCK = Shock(8e4, 0.2051, 1950.0, 4400.0)
-REAR_SHOCK = Shock(1.12e5, 0.3948, 3100.0, 6850.0, 0.53, 0.42)
+#  them halved again for the car's lightness, 'SOFTER'). Then the coils a
+#  third as stiff (user, 2026-11-15: "suspension feels weird... like in
+#  need of adjustment": the wheels' rates were 40 and 52 kN/m, the body
+#  on them 3.5 Hz in front and 3.9 behind, harsh on a town's cobbles,
+#  0.6 deg of roll a g; now 2.0 and 2.3 Hz, ~1.8 deg a g, a light single
+#  seater of the fifties' with no roll bar), each free length so its
+#  coil holds what it held standing (the car rides as it did, its travel
+#  to the stops as it was), the dampers by the square root of three (as
+#  much of critical as they were: a quarter closing, three fifths
+#  opening).
+FRONT_SHOCK = Shock(2.67e4, 0.2349, 1125.0, 2540.0)
+REAR_SHOCK = Shock(3.73e4, 0.4209, 1790.0, 3955.0, 0.53, 0.42)
 #  The rear half shafts: where their inner joints are out from the
 #  car's middle, m (past the differential's housing), where the outer
 #  ones are in the wheels' own frames (in from the hub: its housing clear
@@ -232,13 +241,16 @@ class Antilock:
   caliper ('lines', as 'CORNERS': front left, front right, rear left,
   rear right), each wheel's share of the foot's pressure let through
   ('shares'), worked out call by call from how its wheel rolls
-  ('worked'), and whether the handbrake is pulled ('pulled': the rear
-  calipers squeezed at 'HANDBRAKE' at once, past the anti-lock).
+  ('worked'), whether the handbrake is pulled ('pulled': the rear
+  calipers squeezed at 'HANDBRAKE' at once, past the anti-lock), and
+  each corner's wheel's body ('wheels': the car of parts' 'WHEELS', or
+  the stand-in car's, '_magiccar.WHEELS'; the drivers find them here).
   """
 
-  __slots__ = ('lines', 'shares', 'pulled')
+  __slots__ = ('lines', 'shares', 'pulled', 'wheels')
 
-  def __init__(self, ) -> None:
+  def __init__(self, wheels: tuple = None) -> None:
+    self.wheels = WHEELS if wheels is None else tuple(wheels)
     self.lines = tuple(BrakeLine(0.0) for _ in CORNERS)
     self.shares = [1.0] * len(CORNERS)
     self.pulled = False
@@ -256,7 +268,7 @@ class Antilock:
     """The 'rolling' method returns how fast corner 'corner''s wheel goes
     along its heading over the road, m/s, and how fast its tread goes
     round (its spin about its axle times its tyre's radius), m/s."""
-    wheel = WHEELS[corner]
+    wheel = self.wheels[corner]
     state, side = states[wheel], CORNERS[corner][1]
     axle = rotated(state.turn, (0.0, 0.0, 1.0))
     heading = cross(scaled(axle, side), (0.0, 0.0, 1.0))
@@ -729,11 +741,16 @@ def chassisFinish() -> tuple:
   """The 'chassisFinish' function returns how the chassis is drawn: by
   its parts ('chassisPieces'), and its bodywork over them
   ('_bodyshell': the shell and its headrest's fairing 'paint', the
-  intake's 'grille', the 'screen'), made once."""
+  intake's 'grille', the 'screen'), and the speedometer on its dash
+  ('_gauge': its face, 'dial', its can, bezel, hub and stalk, 'bezel';
+  its needle a dress), made once."""
   from ._bodyshell import grilleRows, screenRows, shellRows
+  from ._gauge import bezelRows, faceRows
   return chassisPieces() + (('paint', ('rows', shellRows())),
                             ('grille', ('rows', grilleRows())),
-                            ('screen', ('rows', screenRows())))
+                            ('screen', ('rows', screenRows())),
+                            ('dial', ('rows', faceRows())),
+                            ('bezel', ('rows', bezelRows())))
 
 
 def realCarFinishes(assembly: Assembly) -> dict:

@@ -10,6 +10,7 @@ mesh made in Python.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+import hashlib
 import math
 import tempfile
 import time
@@ -26,10 +27,12 @@ from PySide6.QtWidgets import QWidget
 
 from .._vectors import cross, minus, norm, rotated, scaled
 from ._meshes import AXES, SCALE, bodyRows, finishedRows, groundMesh
+from ._dials import dialFile, dialPicture
+from .._gauge import angleOf
 from ._souffle import badgePicture, leatherPicture, sidewallPicture
 from ._meshes import pieceRows
 from ._meshes import quadIndices, stripedRows
-from ._meshes import crgBase, crgMesh
+from ._meshes import crgBase, crgMesh, sceneryRows
 from ._meshes import quadRows, sceneOf, sceneTurnOf, terrainMesh
 from ._meshes import ovalTrackMesh, wallMesh
 from ._wheel import MouseHands
@@ -128,12 +131,16 @@ class GpuView(QWidget):
   less than opaque blends), all within 'around' m of the first body
   where a dress says so; the ground (a 'terrain', or flat; none at
   all in the 'void'; on a terrain the oval's surfaces where 'oval', a
-  road's along its rows where 'crg' (a '_crg.CrgTrack': asphalt,
-  pavement, ground, over the terrain coarsened: 'crgMesh', 'crgBase')),
-  dirt
-  ('_dirtFiles': its colours and its bumps), a picture to two of
-  'tiles["ground"]'. The bodies in 'hidden' are not drawn; a tone
-  changed is drawn from the next frame, the part only recoloured; a
+  road's along its rows where 'crg' (a '_crg.CrgTrack', in its
+  photographs from above, 'pictures': 'crgMesh'; over the terrain
+  coarsened, 'crgBase'; none where 'scenery' covers the ground, its
+  'sceneryBox')), dirt ('_dirtFiles': its colours and its bumps), a
+  picture to two of 'tiles["ground"]'; 'scenery' (as '_glb.readGlb'
+  returns it: pieces, pictures) drawn round it, unlit in its
+  photographs, casting no shadow (houses only to look at; the scene's
+  colours then left as they are, not tonemapped). The bodies in
+  'hidden' are not drawn; a tone changed is drawn from the next frame,
+  the part only recoloured; a
   dress's keys, all there from its first frame, are its meshes for
   good (a mesh made later has the scene make every dressed part
   anew). The whole is drawn 'magnify'
@@ -147,7 +154,8 @@ class GpuView(QWidget):
   it 'around' the car and up or down, the mouse wheel brings it nearer;
   a left click takes the mouse to steer with ('hands', 'MouseHands');
   the keys held are in 'keys'. With 'crosshair' a cross shows in the
-  middle, with a 'hint' a line of help along the bottom. While
+  middle, with a 'hint' a line of help along the bottom, with a
+  'speedometer' (km/h; None: none) a speedometer in the corner. While
   'recorder' is set (a 'Recorder') each frame shown is handed to it,
   with what it was drawn from ('drawnNow'). The scene loads once shown
   ('loaded', 'sceneLoaded'); its first frame drawn, 'drawn' and
@@ -177,6 +185,8 @@ class GpuView(QWidget):
     self.riding = None
     self.void = False
     self.wall, self.oval, self.crg = None, False, None
+    self.pictures, self.scenery, self.sceneryBox = (), None, None
+    self.photographedKey = None
     self.yaw, self.pitch, self.distance = 0.6, 0.28, 6.5
     self.target = (0.0, 0.0, 0.4)
     self.keys, self.around, self.heading = set(), 0.0, None
@@ -184,6 +194,7 @@ class GpuView(QWidget):
     self.rows, self.kept = {}, []
     self.hidden, self.magnify, self.near = set(), 1.0, 0.05
     self.crosshair, self.hint, self.recorder = False, '', None
+    self.speedometer = None
     self.pushedTones, self.partColours, self.stripes = None, [], {}
     self.hands = MouseHands(self.quick)
     self.setMinimumSize(800, 600)
@@ -424,7 +435,7 @@ class GpuView(QWidget):
     self._pushParts(root)
     self.dressed = {}
     root.setProperty('dressed', [])
-    self.seeThrough['dressed'] = False
+    self.seeThrough['dressed'] = 0
     self._pushGlass(root)
     self._pushGround(root)
     self.pushed = self.assembly
@@ -564,14 +575,7 @@ class GpuView(QWidget):
           Mesh(vertices, indices) for indices in (ground, road, apron))
       shape, track, paved, asphalt = self.meshes[key]
     elif terrain is not None and self.crg is not None:
-      key = ('crg', id(terrain.heights), id(self.crg), tile)
-      if key not in self.meshes:
-        coarse, dropped = crgBase(terrain, self.crg)
-        base = terrainMesh(coarse, tile, dropped)
-        self.meshes[key] = (Mesh(base[0], base[1]),) + tuple(
-          Mesh(vertices, indices)
-          for vertices, indices in crgMesh(self.crg, terrain, tile))
-      shape, track, paved, asphalt = self.meshes[key]
+      shape = self._pushRoad(root, terrain, tile)
     elif terrain is not None:
       key = ('terrain', id(terrain.heights), tile)
       if key not in self.meshes:
@@ -591,6 +595,10 @@ class GpuView(QWidget):
     root.setProperty('pavedShape', paved)
     root.setProperty('asphaltShape', asphalt)
     root.setProperty('trackGroundShape', track)
+    if (terrain is None or self.crg is None) and (
+        self.photographedKey is not None):
+      root.setProperty('photographed', [])
+      self.photographedKey = None
     barrier, stripe = None, None
     if terrain is not None and self.wall is not None:
       key = ('wall', id(terrain.heights), self.wall)
@@ -601,6 +609,54 @@ class GpuView(QWidget):
     root.setProperty('wallShape', barrier)
     root.setProperty('stripeShape', stripe)
     root.setProperty('flatShape', None if self.void else flat)
+
+  def _pushRoad(self, root: object, terrain: object, tile: float) -> Mesh:
+    """Hands the scene a road laid along its rows ('crg') in its
+    photographs ('pictures') and the scenery round it ('scenery': the
+    road and the terrain not drawn where it covers the ground), and
+    returns the terrain coarsened about them ('crgBase'), its rows
+    worked out once. What is photographed is handed over only when it
+    changes, in meshes made anew ('_freshOf': handed the meshes it had
+    before, a rebuilt scene let go of them)."""
+    hole = None if self.scenery is None else self.sceneryBox
+    key = ('crg', id(terrain.heights), id(self.crg), tile, self.pictures,
+           None if self.scenery is None else id(self.scenery[0]), hole)
+    if key not in self.meshes:
+      coarse, dropped = crgBase(terrain, self.crg, hole)
+      base = terrainMesh(coarse, tile, dropped)
+      self.meshes[key] = Mesh(base[0], base[1])
+    if key == self.photographedKey:
+      return self.meshes[key]
+    road = (key, 'road')
+    if road not in self.rows:
+      self.rows[road] = crgMesh(self.crg, terrain, self.pictures, hole)
+    photographed = []
+    for k, (vertices, indices, path) in enumerate(self.rows[road]):
+      photographed.append({'geometry': self._freshOf(
+        (road, k), lambda: (vertices, indices)),
+        'map': QUrl.fromLocalFile(path).toString(), 'both': False})
+    root.setProperty('photographed', photographed + self._sceneryParts())
+    self.photographedKey = key
+    return self.meshes[key]
+
+  def _sceneryParts(self, ) -> list[dict]:
+    """Returns the scenery's pieces as the scene draws them ('scenery':
+    a mesh a piece, made anew, '_freshOf', its rows worked out once; each
+    in its photograph, written to the temp folder once, '_photoFile';
+    seen from both sides where it says so)."""
+    if self.scenery is None:
+      return []
+    pieces, pictures = self.scenery
+    files = [_photoFile(picture) for picture in pictures]
+    parts = []
+    for piece in pieces:
+      if not len(piece.triangles):
+        continue
+      parts.append({'geometry': self._freshOf(
+        ('scenery', id(piece)), lambda: sceneryRows(piece)),
+        'map': QUrl.fromLocalFile(files[piece.picture]).toString(),
+        'both': piece.both})
+    return parts
 
   def _pushFrame(self, ) -> None:
     """Hands the scene where each body is and how it is turned, the rods
@@ -623,10 +679,25 @@ class GpuView(QWidget):
     root.setProperty('cameraNear', SCALE * self.near * self.magnify)
     root.setProperty('crosshair', self.crosshair)
     root.setProperty('hint', self.hint)
+    self._pushSpeedometer(root)
     root.setProperty('cameraPlace', QVector3D(*(
       self.magnify * x for x in sceneOf(eye))))
     root.setProperty('cameraTurn', _turnOfAxes(right, up,
                                                scaled(forward, -1.0)))
+
+  def _pushSpeedometer(self, root: object) -> None:
+    """Hands the scene the speedometer in its corner: shown while
+    'speedometer' holds a speed (km/h; None: hidden), its needle turned
+    as the car's dial's ('_gauge.angleOf'), its figure, its dial's
+    picture ('_dials.dialFile') given once."""
+    shown = self.speedometer is not None
+    root.setProperty('speedometer', shown)
+    if not shown:
+      return
+    if not root.property('dialFace'):
+      root.setProperty('dialFace', QUrl.fromLocalFile(dialFile()).toString())
+    root.setProperty('speedAngle', math.degrees(angleOf(self.speedometer)))
+    root.setProperty('speedText', '%.0f km/h' % abs(self.speedometer))
 
   def _pushDresses(self, root: object) -> None:
     """Hands the scene what the dresses draw now, a mesh for each key of
@@ -669,17 +740,33 @@ class GpuView(QWidget):
 
   def _pushGlass(self, root: object) -> None:
     """Tells the scene how to draw what is seen through: blended by
-    weight while anything drawn is ('seeThrough'), else not at all (the
-    drawing shares the GPU with the physics: the glass' pass cost the
-    real car's kernel 6 to 12 us a step; the user, 2026-11-15: "if Qt
-    can't do transparency, it's fine. We can make shit opaque")."""
-    root.setProperty('glass', 1 if any(self.seeThrough.values()) else 0)
+    weight while more than one piece of glass is drawn ('seeThrough':
+    plain blending orders whole pieces by their middles, nested rings'
+    alike, flipping frame to frame), else plainly, one piece over what
+    lies behind it, its own faces in a fixed order (the real car's
+    screen; the drawing shares the GPU with the physics, and the
+    weighted pass cost the real car's kernel 6 to 20 us a step: user,
+    2026-11-15, "phys still not at 100%")."""
+    glass = sum(self.seeThrough.values())
+    root.setProperty('glass', 1 if glass > 1 else 0)
 
 
-def _seeThrough(entries: list) -> bool:
-  """Returns whether any of the scene's 'entries' (parts or dress, each
-  its 'colour') is drawn less than opaque."""
-  return any(entry['colour'].alpha() < 255 for entry in entries)
+def _seeThrough(entries: list) -> int:
+  """Returns how many of the scene's 'entries' (parts or dress, each its
+  'colour') are drawn less than opaque."""
+  return sum(1 for entry in entries if entry['colour'].alpha() < 255)
+
+
+def _photoFile(picture: bytes) -> str:
+  """Returns a photograph ('picture', a JPEG's or a PNG's bytes) as a
+  file in the temp folder, written once (named for what it holds)."""
+  suffix = '.png' if picture[:4] == b'\x89PNG' else '.jpg'
+  name = 'worqt-phys-photo-%s%s' % (
+    hashlib.sha1(picture).hexdigest()[:24], suffix)
+  path = Path(tempfile.gettempdir()) / name
+  if not path.exists():
+    path.write_bytes(picture)
+  return str(path)
 
 
 def _cameraOf(target: tuple, yaw: float, pitch: float,
@@ -798,7 +885,7 @@ def _heightOf(random: object, size: int, fall: float) -> numpy.ndarray:
 #  The finishes' pictures painted whole, in their own colours or grey,
 #  by name ('_finishFile').
 _PAINTED = {'souffle': sidewallPicture, 'badge': badgePicture,
-            'leather': leatherPicture}
+            'leather': leatherPicture, 'speedometer': dialPicture}
 
 
 def _finishFile(name: str) -> str:
@@ -810,7 +897,9 @@ def _finishFile(name: str) -> str:
   a faint blotch, so a turning part is still seen to turn; 'souffle',
   a tyre's sidewall lettering, in its colours ('sidewallPicture': its
   look white); 'badge', the steering wheel's badge ('badgePicture', its
-  look white); 'leather', perforated leather ('leatherPicture')."""
+  look white); 'leather', perforated leather ('leatherPicture');
+  'speedometer', the speedometer's dial ('_dials.dialPicture', in its
+  colours: its look white)."""
   path = Path(tempfile.gettempdir()) / ('worqt-phys-finish-%s-%d.png' % (
     name, _FINISH_FORM))
   if path.exists():

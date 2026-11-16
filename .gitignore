@@ -191,3 +191,10 @@ archive/
 
 # Screenshots and sample reports Claude makes to show work
 previews/
+
+# Tracks built by uncannyball (big, rebuilt there, licences unsettled)
+/tracks/
+
+# The gravity gun model (no licence stated, made with meshy-6): kept out
+# of git until its licence is known
+src/worQt/gaming/sandbox/models/

@@ -1,89 +1,171 @@
 """
 The real car in town (user, 2026-11-15: uncannyball's lap of central
-Copenhagen, 'previews/uncannyball_readme.md'): the lap's road read
-('_crg.readCrg', from 'CITY_TRACK', 'previews/royal_race.crg': not in
-git, made by uncannyball) and laid onto the small steps' terrain at
-'CITY_CELL' m ('cityGround': the tyre yard's ground on it, no walls yet:
-the file is the ground and nothing else), as a course ('cityCourse'),
-the real car set down at its start ('cityStart': the east gate of
-Amalienborg Slotsplads, on the road's middle, heading along it; level,
-the town is all but), the walker sat in it ('realCarInCity'), and the
-palace square by the start (user, 2026-11-15: "Just try to see if you
-can put Amalienborg Slotsplads in there lol"): its four palaces on the
-octagon's diagonal sides and Frederik V on horseback in its middle
-('amalienborg'), each part of the world, the walker meeting them (the
-car keeps to the road: it meets none of them). The heights
-are public data: 'ATTRIBUTION' goes with what is
-shown.
+Copenhagen; its files in 'previews/tracks', 'previews/to_worqt.md',
+their note 'README.md' beside them): the lap's road read
+('_crg.readCrg', 'CITY_TRACK') and laid onto the small steps' terrain at
+'CITY_CELL' m ('cityGround': the tyre yard's ground on it, walled where
+the houses stand, 'cityWall'), as a course ('cityCourse'), the real
+car set down at its start ('cityStart': the east gate of Amalienborg
+Slotsplads, on the road's middle, heading along it; level, the town is
+all but), the walker sat in it ('realCarInCity'), the car and the
+walker meeting the walls. For the eye only: the ground as photographed
+from above along the lap ('cityPictures', 'cityManifest'), and the
+houses round the start in 3D ('cityScenery': Amalienborg's four
+palaces, Frederik V, the Marble Church, the streets about, 512 m a
+side, 'sceneryBox'; its ground within 4 mm of the terrain's on the
+road), made by uncannyball from photographs at 45 degrees and the
+laser scan. The data are public: 'CITY_CREDIT' goes with what is shown.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
 import functools
+import json
 import math
 import os
 
-from ._assembly import Assembly, Contact, Fixed
-from ._body import Body, State
-from ._crg import ATTRIBUTION, crgTerrain, readCrg
+import numpy
+
+from ._assembly import Assembly
+from ._body import State
+from ._crg import crgTerrain, readCrg
 from ._ground import Ground
 from ._vectors import Vector
 
-#  Where the lap's file is (uncannyball's, beside its note), how finely
-#  its heights are laid onto the terrain's grid and how far past the
-#  road's edge, m (on the road within 4 cm of the file's, 3 mm mean; 20
-#  million cells, 165 MB as the GPU holds them), and how wide the course
-#  is taken to be (its plan's; the file has no kerbs), m.
-CITY_TRACK = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          '..', '..', '..', 'previews', 'royal_race.crg')
+#  Where the lap's files are (uncannyball's, beside its note: not in
+#  git, its photographs' licences not all settled), its manifest, its
+#  road, its scenery; how finely its heights are laid onto the terrain's
+#  grid and how far past the road's edge, m (on the road within 4 cm of
+#  the file's, 3 mm mean; 20 million cells, 165 MB as the GPU holds
+#  them), and how wide the course is taken to be (its plan's), m.
+CITY_FOLDER = os.path.normpath(os.path.join(
+  os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'previews',
+  'tracks'))
+CITY_MANIFEST = os.path.join(CITY_FOLDER, 'royal_race.json')
+CITY_TRACK = os.path.join(CITY_FOLDER, 'royal_race.crg')
+CITY_STANDING = os.path.join(CITY_FOLDER, 'royal_race_standing.crg')
+CITY_SCENERY = os.path.join(CITY_FOLDER, 'royal_race_scenery.glb')
 CITY_CELL, CITY_MARGIN, CITY_WIDTH = 0.5, 10.0, 7.0
-#  Amalienborg Slotsplads, as near as the lap and what is public say: its
-#  middle (the statue) where the lap's hairpin round it is centred (a
-#  circle fitted to its middle line 100 to 200 m from the start: within
-#  3 m whichever span; Wikipedia's 55 41 02 N 12 35 35 E, to the
-#  arcsecond, lies 28 m off, within its rounding), m; the way its streets
-#  run (Frederiksstaden's grid, from the lap's long straight up
-#  Toldbodgade into it: Amaliegade's way, rad from x; Frederiksgade
-#  across it); how far its palaces' fronts stand from its middle, m (an
-#  octagon's sides 47 m long, the palaces' fronts: a guess, nowhere
-#  published that I found; the readme's next grid will say); each
-#  palace's depth and height to its cornice, m, its roof's (a block on
-#  it); the statue's pedestal (length along Frederiksgade, width, height)
-#  and the bronze on it (all of it almost 12 m: Wikipedia), m; how dense
-#  the masonry and the bronze are (they never move: bodies of the
-#  world).
-SQUARE_MIDDLE, SQUARE_WAY = (1879.0, 774.0), math.radians(68.7)
-SQUARE_FRONT, PALACE_DEEP, PALACE_HIGH = 57.0, 18.0, 17.0
-ROOF_HIGH, ROOF_IN = 5.0, 2.0
-PEDESTAL, RIDER = (6.0, 3.0, 5.5), (5.0, 1.8, 6.3)
-MASONRY, BRONZE = 1800.0, 8800.0
-#  How the walker meets the square: stone gripping 0.6, a touch a part.
-#  The car meets none of it (user, 2026-11-15: "the palace need not have
-#  exact collision", "just don't spend compute bro!": its skin against
-#  the stone, even one way at 0.3 m, was 1 500 touches looked for about
-#  the square; the car keeps to the road, and driven into a palace by
-#  hand it goes through).
-_ON_STONE = (1e6, 1.0, 0.6, 1e6, 2e3)
+#  What the car and the walker meet as a wall (the scenery is only to be
+#  looked at; the lap's note leaves the threshold to us): whatever stands
+#  'WALL_LEAST' m or more on the ground (over a parked van or a bus: they
+#  have driven off since the scan; under any house), beyond the road's
+#  edges, more than 'WALL_CORRIDOR' m from its middle line (over the
+#  line itself whatever stands is overhead: the boulevards' trees every
+#  14 m down their middle strip, 5 to 30 m runs at 2 to 5 km round; at
+#  5 m the line met them over 127 m of the lap); its faces sliding at
+#  'WALL_GRIP' (the oval's barrier's). The trees beside a street are
+#  walls too: the scan cannot tell a crown from a facade. Walls stand 4
+#  m or more from the middle over all but 356 m of the lap, never
+#  nearer than 2.7 m (their faces smoothed).
+WALL_LEAST, WALL_CORRIDOR, WALL_GRIP = 3.5, 3.0, 0.5
+#  What goes with anything shown that is made from the lap's files
+#  (their note's 'Manners', its lines as they are: the heights and the
+#  photographs from above, CC BY 4.0; the laser scan the scenery is
+#  shaped from, likewise; the photographs at 45 degrees its walls are
+#  from, their licence to be confirmed).
+CITY_CREDIT = ('Contains data from Klimadatastyrelsen: Danmarks '
+               'Højdemodel, DHM/Terræn, DHM/Overflade and DHM/Punktsky; '
+               'GeoDanmark Ortofoto, forårsbilleder. CC BY 4.0. Contains '
+               'data from Klimadatastyrelsen: Skråfoto.')
+
+
+def _needed(path: str) -> str:
+  """Returns 'path', refused loudly where its file is not (the lap's
+  files are uncannyball's, not in git)."""
+  if not os.path.isfile(path):
+    raise FileNotFoundError('the city lap is not all here: %s (uncannyball '
+                            'makes it: see previews/to_worqt.md)' % path)
+  return path
+
+
+def cityHere() -> bool:
+  """The 'cityHere' function returns whether the lap's files are here
+  (its manifest, its road, its scenery; its pictures are looked for as
+  they are read)."""
+  return all(os.path.isfile(path) for path in (
+    CITY_MANIFEST, CITY_TRACK, CITY_STANDING, CITY_SCENERY))
 
 
 def cityTrack() -> object:
   """The 'cityTrack' function returns the lap's road ('readCrg'), read
-  once; refused loudly where its file is not ('CITY_TRACK')."""
-  path = os.path.normpath(CITY_TRACK)
-  if not os.path.isfile(path):
-    raise FileNotFoundError('the city lap is not here: %s (uncannyball '
-                            'makes it: see its note)' % path)
-  return readCrg(path)
+  once."""
+  return readCrg(_needed(CITY_TRACK))
+
+
+@functools.lru_cache(maxsize=1)
+def cityManifest() -> dict:
+  """The 'cityManifest' function returns what the lap's manifest says
+  (its pictures, its road's edges, its materials, its credit), read
+  once."""
+  with open(_needed(CITY_MANIFEST), encoding='utf-8') as file:
+    return json.load(file)
+
+
+@functools.lru_cache(maxsize=1)
+def cityPictures() -> tuple[tuple[float, float, str], ...]:
+  """The 'cityPictures' function returns the lap's ground as
+  photographed from above, stretch by stretch along it: (where along
+  the lap it begins, where it ends, m, its file); in each the lap runs
+  up the picture, its foot where the stretch begins, its left edge 60 m
+  left of the road's middle, its right 60 m right."""
+  return tuple((float(begins), float(ends),
+                _needed(os.path.join(CITY_FOLDER, name)))
+               for begins, ends, name in cityManifest()['picture'])
+
+
+def cityScenery() -> tuple:
+  """The 'cityScenery' function returns the houses round the lap's start
+  ('_glb.readGlb': its pieces and its pictures), read once."""
+  from ._glb import readGlb
+  return readGlb(_needed(CITY_SCENERY))
+
+
+@functools.lru_cache(maxsize=1)
+def sceneryBox() -> tuple[float, float, float, float]:
+  """The 'sceneryBox' function returns the square the scenery covers
+  (x0, y0, x1, y1, m: its ground drawn there, the lap's not)."""
+  corners = numpy.concatenate([piece.xyz for piece in cityScenery()[0]])
+  low, high = corners.min(0), corners.max(0)
+  return float(low[0]), float(low[1]), float(high[0]), float(high[1])
+
+
+def cityEdges() -> tuple[numpy.ndarray, numpy.ndarray]:
+  """The 'cityEdges' function returns how far the road reaches to the
+  right of its middle and to the left at each of its rows, m (the
+  manifest's runs, each from where it begins along the lap to where it
+  ends; a row past the last run's end in the last)."""
+  runs = cityManifest()['edges']
+  track = cityTrack()
+  along = numpy.arange(len(track.x)) * track.step
+  ends = numpy.array([run[1] for run in runs])
+  found = numpy.minimum(numpy.searchsorted(ends, along, 'right'),
+                        len(runs) - 1)
+  return (numpy.array([run[2] for run in runs])[found],
+          numpy.array([run[3] for run in runs])[found])
+
+
+def cityWall(terrain: object) -> object:
+  """The 'cityWall' function returns the town's walls on 'terrain''s
+  grid ('_gridwall.standingWall': where the lap's standing heights say
+  'WALL_LEAST' m or more, beyond its edges, 'WALL_CORRIDOR' m from its
+  middle; seconds)."""
+  from ._gridwall import standingWall
+  return standingWall(cityTrack(), readCrg(_needed(CITY_STANDING)),
+                      cityEdges(), (terrain.origin, terrain.cell,
+                                    numpy.shape(terrain.heights)),
+                      WALL_LEAST, WALL_CORRIDOR, WALL_GRIP)
 
 
 @functools.lru_cache(maxsize=1)
 def cityGround() -> Ground:
   """The 'cityGround' function returns the tyre yard's ground on the
-  lap's terrain ('crgTerrain'), made once (seconds)."""
+  lap's terrain ('crgTerrain'), walled where the houses stand
+  ('cityWall'), made once (ten seconds)."""
   from ._carcass import TYRE_YARD
-  return TYRE_YARD._replace(terrain=crgTerrain(cityTrack(), CITY_CELL,
-                                               CITY_MARGIN))
+  terrain = crgTerrain(cityTrack(), CITY_CELL, CITY_MARGIN)
+  return Ground(*TYRE_YARD[:6], terrain, cityWall(terrain))
 
 
 @functools.lru_cache(maxsize=1)
@@ -105,70 +187,12 @@ def cityStart() -> tuple[Vector, tuple]:
   return (x, y, cityGround().terrain.heightAt(x, y)), turn
 
 
-def amalienborg() -> tuple:
-  """The 'amalienborg' function returns the palace square's parts, each
-  (key, size (length, width, height), its middle (x, y, z), its heading,
-  rad): the four palaces' masonry and roofs on the octagon's diagonal
-  sides ('SQUARE_FRONT' from its middle, the streets in its four sides
-  between), the statue's pedestal and its bronze, each on the ground
-  under it."""
-  terrain = cityGround().terrain
-  side = 2.0 * SQUARE_FRONT * math.tan(math.pi / 8.0)
-  parts = []
-  for k in range(4):
-    way = SQUARE_WAY + math.pi / 4.0 + k * math.pi / 2.0
-    out = SQUARE_FRONT + 0.5 * PALACE_DEEP
-    x = SQUARE_MIDDLE[0] + out * math.cos(way)
-    y = SQUARE_MIDDLE[1] + out * math.sin(way)
-    base = terrain.heightAt(x, y)
-    heading = way + 0.5 * math.pi
-    parts.append(('palace', (side, PALACE_DEEP, PALACE_HIGH),
-                  (x, y, base + 0.5 * PALACE_HIGH), heading))
-    parts.append(('roof', (side - 2.0 * ROOF_IN, PALACE_DEEP - 2.0 * ROOF_IN,
-                           ROOF_HIGH),
-                  (x, y, base + PALACE_HIGH + 0.5 * ROOF_HIGH), heading))
-  x, y = SQUARE_MIDDLE
-  base = terrain.heightAt(x, y)
-  across = SQUARE_WAY - 0.5 * math.pi
-  parts.append(('pedestal', PEDESTAL, (x, y, base + 0.5 * PEDESTAL[2]),
-                across))
-  parts.append(('bronze', RIDER, (x, y, base + PEDESTAL[2]
-                                  + 0.5 * RIDER[2]), across))
-  return tuple(parts)
-
-
-def realCarInCity(controls: object) -> tuple[Assembly, tuple[State, ...]]:
+def realCarInCity(controls: object, built: object = None
+                  ) -> tuple[Assembly, tuple[State, ...]]:
   """The 'realCarInCity' function returns the real car worked by
-  'controls' at the lap's start ('cityStart'), the walker sat in it, and
-  the palace square ('amalienborg') after it, each part of the world,
-  the walker meeting each (the car none)."""
+  'controls' at the lap's start ('cityStart'; built by 'built', None:
+  the car of parts, '_realcar.realCar'; the stand-in car,
+  '_magiccar.magicCar'), the walker sat in it."""
   from ._realcar import realCar
-  from ._shape import boxShape
-  assembly, states = realCar(controls, cityStart())
-  first = len(assembly.bodies)
-  bodies, placed = list(assembly.bodies), list(states)
-  connections = list(assembly.connections)
-  for k, (key, size, middle, heading) in enumerate(amalienborg()):
-    index = first + k
-    bodies.append(Body.of(boxShape(*size), BRONZE if key == 'bronze'
-                          else MASONRY))
-    placed.append(State(middle, (math.cos(0.5 * heading), 0.0, 0.0,
-                                 math.sin(0.5 * heading))))
-    connections.append(Fixed(index))
-    connections.append(Contact(0, index, *_ON_STONE))
-  return Assembly(tuple(bodies), tuple(connections)), tuple(placed)
-
-
-def squareFirst() -> int:
-  """The 'squareFirst' function returns where the square's bodies start
-  among 'realCarInCity''s (after the real car's)."""
-  from ._realcar import HALVES
-  return HALVES[1] + 1
-
-
-def squareFinishes() -> dict:
-  """The 'squareFinishes' function returns how the square's bodies are
-  drawn, by their index in 'realCarInCity''s assembly: each its key
-  ('palace', 'roof', 'pedestal', 'bronze')."""
-  first = squareFirst()
-  return {first + k: part[0] for k, part in enumerate(amalienborg())}
+  built = realCar if built is None else built
+  return built(controls, cityStart())

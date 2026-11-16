@@ -20,6 +20,7 @@ import math
 import numpy
 
 from .._shape import Shape, Sphere
+from .._terrain import Terrain
 from .._turned import _ARC_DRAWN, Turned
 
 #  How many of the scene's units make a metre.
@@ -573,35 +574,47 @@ def groundMesh(hole: tuple | None, outer: float,
 
 #  A road laid along a line drawn as its own mesh along its rows (user,
 #  2026-11-15: the lap of central Copenhagen; "just don't spend
-#  compute"): every 'CRG_EVERY' row; across, the road 'CRG_ROAD' m
-#  either side of its middle in asphalt and the pavement out to
-#  'CRG_WALK' m in concrete at every 'CRG_INNER' column, then a margin
-#  of ground out to 'CRG_GAP' m at every 'CRG_MARGIN' column; the
-#  asphalt at the terrain's heights (as the physics has them: the tyres
+#  compute"), in its photographs from above (uncannyball's pictures,
+#  stretch by stretch, one mesh each, drawn unlit: '_city.cityPictures'):
+#  every 'CRG_EVERY' row; across, the road 'CRG_ROAD' m either side of
+#  its middle and the pavement out to 'CRG_WALK' m at every 'CRG_INNER'
+#  column, then a margin out to 'CRG_GAP' m at every 'CRG_MARGIN' column;
+#  the road at the terrain's heights (as the physics has them: the tyres
 #  on it as drawn), the pavement 'CRG_DOWN'[1] m under them, the margin
-#  [0]; the terrain itself drawn coarse round it ('CRG_BASE' of its cells
+#  [0] (the lap's bands overlap all over town: where one street's margin
+#  lies under another's road, the road shows); none where the file holds
+#  no ground of its own (its pictures black there: another stretch shows
+#  it); the terrain itself drawn coarse round it ('CRG_BASE' of its cells
 #  to one: 'crgBase'), at its own heights, but nowhere within 'CRG_GAP'
 #  of the lap (user: "the road surface does the thing where it and the
 #  dirt try to both render!", "we continue to have the terrain/road
-#  conflict": the lap's ground bands, out to 60 m, lay level with other
-#  streets' asphalt all over town, and the coarse ground under it all
-#  poked through where the ground beside a street rose; now nothing but
-#  the margin lies under or beside the road: its square cells left in
-#  reach no nearer the lap than 'CRG_GAP' less their diagonal, past the
-#  pavement, and over the margin, ground on ground).
+#  conflict": now nothing but the margin lies under or beside the road:
+#  its square cells left in reach no nearer the lap than 'CRG_GAP' less
+#  their diagonal, past the pavement). Where scenery covers the ground
+#  (a 'hole', x0, y0, x1, y1: its own ground drawn there, on the road
+#  within 4 mm of the terrain's), neither is drawn: their squares wholly
+#  in it left out, the corners in it of those across its edge
+#  'SCENERY_DOWN' m lower, under the scenery's.
 CRG_EVERY, CRG_ROAD, CRG_WALK, CRG_GAP = 3, 5.0, 8.0, 14.0
 CRG_INNER, CRG_MARGIN, CRG_BASE = 2, 5, 8
 CRG_DOWN = (0.10, 0.02, 0.0)
+SCENERY_DOWN = 0.3
 
 
-def crgMesh(track: object, terrain: object, tile: float) -> tuple:
-  """The 'crgMesh' function returns the road 'track' ('_crg.CrgTrack')
-  on 'terrain' drawn along its rows, as 'terrainMesh' gives a
-  terrain's, each surface its own (vertices, indices), at its own depth
-  under the terrain ('CRG_DOWN'): (ground's, pavement's, asphalt's)."""
-  rows = numpy.arange(0, len(track.x), CRG_EVERY)
-  if rows[-1] != len(track.x) - 1:
-    rows = numpy.append(rows, len(track.x) - 1)
+def _insideOf(hole: tuple | None, x: numpy.ndarray,
+              y: numpy.ndarray) -> numpy.ndarray:
+  """Returns which of the points 'x', 'y' lie inside 'hole' (x0, y0, x1,
+  y1; None: none)."""
+  if hole is None:
+    return numpy.zeros(numpy.shape(x), bool)
+  x0, y0, x1, y1 = hole
+  return (x > x0) & (x < x1) & (y > y0) & (y < y1)
+
+
+def _crgColumns(track: object) -> numpy.ndarray:
+  """Returns the columns of 'track' a road's mesh is drawn at (every
+  'CRG_INNER' within 'CRG_WALK' of the middle, every 'CRG_MARGIN' out to
+  'CRG_GAP')."""
   across = track.across
   inner = numpy.nonzero(numpy.abs(across) <= CRG_WALK + 1e-9)[0]
   inner = inner[(inner - inner[0]) % CRG_INNER == 0]
@@ -609,55 +622,112 @@ def crgMesh(track: object, terrain: object, tile: float) -> tuple:
                          & (numpy.abs(across) >= CRG_WALK - 1e-9))[0]
   middle = int(numpy.argmin(numpy.abs(across)))
   margin = margin[(margin - middle) % CRG_MARGIN == 0]
-  columns = numpy.unique(numpy.concatenate((inner, margin)))
+  return numpy.unique(numpy.concatenate((inner, margin)))
+
+
+def crgMesh(track: object, terrain: object, pictures: tuple,
+            hole: tuple = None) -> tuple:
+  """The 'crgMesh' function returns the road 'track' ('_crg.CrgTrack')
+  on 'terrain' drawn along its rows in its 'pictures' (each (where along
+  the lap it begins, where it ends, m, its file): the lap up the
+  picture, its left edge the track's leftmost column), a mesh a picture:
+  (vertices: place, normal and the place on the picture, its foot v
+  nought; indices; the picture's file), every band at its own depth
+  under the terrain ('CRG_DOWN'), none in 'hole'."""
+  columns = _crgColumns(track)
+  across = track.across
   v = across[columns]
-  px = track.x[rows][:, None] + v[None, :] * track.leftX[rows][:, None]
-  py = track.y[rows][:, None] + v[None, :] * track.leftY[rows][:, None]
-  count = len(columns)
-  px, py = px.ravel(), py.ravel()
-  heights = _heightsAt(terrain, px, py)
-  step = 0.25
-  slopeX = (_heightsAt(terrain, px + step, py)
-            - _heightsAt(terrain, px - step, py)) / (2.0 * step)
-  slopeY = (_heightsAt(terrain, px, py + step)
-            - _heightsAt(terrain, px, py - step)) / (2.0 * step)
-  normals = numpy.stack((-slopeX, -slopeY, numpy.ones_like(slopeX)), 1)
-  normals /= numpy.linalg.norm(normals, axis=1)[:, None]
-  vertices = numpy.empty((len(px), 8), numpy.float32)
-  vertices[:, 0], vertices[:, 1] = SCALE * px, SCALE * heights
-  vertices[:, 2] = -SCALE * py
-  vertices[:, 3], vertices[:, 4] = normals[:, 0], normals[:, 2]
-  vertices[:, 5] = -normals[:, 1]
-  vertices[:, 6], vertices[:, 7] = px / (2.0 * tile), py / (2.0 * tile)
-  k, j = numpy.meshgrid(numpy.arange(len(rows) - 1), numpy.arange(count - 1),
-                        indexing='ij')
-  a = k * count + j
-  b, c, d = a + 1, a + count + 1, a + count
-  quads = numpy.stack((a, d, c, a, c, b), axis=2)
+  u = (across[-1] - v) / (across[-1] - across[0])
+  count, last = len(columns), len(track.x) - 1
   middle = 0.5 * (v[:-1] + v[1:])
   road = numpy.abs(middle) <= CRG_ROAD
   walk = ~road & (numpy.abs(middle) <= CRG_WALK)
-  kinds = [quads[:, ~(road | walk)], quads[:, walk], quads[:, road]]
+  bands = (~(road | walk), walk, road)
   out = []
-  for kind, down in zip(kinds, CRG_DOWN):
-    lowered = vertices.copy()
-    lowered[:, 1] -= numpy.float32(SCALE * down)
-    out.append((lowered, kind.reshape(-1).astype(numpy.uint32)))
+  for begins, ends, path in pictures:
+    first = min(int(round(begins / track.step)), last)
+    final = min(int(round(ends / track.step)), last)
+    rows = numpy.arange(first, final + 1, CRG_EVERY)
+    if rows[-1] != final:
+      rows = numpy.append(rows, final)
+    if len(rows) < 2:
+      continue
+    px = track.x[rows][:, None] + v[None, :] * track.leftX[rows][:, None]
+    py = track.y[rows][:, None] + v[None, :] * track.leftY[rows][:, None]
+    px, py = px.ravel(), py.ravel()
+    inside = _insideOf(hole, px, py)
+    heights = _heightsAt(terrain, px, py) - SCENERY_DOWN * inside
+    step = 0.25
+    slopeX = (_heightsAt(terrain, px + step, py)
+              - _heightsAt(terrain, px - step, py)) / (2.0 * step)
+    slopeY = (_heightsAt(terrain, px, py + step)
+              - _heightsAt(terrain, px, py - step)) / (2.0 * step)
+    normals = numpy.stack((-slopeX, -slopeY, numpy.ones_like(slopeX)), 1)
+    normals /= numpy.linalg.norm(normals, axis=1)[:, None]
+    seen = (rows * track.step - begins) / (ends - begins)
+    vertices = numpy.empty((len(px), 8), numpy.float32)
+    vertices[:, 0], vertices[:, 1] = SCALE * px, SCALE * heights
+    vertices[:, 2] = -SCALE * py
+    vertices[:, 3], vertices[:, 4] = normals[:, 0], normals[:, 2]
+    vertices[:, 5] = -normals[:, 1]
+    vertices[:, 6] = numpy.tile(u, len(rows))
+    vertices[:, 7] = numpy.repeat(numpy.clip(seen, 0.0, 1.0), count)
+    k, j = numpy.meshgrid(numpy.arange(len(rows) - 1),
+                          numpy.arange(count - 1), indexing='ij')
+    a = k * count + j
+    b, c, d = a + 1, a + count + 1, a + count
+    held = ~numpy.isnan(track.heights[rows][:, columns])
+    held = held[:-1, :-1] & held[:-1, 1:] & held[1:, :-1] & held[1:, 1:]
+    within = inside.reshape(len(rows), count)
+    within = (within[:-1, :-1] & within[:-1, 1:] & within[1:, :-1]
+              & within[1:, 1:])
+    kept = held & ~within
+    quads = numpy.stack((a, d, c, a, c, b), axis=2)
+    indices, layers = [], []
+    for band, down in zip(bands, CRG_DOWN):
+      chosen = quads[kept & band[None, :]]
+      indices.append(chosen.ravel() + len(layers) * len(vertices))
+      lowered = vertices.copy()
+      lowered[:, 1] -= numpy.float32(SCALE * down)
+      layers.append(lowered)
+    indices = numpy.concatenate(indices).astype(numpy.uint32)
+    if len(indices):
+      out.append((numpy.concatenate(layers), indices, path))
   return tuple(out)
 
 
-def crgBase(terrain: object, track: object) -> tuple:
+def crgBase(terrain: object, track: object, hole: tuple = None) -> tuple:
   """The 'crgBase' function returns 'terrain' coarsened 'CRG_BASE' cells
-  to one (drawn about a road's own mesh: 'crgMesh') and which of its
-  points lie within 'CRG_GAP' of 'track''s middle line (its squares
-  wholly there left out: 'terrainMesh''s 'dropped')."""
+  to one (drawn about a road's own mesh: 'crgMesh'; its points in 'hole'
+  'SCENERY_DOWN' lower) and which of its points lie within 'CRG_GAP' of
+  'track''s middle line or in 'hole' (its squares wholly there left
+  out: 'terrainMesh''s 'dropped')."""
   from scipy.spatial import cKDTree
-  heights = numpy.asarray(terrain.heights)[::CRG_BASE, ::CRG_BASE]
+  heights = numpy.array(numpy.asarray(terrain.heights)[::CRG_BASE,
+                                                       ::CRG_BASE])
   cell = terrain.cell * CRG_BASE
   xs = terrain.origin[0] + cell * numpy.arange(heights.shape[0])
   ys = terrain.origin[1] + cell * numpy.arange(heights.shape[1])
   gx, gy = numpy.meshgrid(xs, ys, indexing='ij')
   near, _ = cKDTree(numpy.stack((track.x, track.y), 1)).query(
     numpy.stack((gx.ravel(), gy.ravel()), 1))
-  dropped = (near < CRG_GAP).reshape(heights.shape)
-  return terrain._replace(cell=cell, heights=heights, paved=None), dropped
+  inside = _insideOf(hole, gx, gy)
+  heights -= SCENERY_DOWN * inside
+  dropped = (near < CRG_GAP).reshape(heights.shape) | inside
+  return Terrain(terrain.origin, cell, heights), dropped
+
+
+def sceneryRows(piece: object) -> tuple[numpy.ndarray, numpy.ndarray]:
+  """The 'sceneryRows' function returns a piece of scenery ('_glb.
+  GlbPiece': its corners in the world, m) as the scene draws it: a row
+  a corner (place, cm, a normal up: it is drawn unlit, its photograph's
+  light its own; its place on its picture) and its triangles' corners
+  by index (anticlockwise seen from outside, as the file has them)."""
+  xyz = numpy.asarray(piece.xyz, numpy.float64)
+  rows = numpy.empty((len(xyz), 8), numpy.float32)
+  rows[:, 0], rows[:, 1] = SCALE * xyz[:, 0], SCALE * xyz[:, 2]
+  rows[:, 2] = -SCALE * xyz[:, 1]
+  rows[:, 3], rows[:, 4], rows[:, 5] = 0.0, 1.0, 0.0
+  rows[:, 6:8] = piece.uv
+  return rows, numpy.ascontiguousarray(piece.triangles,
+                                       numpy.uint32).ravel()

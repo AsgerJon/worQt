@@ -28,8 +28,9 @@ from __future__ import annotations
 import math
 
 from ._assembly import Assembly
+from ._automatic import AutomaticDrive
 from ._drivetrain import FINAL, GEARS, NAMES, Reading, readingOf
-from ._realcar import CHASSIS, FOOT, WHEELBASE, WHEELS
+from ._realcar import CHASSIS, FOOT, WHEELBASE
 from ._realcar import RealCarControls
 from ._robot import RacingRobot, _capOf
 from ._vectors import conjugate, rotated
@@ -107,7 +108,7 @@ class RealCarRacer(RacingRobot):
     RacingRobot.__init__(self, None, course)
     self.assembly, self.controls = assembly, controls
     self.chassis = CHASSIS
-    self.wheels = WHEELS
+    self.wheels = controls.brakes.wheels
     self.wheelbase, self.answer, self.lock = WHEELBASE, ANSWER, LOCK
     self.hands, self.scale = HANDS, SCALE
     self.shifting, self.gear, self.traction = 'driving', 'N', 1.0
@@ -175,7 +176,10 @@ class RealCarRacer(RacingRobot):
     """The 'act' method turns the steering wheel to 'column', and works
     the throttle or the brakes as 'throttle' asks (the brakes below
     nought, the foot's 'FOOT' at -1), the clutch and the stick for the
-    gear it wants ('wantedGear'), the starter if the engine stalled."""
+    gear it wants ('wantedGear'), the starter if the engine stalled; an
+    automatic ('AutomaticDrive', the stand-in car's) only put in drive,
+    or reverse backing out, its clutch never pressed (its gear, 'gear',
+    the automatic's own)."""
     controls = self.controls
     drive = controls.drive
     controls.steer.value = self.column
@@ -189,6 +193,11 @@ class RealCarRacer(RacingRobot):
     controls.line.pressure = FOOT * min(1.0, max(0.0, -self.foot))
     controls.brakes.pulled = False
     drive.starting = False
+    if isinstance(drive, AutomaticDrive):
+      drive.pedal, drive.throttle = 0.0, open_
+      drive.asked = 'R' if self.backing > 0.0 else '1'
+      self.gear = reading.gear
+      return
     if not drive.running:
       self.shifting = 'starting'
       drive.pedal, drive.asked, drive.throttle = 1.0, 'N', 0.0

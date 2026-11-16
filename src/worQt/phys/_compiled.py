@@ -17,6 +17,7 @@ from ._assembly import HeldStroke, SineStroke
 from ._books import Books
 from ._constraints import ConstraintSolver
 from ._contacts import ContactForces
+from ._gridwall import GridWall
 from ._hexapod import HeldPose, LegStroke, SwayingPose
 from ._rounds import ROUND
 from ._turned import Turned
@@ -346,6 +347,9 @@ def _fillRules(rules, world, assembly, count: int, wp) -> None:
       rules.terrainNx = len(terrain.heights)
       rules.terrainNy = len(terrain.heights[0])
     wall = ground.wall
+    if isinstance(wall, GridWall):
+      raise NotImplementedError('walls on a grid (a town\'s houses) are '
+                                'met in the small steps only')
     rules.wall = 0 if wall is None else 1
     if wall is not None:
       rules.wallHalf, rules.wallRadius = wall.half, wall.radius

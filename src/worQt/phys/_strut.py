@@ -55,8 +55,18 @@ ROD_LONG, ROD_ROUND, MOUNT_ROUND = 0.30, 0.009, 0.022
 LOWER_AT, UPPER_AT, SEAT_ROUND = 0.06, 0.035, 0.035
 COIL_ROUND, WIRE_ROUND, TURNS = 0.03, 0.0045, 13
 #  The toe link's inner end, on the frame's tail tube (inside the
-#  bodywork), m.
-TOE_INNER = (-0.13, 0.24, 0.26)
+#  bodywork), m: on the line from its outer end through the corner's
+#  instant centre (where the half shaft's line meets the square to the
+#  strut through its top), a touch over it, so the wheel turns in a
+#  hair as it rises (user, 2026-11-15: "suspension feels weird"; at
+#  0.26 m each rear wheel turned out 0.31 deg every 10 mm it rose: the
+#  car steered itself from behind over every bump and in every corner;
+#  measured 0.29: 0.12 out, 0.32: 0.10 in).
+TOE_INNER = (-0.13, 0.24, 0.31)
+#  The rear's toe-in as built, rad (each wheel's front turned in toward
+#  the car's middle, by its toe link's length, as a strut car's rear is
+#  set, steadying it; standing, its load turns each out ~0.2 deg).
+TOE_IN = 0.006
 #  The radius rod: its end on the upright (low, inside the rim's dish)
 #  and on the chassis (half a metre ahead, at the rail), m.
 RADIUS_BACK, RADIUS_FRONT = (0.0, 0.72, 0.17), (0.50, 0.30, 0.22)
@@ -145,6 +155,22 @@ def strutRodBody(mass: float) -> Body:
   return Body.of(shape, mass / shape.moments()[0])
 
 
+def toeLinkOf(toe: float) -> float:
+  """The 'toeLinkOf' function returns how long the toe link is that sets
+  the rear wheel 'toe' rad in past 'TOE_IN' (as '_rig.WheelSetup' sets
+  a wheel's toe: its front turned toward the car's middle), the upright
+  turned so about its steering axis (from the strut's top's ball to the
+  half shaft's outer joint, by the hub: leaning far over, so the upright
+  turns about it by the toe over how upright it stands, its wheel's
+  heading turning by the toe)."""
+  hub = (0.0, BOSS_IN, HUB_HEIGHT)
+  axis = minus(STRUT_TOP, hub)
+  axis = scaled(axis, 1.0 / norm(axis))
+  turn = turnAbout(axis, -(TOE_IN + toe) / axis[2])
+  outer = plus(hub, rotated(turn, minus(TIE_OUTER, hub)))
+  return norm(minus(outer, TOE_INNER))
+
+
 def strutCoilOf(upright: int, rod: int, side: float, at: float) -> tuple:
   """The 'strutCoilOf' function returns how the coil of the strut on
   the corner 'at' on 'side' is drawn (as '_shock.coilOf' a shock's):
@@ -161,7 +187,8 @@ def addStrutCorners(corners: tuple, setups: tuple, shock: object,
                     states: list, connections: list) -> None:
   """The 'addStrutCorners' function adds rear corners on Chapman struts
   ('corners' as '_soapbox.addCorners' takes them, each its 'setups'
-  tyre's pressure; camber and toe as built) to 'bodies', 'states' and
+  tyre's pressure and toe, 'toeLinkOf'; its camber as built) to
+  'bodies', 'states' and
   'connections', three bodies a corner from 'first' (the upright, its
   wheel, its strut's rod): the wheel on the upright's bearing, its disc
   brake on 'lines' (each corner's), its tyre; the strut ('shock' its
@@ -206,8 +233,8 @@ def addStrutCorners(corners: tuple, setups: tuple, shock: object,
                _sided(RADIUS_BACK, side, at), HeldStroke(norm(minus(
                  RADIUS_BACK, RADIUS_FRONT)))),
       Actuator(chassis, _sided(TOE_INNER, side, at), upright,
-               _sided(TIE_OUTER, side, at), HeldStroke(norm(minus(
-                 TIE_OUTER, TOE_INNER))))]
+               _sided(TIE_OUTER, side, at), HeldStroke(toeLinkOf(
+                 setup.toe)))]
     for w in (0.02, 0.07):
       connections.append(Tie(upright, plus(middle, (0.0, side * w, 0.0)),
                              wheel, (0.0, 0.0, w)))

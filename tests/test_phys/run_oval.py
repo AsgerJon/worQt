@@ -68,7 +68,7 @@ class RunOval(WidgetTest):
     self.assertTrue(window.view.oval)
     self.assertTrue(any(isinstance(dress, ParkedDress)
                         for dress in window.view.extras))
-    self.assertIn(parkedFirst(), window.view.finishes)
+    self.assertIn(parkedFirst(window.assembly), window.view.finishes)
     until = window.clock + 10.0
     self.waitUntil(lambda: window.clock >= until
                    or window.failed is not None, 600000)

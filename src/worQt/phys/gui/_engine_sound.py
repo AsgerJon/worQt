@@ -35,8 +35,8 @@ RATE, AHEAD, EVERY, CHANNELS = 44100, 0.1, 0.01, 2
 #  them: 'the speaker failed: NoError', the user's window, 2026-11-13).
 FINE = ('NoError', 'UnderrunError')
 #  What 'start' is given to play the engine as AngeTheGreat's Engine
-#  Simulator hears one ('_enginesim.EngineSimVoice': its V12), not a
-#  recording's path.
+#  Simulator hears one ('_enginesim.EngineSimVoice': the real car's
+#  four), not a recording's path.
 ENGINE_SIM = 'engine-sim'
 
 
@@ -78,7 +78,8 @@ def _played(connection: Connection, shared: object,
     from .._enginesim import EngineSimVoice
     voice = EngineSimVoice(RATE)
     voice.samples(0.0, 0.0, 64)
-    said = 'the V12 as AngeTheGreat\'s Engine Simulator hears it'
+    said = ('the twin cam four as AngeTheGreat\'s Engine Simulator '
+            'hears it')
   else:
     sound = None if recording is None else recordingOf(recording, RATE)
     voice = (EngineVoice(RATE, 0) if sound is None

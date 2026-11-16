@@ -323,6 +323,16 @@ class OvalWall(NamedTuple):
       return -y - self.out, 0.0, -1.0
     return y - 2.0 * radius - self.out, 0.0, 1.0
 
+  def heightAt(self, x: float, y: float) -> float:
+    """The 'heightAt' method returns how tall the wall stands over the
+    ground at 'x', 'y', m (everywhere its 'height')."""
+    return self.height
+
+  def tallest(self, ) -> float:
+    """The 'tallest' method returns how tall the wall stands at its
+    tallest, m (its 'height')."""
+    return self.height
+
 
 #  The oval's barrier: how far out from the middle line it stands (the
 #  straights' run-off's outer edge; in the turns 4.45 m past the racing

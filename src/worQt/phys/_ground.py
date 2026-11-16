@@ -43,8 +43,9 @@ class Ground(NamedTuple):
   as deep as it is under it, along its normal there, and pushed out
   along that normal; its bristles still hold it along the level (a
   car stands on a slope as steep as its grip, as on the level). With a
-  'wall' ('OvalWall', None at first) a point through its face, below
-  its top, is pushed back out level, by the ground's own stiffness and
+  'wall' ('OvalWall', or a town's on a grid, 'GridWall'; None at
+  first) a point through its face, below its top, is pushed back out
+  level, by the ground's own stiffness and
   damping as deep as it is through, and dragged along it by the wall's
   grip times that push against the way it slides (Coulomb, eased under
   'WALL_SLIDE' m/s; no bristle: it holds nothing still).
@@ -72,7 +73,7 @@ class Ground(NamedTuple):
     """The 'topOf' method returns the highest the ground gets, its wall
     on it, m."""
     top = 0.0 if self.terrain is None else self.terrain.top()
-    return top if self.wall is None else top + self.wall.height
+    return top if self.wall is None else top + self.wall.tallest()
 
   def wallOf(self, place: Vector) -> tuple[float, Vector]:
     """The 'wallOf' method returns how deep 'place' is through the
@@ -85,7 +86,7 @@ class Ground(NamedTuple):
       return 0.0, (0.0, 0.0, 0.0)
     base = 0.0 if self.terrain is None else self.terrain.heightAt(
       place[0], place[1])
-    if place[2] > base + self.wall.height:
+    if place[2] > base + self.wall.heightAt(place[0], place[1]):
       return 0.0, (0.0, 0.0, 0.0)
     return depth, (nx, ny, 0.0)
 

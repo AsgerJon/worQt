@@ -32,6 +32,7 @@ import numpy
 from ._assembly import ATMOSPHERE, HUMP_ROOM, HeldStroke, Hinge
 from ._body import State
 from ._ground import Ground
+from ._gridwall import GridWall
 from ._poke import reachOf
 from ._rounds import piecesOf
 from ._shape import Sphere
@@ -59,6 +60,18 @@ CROWD_CELL = 0.05
 THREADS = 256
 #  How many steps one CUDA graph replays, spread over the GPU.
 GRAPH_STEPS = 16
+#  Each body's convex pieces and its skins' points (along its principal
+#  axes), kept while the body lives, at most so many of each (a world's
+#  hundreds of track pieces were worked out anew at every spawn's
+#  repack: '_piecesKept', '_skinKept').
+KEPT_MOST = 4096
+_PIECES_KEPT: dict = {}
+_SKINS_KEPT: dict = {}
+#  How many skin points of one body against another's pieces are looked
+#  for together at most ('_waysOf': a group is passed over whole when
+#  the ball about its points is out of reach; a still body's edges
+#  number thousands).
+GROUP_MOST = 8
 #  The grids over bodies of many pieces (a track of planks: a touch
 #  looks only at the pieces near it, not every one): from how many
 #  pieces a body gets one, its cells' width, m (wider where there would
@@ -163,9 +176,27 @@ class SmallSteps(NamedTuple):
     hangs on yet), in steps alike, none longer than 'step'."""
     if seconds <= 0.0:
       return tuple(states)
-    count = max(1, math.ceil(seconds / self.step - 1e-9))
+    packed = self.packedFor(assembly, states)
+    self.steppedOn(packed, assembly, seconds, start)
+    return packed.states()
+
+  def packedFor(self, assembly: Assembly,
+                states: tuple[State, ...]) -> object:
+    """The 'packedFor' method returns 'assembly' as it lives on the
+    device (made, or kept from the last call), 'states' put there: to be
+    stepped there ('steppedOn') as often as asked, and only then handed
+    back ('states()'), nothing coming back to Python between (user,
+    2026-11-16: "Why they going back to fucking python bro????")."""
     packed = _packedOf(self, assembly, states)
     packed.load(states)
+    return packed
+
+  def steppedOn(self, packed: object, assembly: Assembly, seconds: float,
+                start: float = 0.0) -> None:
+    """The 'steppedOn' method steps the bodies of 'packed' (the
+    assembly's, on the device: 'packedFor') 'seconds' on there, in steps
+    alike none longer than 'step', handing nothing back."""
+    count = max(1, math.ceil(seconds / self.step - 1e-9))
     packed.drive(assembly, seconds)
     kernels = _kernelsOf()
     run = packed.run
@@ -175,7 +206,7 @@ class SmallSteps(NamedTuple):
     packed.crowded(seconds)
     if self.device != 'cpu' and self.spread:
       packed.replayed(count, run.h, run.seed)
-      return packed.states()
+      return
     threads = 1 if self.device == 'cpu' else self.threads
     run.threads = threads
     import warp as wp
@@ -188,7 +219,6 @@ class SmallSteps(NamedTuple):
                                           packed.gears, packed.train],
               [], [], [], self.device, None, False, True, False, 0,
               threads)
-    return packed.states()
 
   def profileOf(self, assembly: Assembly) -> dict[str, int]:
     """The 'profileOf' method returns how long each part of a step took
@@ -272,6 +302,7 @@ class _Packed:
     fixed = assembly.fixed
     give, turnGive, radius = [], [], []
     pieceFirst, pieceCount, reach, rollers = [], [], [], []
+    boxLow, boxHigh = [], []
     turns, centres, profileFirst, profileCount, bounds = [], [], [], [], []
     shapes = _ShapeData()
     movers = []
@@ -290,10 +321,18 @@ class _Packed:
       turned = isinstance(body.shape, Turned)
       first = shapes.pieceCount()
       if body.shape is not None and not ball and not turned:
-        shapes.addPieces(piecesOf(mover)[0])
+        shapes.addPieces(_piecesKept(mover))
       pieceFirst.append(first)
       pieceCount.append(shapes.pieceCount() - first)
       reach.append(reachOf(body))
+      if shapes.pieceCount() > first:
+        boxLow.append(tuple(min(low[c] for low in shapes.low[first:])
+                            for c in range(3)))
+        boxHigh.append(tuple(max(high[c] for high in shapes.high[first:])
+                             for c in range(3)))
+      else:
+        boxLow.append((-reach[-1],) * 3)
+        boxHigh.append((reach[-1],) * 3)
       rollers.append(rollerOf(body.shape) or (0.0, 0.0))
       w, x, y, z = axes
       turns.append((x, y, z, w))
@@ -315,11 +354,14 @@ class _Packed:
              for first, count in zip(pieceFirst, pieceCount)]
     touches = _touchesOf(world, assembly, movers, shapes, states,
                          profileFirst)
+    size = sum(len(touch[3]) if isinstance(touch[3], numpy.ndarray)
+               else 1 for touch in touches)
     rooms = []
     for crowd in assembly.crowds:
-      rooms.append((len(touches), crowd.room))
+      rooms.append((size, crowd.room))
       touches.extend([(int(kernels.NO_TOUCH), 0, -1, -1, crowd.grip)]
                      * crowd.room)
+      size += crowd.room
     self.count = count
     b = kernels.Bodies()
     b.place = wp.zeros(count, wp.vec3, self.device)
@@ -341,6 +383,8 @@ class _Packed:
                             (1, 1, 1))
     b.gridCell = self.array([grid[3] for grid in grids], wp.float32, 1.0)
     b.reach = self.array(reach, wp.float32, 0.0)
+    b.boxLow = self.array(boxLow, wp.vec3, (0.0, 0.0, 0.0))
+    b.boxHigh = self.array(boxHigh, wp.vec3, (0.0, 0.0, 0.0))
     b.roller = self.array(rollers, wp.vec2, (0.0, 0.0))
     b.axes = self.array(turns, wp.quat, (0.0, 0.0, 0.0, 1.0))
     b.centre = self.array(centres, wp.vec3, (0.0, 0.0, 0.0))
@@ -389,45 +433,68 @@ class _Packed:
     self.bodies = b
     self.shapes = shapes.packed(self, kernels.Shapes())
     t = kernels.Touches()
-    size = len(touches)
-    t.kind = self.array([touch[0] for touch in touches], wp.int32, 0)
-    t.first = self.array([touch[1] for touch in touches], wp.int32, 0)
-    t.second = self.array([touch[2] for touch in touches], wp.int32, 0)
-    t.point = self.array([touch[3] for touch in touches], wp.int32, 0)
-    t.piece = self.array([touch[5] if len(touch) > 5 else -1
-                          for touch in touches], wp.int32, -1)
-    t.grip = self.array([touch[4] for touch in touches], wp.float32, 0.0)
+    kind, first, second, point, grip, longer = _columnsOf(touches, size)
+
+    def extra(at: int, blank: object, dtype: object) -> object:
+      """Returns each touch's field 'at' (a tyre's, a turned piece's),
+      'blank' where it has none, as an array of 'dtype'."""
+      values = numpy.full((size,) + numpy.shape(blank), blank, dtype)
+      for row, touch in longer:
+        if len(touch) > at:
+          values[row] = touch[at]
+      return values
+
+    t.kind = self.array(kind, wp.int32, 0)
+    t.first = self.array(first, wp.int32, 0)
+    t.second = self.array(second, wp.int32, 0)
+    t.point = self.array(point, wp.int32, 0)
+    t.piece = self.array(extra(5, -1, numpy.int32), wp.int32, -1)
+    t.grip = self.array(grip, wp.float32, 0.0)
     for name in ('normal', 'firstArm', 'secondArm'):
       setattr(t, name, wp.zeros(max(1, size), wp.vec3, self.device))
     t.depth = wp.zeros(max(1, size), wp.float32, self.device)
     t.pushed = wp.zeros(max(1, size), wp.float32, self.device)
     t.gripped = wp.zeros(max(1, size), wp.float32, self.device)
-    t.face = self.array([-1] * size, wp.int32, -1)
-
-    def extra(at: int, blank: object) -> list:
-      """Returns each touch's field 'at' (a tyre's), 'blank' where it
-      has none."""
-      return [touch[at] if len(touch) > at else blank for touch in touches]
-
+    t.face = self.array(numpy.full(size, -1, numpy.int32), wp.int32, -1)
     zero = (0.0, 0.0, 0.0)
-    t.reach = self.array(extra(6, 0.0), wp.float32, 0.0)
-    t.hub = self.array(extra(7, zero), wp.vec3, zero)
-    t.axle = self.array(extra(8, zero), wp.vec3, zero)
-    t.soft = self.array(extra(9, 0.0), wp.float32, 0.0)
-    t.lag = self.array(extra(10, 0.0), wp.float32, 0.0)
-    t.roll = self.array(extra(11, (0.0, 0.0)), wp.vec2, (0.0, 0.0))
+    t.reach = self.array(extra(6, 0.0, numpy.float32), wp.float32, 0.0)
+    t.hub = self.array(extra(7, zero, numpy.float32), wp.vec3, zero)
+    t.axle = self.array(extra(8, zero, numpy.float32), wp.vec3, zero)
+    t.soft = self.array(extra(9, 0.0, numpy.float32), wp.float32, 0.0)
+    t.lag = self.array(extra(10, 0.0, numpy.float32), wp.float32, 0.0)
+    t.roll = self.array(extra(11, (0.0, 0.0), numpy.float32), wp.vec2,
+                        (0.0, 0.0))
     t.impulse = wp.zeros(max(1, size), wp.vec3, self.device)
     t.stretch = wp.zeros(max(1, size), wp.vec3, self.device)
     t.twist = wp.zeros(max(1, size), wp.float32, self.device)
-    t.near = self.array([1] * size, wp.int32, 1)
-    t.nearList = self.array(list(range(size)), wp.int32, 0)
+    t.near = self.array(numpy.ones(size, numpy.int32), wp.int32, 1)
+    t.nearList = self.array(numpy.arange(0, size, 1, numpy.int32),
+                            wp.int32, 0)
     t.nearCount = self.array([size], wp.int32, 0)
+    groupFirst, groupCount, middle, reach, wayFirst, wayCount = _waysOf(
+      kind, first, second, point, numpy.concatenate(shapes.arms)
+      if shapes.arms else numpy.zeros((1, 3)))
+    t.groupFirst = self.array(groupFirst, wp.int32, 0)
+    t.groupCount = self.array(groupCount, wp.int32, 0)
+    t.groupNear = self.array(numpy.ones(len(groupFirst), numpy.int32),
+                             wp.int32, 1)
+    t.groupMiddle = self.array(middle.astype(numpy.float32), wp.vec3,
+                               zero)
+    t.groupReach = self.array(reach.astype(numpy.float32), wp.float32,
+                              0.0)
+    t.wayFirst = self.array(wayFirst, wp.int32, 0)
+    t.wayCount = self.array(wayCount, wp.int32, 0)
+    t.wayNear = self.array(numpy.ones(len(wayFirst), numpy.int32),
+                           wp.int32, 1)
+    t.groupList = self.array(numpy.arange(0, len(groupFirst), 1,
+                                          numpy.int32), wp.int32, 0)
+    t.groupListCount = self.array([0], wp.int32, 0)
     self.touches = t
     rolling = (int(kernels.WHEEL_GROUND), int(kernels.WHEEL_TURNED),
                int(kernels.WHEEL_PIECES))
     self.tyreTouches = tuple(
-      [i for i, touch in enumerate(touches)
-       if touch[0] in rolling and touch[1] == tyre.body]
+      [int(i) for i in numpy.flatnonzero(numpy.isin(kind, rolling)
+                                         & (first == tyre.body))]
       for tyre in assembly.tyres)
     self.seconds = 0.0
     links = _linksOf(assembly, movers, self.origin)
@@ -484,6 +551,7 @@ class _Packed:
     run.texture = world.texture
     run.bodies = count
     run.touches = size
+    run.ways, run.groups = len(wayFirst), len(groupFirst)
     run.links = len(links)
     run.motors = len(motors)
     run.colors = len(colors)
@@ -542,17 +610,38 @@ class _Packed:
       numpy.float32).ravel(), float, None, None, None, None, self.device)
 
   def walled(self, ground: Ground | None, run: object) -> None:
-    """Puts the oval's safety barrier of 'ground' (if it has one) in
-    'run' as the kernel takes it ('wallBeyond'): the oval's middle from
-    the origin, its straights' half length, its turns' radius, how far
-    out the barrier's face stands, how tall it is."""
+    """Puts the walls of 'ground' (if it has any) in 'run' as the kernel
+    takes them ('wallBeyond', 'wallTop'): an oval's safety barrier (its
+    middle from the origin, its straights' half length, its turns'
+    radius, how far out its face stands, how tall it is), or a town's on
+    a grid ('GridWall': its first corner from the origin, its cell, its
+    points' count along x and y, how far each lies inside a wall and
+    how tall it stands there, float32, a row along y for each x)."""
+    wp = self.wp
     wall = None if ground is None else ground.wall
-    run.wall = 0 if wall is None else 1
-    run.wallAt = self.wp.vec2(-self.origin[0], -self.origin[1])
+    grid = isinstance(wall, GridWall)
+    run.wall = 0 if wall is None else 2 if grid else 1
+    run.wallAt = wp.vec2(-self.origin[0], -self.origin[1])
     run.wallHalf, run.wallRadius, run.wallOut, run.wallHeight = (
-      (0.0, 0.0, 0.0, 0.0) if wall is None else (
+      (0.0, 0.0, 0.0, 0.0) if wall is None or grid else (
         float(wall.half), float(wall.radius), float(wall.out),
         float(wall.height)))
+    if not grid:
+      run.wallGridAt, run.wallCell = wp.vec2(0.0, 0.0), 1.0
+      run.wallNx, run.wallNy = 0, 0
+      run.wallInside = wp.zeros(1, float, self.device)
+      run.wallTops = wp.zeros(1, float, self.device)
+      return
+    run.wallGridAt = wp.vec2(wall.origin[0] - self.origin[0],
+                             wall.origin[1] - self.origin[1])
+    run.wallCell = float(wall.cell)
+    run.wallNx, run.wallNy = (int(size) for size in wall.inside.shape)
+    run.wallInside = wp.array(numpy.ascontiguousarray(
+      wall.inside, numpy.float32).ravel(), float, None, None, None, None,
+                              self.device)
+    run.wallTops = wp.array(numpy.ascontiguousarray(
+      wall.tops, numpy.float32).ravel(), float, None, None, None, None,
+                            self.device)
 
   def hostOf(self, array: object) -> object:
     """Returns the host memory kept for 'array' (on a GPU), pinned, as
@@ -595,8 +684,8 @@ class _Packed:
   def array(self, values: list, dtype, blank) -> object:
     """Returns 'values' as a Warp array of 'dtype' on the device (a
     single 'blank' when there are none: Warp takes no empty arrays)."""
-    return self.wp.array(values if values else [blank], dtype, None, None,
-                         None, None, self.device)
+    return self.wp.array(values if len(values) else [blank], dtype, None,
+                         None, None, None, self.device)
 
   def load(self, states: tuple[State, ...]) -> None:
     """Puts 'states' on the device: places from the origin (in float32,
@@ -727,7 +816,9 @@ class _Packed:
 
     if near > 0:
       go(kernels.nearResetPart, 1, [t])
-      go(kernels.nearPart, run.touches, [run, b, s, t, self.clock, near])
+      go(kernels.nearPart, run.ways, [run, b, s, t, self.clock, near])
+      go(kernels.nearGroupPart, run.groups, [run, b, s, t, self.clock,
+                                             near])
     if run.airs > 0:
       go(kernels.airZeroPart, run.airs, [self.airs])
       go(kernels.airVolumePart, run.faces, [b, self.airs])
@@ -857,7 +948,7 @@ class _ShapeData:
   them."""
 
   def __init__(self, ) -> None:
-    self.arms, self.skins = [], {}
+    self.arms, self.armCount, self.skins = [], 0, {}
     self.planeFirst, self.planeCount = [], []
     self.triangleFirst, self.triangleCount = [], []
     self.low, self.high, self.box = [], [], []
@@ -936,23 +1027,39 @@ class _ShapeData:
         self.profileA.append((cr, cw, radius, 0.0))
         self.profileB.append((start, end, 0.0, 0.0))
 
-  def skinOf(self, mover: object, points: tuple) -> list[int]:
+  def skinOf(self, mover: object, points: tuple) -> range:
     """Returns the indices of a body's skin 'points' (in its own frame,
     'mover' its body and axes), each along its principal axes from its
     centre, added the first time asked."""
     key = (id(mover), points)
     if key not in self.skins:
-      back = transposed(matrixOf(mover.axes))
-      first = len(self.arms)
-      for point in points:
-        self.arms.append(applied(back, minus(point, mover.body.centre)))
-      self.skins[key] = list(range(first, len(self.arms)))
+      self.skins[key] = self._added(_armsOf(mover, points))
     return self.skins[key]
+
+  def skinSpaced(self, mover: object, spacing: float) -> range:
+    """Returns the indices of a body's skin points 'spacing' m apart
+    along its edges ('Shape.skin'; 'mover' its body and axes), as
+    'skinOf', the points worked out once while the body lives
+    ('_skinKept')."""
+    key = (id(mover), 'spaced', spacing)
+    if key not in self.skins:
+      self.skins[key] = self._added(_skinKept(mover, spacing))
+    return self.skins[key]
+
+  def _added(self, arms: numpy.ndarray) -> range:
+    """Returns the indices of skin points 'arms' (rows along a body's
+    principal axes from its centre), added."""
+    first = self.armCount
+    if len(arms):
+      self.arms.append(arms)
+      self.armCount += len(arms)
+    return range(first, self.armCount)
 
   def packed(self, owner: _Packed, shapes: object) -> object:
     """Returns 'shapes' (the kernel's) filled on 'owner's device."""
     wp, zero = owner.wp, (0.0, 0.0, 0.0)
-    shapes.arm = owner.array(self.arms, wp.vec3, zero)
+    shapes.arm = owner.array(numpy.concatenate(self.arms) if self.arms
+                             else [], wp.vec3, zero)
     shapes.planeFirst = owner.array(self.planeFirst, wp.int32, 0)
     shapes.planeCount = owner.array(self.planeCount, wp.int32, 0)
     shapes.triangleFirst = owner.array(self.triangleFirst, wp.int32, 0)
@@ -1097,12 +1204,10 @@ def _touchesOf(world: SmallSteps, assembly: Assembly, movers: list,
     else:
       for mine, theirs in ((a, b), (b, a)) if contact.both else (
           (a, b),):
-        mover = movers[mine]
-        skin = tuple(point for point, _ in mover.body.shape.skin(
-          contact.spacing))
-        for point in shapes.skinOf(mover, skin):
-          out.append((int(kernels.POINT_PIECES), mine, theirs, point,
-                      grip))
+        points = shapes.skinSpaced(movers[mine], contact.spacing)
+        out.append((int(kernels.POINT_PIECES), mine, theirs,
+                    numpy.arange(points.start, points.stop, 1,
+                                 numpy.int32), grip))
   if world.ground is not None:
     for tyre in assembly.tyres:
       mover = movers[tyre.body]
@@ -1133,6 +1238,119 @@ def _touchesOf(world: SmallSteps, assembly: Assembly, movers: list,
       out += _wallTouches(kernels, world.ground.wall, assembly, movers,
                           shapes)
   return out
+
+
+def _armsOf(mover: object, points: tuple) -> numpy.ndarray:
+  """Returns 'points' of a body (in its own frame; 'mover' its body and
+  axes) along its principal axes from its centre, a row each."""
+  if not points:
+    return numpy.zeros((0, 3))
+  back = transposed(matrixOf(mover.axes))
+  own = numpy.array(points, numpy.float64) - numpy.array(
+    mover.body.centre, numpy.float64)
+  arms = numpy.empty_like(own)
+  for i in range(3):
+    arms[:, i] = (own[:, 0] * back[i][0] + own[:, 1] * back[i][1]
+                  + own[:, 2] * back[i][2])
+  return arms
+
+
+def _piecesKept(mover: object) -> tuple:
+  """Returns a body's convex pieces as a ball meets them ('piecesOf';
+  'mover' its body and axes), worked out once while the body lives."""
+  body = mover.body
+  kept = _PIECES_KEPT.get(id(body))
+  if kept is None or kept[0] is not body:
+    if len(_PIECES_KEPT) >= KEPT_MOST:
+      _PIECES_KEPT.clear()
+    kept = body, piecesOf(mover)[0]
+    _PIECES_KEPT[id(body)] = kept
+  return kept[1]
+
+
+def _skinKept(mover: object, spacing: float) -> numpy.ndarray:
+  """Returns a body's skin points 'spacing' m apart ('Shape.skin') as
+  '_armsOf' has them, worked out once while the body lives."""
+  body = mover.body
+  key = (id(body), spacing)
+  kept = _SKINS_KEPT.get(key)
+  if kept is None or kept[0] is not body:
+    if len(_SKINS_KEPT) >= KEPT_MOST:
+      _SKINS_KEPT.clear()
+    kept = body, _armsOf(mover, tuple(
+      point for point, _ in body.shape.skin(spacing)))
+    _SKINS_KEPT[key] = kept
+  return kept[1]
+
+
+def _columnsOf(touches: list, size: int) -> tuple:
+  """Returns the touches' 'size' rows as columns (each touch's kind,
+  bodies, point and grip; a touch whose point is an array of skin points
+  is a row for each, side by side: a skin against another's pieces) and
+  the touches with more fields, each with its row."""
+  kind = numpy.empty(size, numpy.int32)
+  first, second = numpy.empty(size, numpy.int32), numpy.empty(size,
+                                                             numpy.int32)
+  point, grip = numpy.empty(size, numpy.int32), numpy.empty(size,
+                                                           numpy.float32)
+  longer, at = [], 0
+  for touch in touches:
+    points = touch[3]
+    if isinstance(points, numpy.ndarray):
+      end = at + len(points)
+      kind[at:end], first[at:end], second[at:end] = touch[:3]
+      point[at:end], grip[at:end] = points, touch[4]
+      at = end
+      continue
+    kind[at], first[at], second[at], point[at], grip[at] = touch[:5]
+    if len(touch) > 5:
+      longer.append((at, touch))
+    at += 1
+  if at != size:
+    raise ValueError('%d rows made of %d' % (at, size))
+  return kind, first, second, point, grip, longer
+
+
+def _waysOf(kind: numpy.ndarray, first: numpy.ndarray,
+            second: numpy.ndarray, point: numpy.ndarray,
+            arms: numpy.ndarray) -> tuple:
+  """Returns the touches (each's kind, bodies and skin point: 'arms'
+  the skin points along their bodies' principal axes) looked for
+  together (the kernels' 'nearWay'): groups, each its first touch, how
+  many, the middle of the box about its skin points and how far the
+  farthest is from it; ways of groups, each its first group and how
+  many. One body's skin points side by side against another's pieces
+  ('POINT_PIECES', the same two bodies) are a way, in groups of
+  'GROUP_MOST' (the skin's points lie edge by edge: a group is near
+  one place); any other touch a way and a group of its own."""
+  size = len(kind)
+  if size == 0:
+    none = numpy.zeros(0, numpy.int32)
+    return none, none, numpy.zeros((0, 3)), numpy.zeros(0), none, none
+  points = kind == int(_kernelsOf().POINT_PIECES)
+  joined = numpy.zeros(size, bool)
+  joined[1:] = (points[1:] & points[:-1] & (first[1:] == first[:-1])
+                & (second[1:] == second[:-1]))
+  wayStarts = numpy.flatnonzero(~joined)
+  wayOf = numpy.cumsum(~joined) - 1
+  along = numpy.arange(0, size, 1, numpy.int64) - wayStarts[wayOf]
+  starts = along % GROUP_MOST == 0
+  groupFirst = numpy.flatnonzero(starts)
+  groupCount = numpy.diff(numpy.append(groupFirst, size))
+  groupOf = numpy.cumsum(starts) - 1
+  wayFirst = groupOf[wayStarts]
+  wayCount = numpy.diff(numpy.append(wayFirst, len(groupFirst)))
+  placed = arms[numpy.where(points, point, 0)]
+  middle = 0.5 * (numpy.minimum.reduceat(placed, groupFirst, 0)
+                  + numpy.maximum.reduceat(placed, groupFirst, 0))
+  far = numpy.sqrt(((placed - middle[groupOf]) ** 2).sum(1))
+  reach = numpy.maximum.reduceat(far, groupFirst)
+  skins = points[groupFirst]
+  middle[~skins] = 0.0
+  reach[~skins] = 0.0
+  return (groupFirst.astype(numpy.int32), groupCount.astype(numpy.int32),
+          middle, reach, wayFirst.astype(numpy.int32),
+          wayCount.astype(numpy.int32))
 
 
 def _wallTouches(kernels: object, wall: object, assembly: Assembly,

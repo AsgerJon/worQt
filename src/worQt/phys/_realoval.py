@@ -80,14 +80,18 @@ def parkedCar() -> tuple:
   return car, states
 
 
-def realCarOnOval(controls: object) -> tuple[Assembly, tuple[State, ...]]:
+def realCarOnOval(controls: object, built: object = None
+                  ) -> tuple[Assembly, tuple[State, ...]]:
   """The 'realCarOnOval' function returns the real car worked by
-  'controls' at the oval's start ('startOf'), the walker sat in it, and
-  the old car parked in the infield ('parkedCar'), its bodies after the
-  real car's ('parkedFirst'), each part of the world, the walker meeting
-  each with a shape."""
+  'controls' at the oval's start ('startOf'; built by 'built', None: the
+  car of parts, '_realcar.realCar'; the stand-in car,
+  '_magiccar.magicCar'), the walker sat in it, and the old car parked in
+  the infield ('parkedCar'), its bodies after the real car's
+  ('parkedFirst'), each part of the world, the walker meeting each with
+  a shape."""
   from ._realcar import realCar
-  assembly, states = realCar(controls, startOf())
+  built = realCar if built is None else built
+  assembly, states = built(controls, startOf())
   car, parked = parkedCar()
   first = len(assembly.bodies)
   bodies = car.assembly.bodies
@@ -102,16 +106,20 @@ def realCarOnOval(controls: object) -> tuple[Assembly, tuple[State, ...]]:
           states + parked)
 
 
-def parkedFirst() -> int:
+def parkedFirst(assembly: Assembly = None) -> int:
   """The 'parkedFirst' function returns where the old car's bodies start
-  among 'realCarOnOval''s (after the real car's)."""
+  among 'realCarOnOval''s 'assembly' (after the real car's; None: the
+  car of parts')."""
+  if assembly is not None:
+    return len(assembly.bodies) - len(parkedCar()[0].assembly.bodies)
   from ._realcar import HALVES
   return HALVES[1] + 1
 
 
-def parkedFinishes() -> dict:
+def parkedFinishes(assembly: Assembly = None) -> dict:
   """The 'parkedFinishes' function returns how the parked old car's
-  bodies are drawn, by their index in 'realCarOnOval''s assembly: its
+  bodies are drawn, by their index in 'realCarOnOval''s 'assembly'
+  (None: the car of parts' on the oval, 'parkedFirst'): its
   chassis, column and knuckles piece by piece as its own window draws
   them (each key 'old ' and its own: 'PARKED_LOOKS'), its rack steering
   grey, its wheels' rims gold and their tyres rubber (each profile's
@@ -119,7 +127,7 @@ def parkedFinishes() -> dict:
   from ._car import CORNERS, chassisPieces, columnPieces, knucklePieces
   from ._car import TYRE
   car, _ = parkedCar()
-  first = parkedFirst()
+  first = parkedFirst(assembly)
 
   def keyed(pieces: tuple) -> tuple:
     """Returns the old car's pieces (solid, key) as finishes take them

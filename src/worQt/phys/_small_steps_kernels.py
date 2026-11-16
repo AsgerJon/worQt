@@ -94,6 +94,9 @@ WHEEL_PIECES = wp.constant(13)
 #  against an oval's safety barrier ('wallBeyond': its face, up to its
 #  height over the ground).
 POINT_WALL = wp.constant(14)
+#  How far from any of a town's walls a place off their grid is held to
+#  be, m ('_gridwall.WALL_REACH').
+GRID_WALL_REACH = wp.constant(8.0)
 PROBE_WALL = wp.constant(15)
 BALL_WALL = wp.constant(16)
 #  What a gear rule is: a rack and pinion, two gears meshing.
@@ -213,8 +216,9 @@ class Run:
   looked for in another body ('grease', m) and the draws' seed (the
   call's first step's number), whether the motors twist their rotors
   as the rotors move ('motorsMerged': every housing still), how many
-  threads run it, and how many bodies, touches, links and motors there
-  are, how many colours of cord lines ('Chains'), airs and faces of
+  threads run it, and how many bodies, touches (and ways and groups of
+  them looked for together: 'nearWay'), links and motors there are, how
+  many colours of cord lines ('Chains'), airs and faces of
   them ('Airs'), how many disc brakes ('Brakes'), hinges and slides
   ('Hinges'), springs and dampers ('Lines'), fourth wall points that
   turn ('Turns') and racks and pinions and gears meshing ('Gears'), of
@@ -232,12 +236,19 @@ class Run:
   origin ('heights', a row along y for each x, one after another), and
   how much its slope changes at most within a cell and into the cells
   about it ('bends', a cell's for each cell, as 'heights'; 'terrainBend'
-  the most of all, for off the grid); and whether an oval's safety
-  barrier stands on it ('wall'): where the oval's middle is (from the
-  origin, 'wallAt'), its straights' half length and its turns' radius
-  (its middle line's), how far out from that line the barrier's face
-  stands and how tall it is over the ground ('wallHalf', 'wallRadius',
-  'wallOut', 'wallHeight', m: '_terrain.OvalWall')."""
+  the most of all, for off the grid); and whether walls stand on it
+  ('wall': 0 none, 1 an oval's safety barrier, 2 a town's on a grid):
+  for an oval's barrier where the oval's middle is (from the origin,
+  'wallAt'), its straights' half length and its turns' radius (its
+  middle line's), how far out from that line the barrier's face stands
+  and how tall it is over the ground ('wallHalf', 'wallRadius',
+  'wallOut', 'wallHeight', m: '_terrain.OvalWall'); for walls on a grid
+  its first corner (from the origin, 'wallGridAt'), its cells' size
+  ('wallCell', m), how many points along x and y ('wallNx', 'wallNy'),
+  how far each lies inside a wall ('wallInside', m, below nought out
+  of them all) and how tall the wall stands over the ground there
+  ('wallTops', m), each a row along y for each x
+  ('_gridwall.GridWall')."""
   count: int
   h: float
   passes: int
@@ -249,6 +260,8 @@ class Run:
   threads: int
   bodies: int
   touches: int
+  ways: int
+  groups: int
   links: int
   motors: int
   colors: int
@@ -280,6 +293,12 @@ class Run:
   wallRadius: float
   wallOut: float
   wallHeight: float
+  wallGridAt: wp.vec2
+  wallCell: float
+  wallNx: int
+  wallNy: int
+  wallInside: wp.array(dtype=float)
+  wallTops: wp.array(dtype=float)
 
 
 @wp.struct
@@ -321,6 +340,8 @@ class Bodies:
   gridDims: wp.array(dtype=wp.vec3i)
   gridCell: wp.array(dtype=float)
   reach: wp.array(dtype=float)
+  boxLow: wp.array(dtype=wp.vec3)
+  boxHigh: wp.array(dtype=wp.vec3)
   axes: wp.array(dtype=wp.quat)
   centre: wp.array(dtype=wp.vec3)
   profileFirst: wp.array(dtype=int)
@@ -408,7 +429,16 @@ class Touches:
   call: 'tyreGrip') and its twist on the road ('twist', rad);
   whether it is looked for ('near': one whose bodies, or point and the
   ground, are too far apart to meet soon is not, 'nearTouch'); those
-  looked for, gathered ('nearList', how many: 'nearCount')."""
+  looked for, gathered ('nearList', how many: 'nearCount'); the
+  touches looked for together ('nearWay'): in groups, each group's
+  first touch ('groupFirst'), how many side by side ('groupCount'),
+  whether it was looked for last ('groupNear') and the ball about its
+  skin points ('groupMiddle', along the first body's principal axes
+  from its centre; 'groupReach'); the groups in ways (one body's skin
+  points against another's pieces, else one touch), each way's first
+  group ('wayFirst'), how many ('wayCount') and whether it was looked
+  for last ('wayNear'); the groups to be looked through, listed
+  ('groupList', how many: 'groupListCount')."""
   kind: wp.array(dtype=int)
   first: wp.array(dtype=int)
   second: wp.array(dtype=int)
@@ -434,6 +464,16 @@ class Touches:
   near: wp.array(dtype=int)
   nearList: wp.array(dtype=int)
   nearCount: wp.array(dtype=int)
+  groupFirst: wp.array(dtype=int)
+  groupCount: wp.array(dtype=int)
+  groupNear: wp.array(dtype=int)
+  groupMiddle: wp.array(dtype=wp.vec3)
+  groupReach: wp.array(dtype=float)
+  wayFirst: wp.array(dtype=int)
+  wayCount: wp.array(dtype=int)
+  wayNear: wp.array(dtype=int)
+  groupList: wp.array(dtype=int)
+  groupListCount: wp.array(dtype=int)
 
 
 @wp.struct
@@ -1442,10 +1482,58 @@ def bendAt(run: Run, x: float, y: float) -> float:
 
 
 @wp.func
+def gridBeyond(run: Run, x: float, y: float) -> wp.vec3:
+  """How far 'x', 'y' (from the origin) is through a face of the walls
+  on a grid, m (below nought: out of them all), and the face's outward
+  normal there, level (x, y: the way deeper in), as '_gridwall.
+  GridWall.beyond' (off the grid open, 'GRID_WALL_REACH' from any)."""
+  fx = (x - run.wallGridAt[0]) / run.wallCell
+  fy = (y - run.wallGridAt[1]) / run.wallCell
+  i = int(wp.floor(fx))
+  j = int(wp.floor(fy))
+  if i < 0 or j < 0 or i >= run.wallNx - 1 or j >= run.wallNy - 1:
+    return wp.vec3(-GRID_WALL_REACH, 1.0, 0.0)
+  u = fx - float(i)
+  v = fy - float(j)
+  k = i * run.wallNy + j
+  a = run.wallInside[k]
+  b = run.wallInside[k + run.wallNy]
+  c = run.wallInside[k + 1]
+  d = run.wallInside[k + run.wallNy + 1]
+  depth = (a * (1.0 - u) + b * u) * (1.0 - v) + (c * (1.0 - u) + d * u) * v
+  gx = (b - a) * (1.0 - v) + (d - c) * v
+  gy = (c - a) * (1.0 - u) + (d - b) * u
+  size = wp.sqrt(gx * gx + gy * gy)
+  if size < 1e-12:
+    return wp.vec3(depth, 1.0, 0.0)
+  return wp.vec3(depth, gx / size, gy / size)
+
+
+@wp.func
+def wallTop(run: Run, x: float, y: float) -> float:
+  """How tall the wall at 'x', 'y' (from the origin) stands over the
+  ground, m: the oval's barrier's height; on a grid its cell's tallest
+  corner (off the grid nought)."""
+  if run.wall != 2:
+    return run.wallHeight
+  i = int(wp.floor((x - run.wallGridAt[0]) / run.wallCell))
+  j = int(wp.floor((y - run.wallGridAt[1]) / run.wallCell))
+  if i < 0 or j < 0 or i >= run.wallNx - 1 or j >= run.wallNy - 1:
+    return 0.0
+  k = i * run.wallNy + j
+  return wp.max(wp.max(run.wallTops[k], run.wallTops[k + 1]),
+                wp.max(run.wallTops[k + run.wallNy],
+                       run.wallTops[k + run.wallNy + 1]))
+
+
+@wp.func
 def wallBeyond(run: Run, x: float, y: float) -> wp.vec3:
-  """How far 'x', 'y' (from the origin) is out through the oval's
-  barrier's face, m (below nought: inside it), and the face's outward
-  normal there, level (x, y), as '_terrain.OvalWall.beyond'."""
+  """How far 'x', 'y' (from the origin) is out through the wall's face,
+  m (below nought: inside it, out in the open), and the face's outward
+  normal there, level (x, y): a town's on a grid ('gridBeyond'), or
+  the oval's barrier's, as '_terrain.OvalWall.beyond'."""
+  if run.wall == 2:
+    return gridBeyond(run, x, y)
   px = x - run.wallAt[0]
   py = y - run.wallAt[1]
   half = run.wallHalf
@@ -1661,7 +1749,8 @@ def found(run: Run, b: Bodies, s: Shapes, t: Touches, i: int,
     if kind != BALL_WALL:
       arm = wp.quat_rotate(qk, s.arm[t.point[i]])
     at = b.place[k] + b.shift[k] + arm
-    if at[2] - r < groundAt(run, at[0], at[1])[0] + run.wallHeight:
+    if at[2] - r < groundAt(run, at[0], at[1])[0] + wallTop(run, at[0],
+                                                             at[1]):
       wall = wallBeyond(run, at[0], at[1])
       depth = wall[0] + r
       normal = wp.vec3(-wall[1], -wall[2], 0.0)
@@ -1801,20 +1890,167 @@ def nearTouch(run: Run, b: Bodies, s: Shapes, t: Touches, i: int,
     if -(wall[0] + r) > 2.0 * closing * seconds + NEAR_MARGIN:
       near = 0
   elif o >= 0 and kind != NO_TOUCH:
-    reach = b.reach[k] + t.reach[i] + wp.length(t.hub[i])
-    gap = wp.length(apartOf(b, k, o)) - reach - b.reach[o]
-    speed = wp.length(b.velocity[k] - b.velocity[o]) + wp.length(
-      b.spin[k]) * reach + wp.length(b.spin[o]) * b.reach[o]
-    if gap > 2.0 * speed * seconds + NEAR_MARGIN:
-      near = 0
+    near = 1 - pairFar(b, t, i, seconds)
   t.near[i] = near
   if near == 0:
-    t.depth[i] = 0.0
-    t.pushed[i] = 0.0
-    t.gripped[i] = 0.0
-    t.face[i] = -1
+    forgotten(t, i)
   else:
     t.nearList[wp.atomic_add(t.nearCount, 0, 1)] = i
+
+
+@wp.func
+def pairFar(b: Bodies, t: Touches, i: int, seconds: float) -> int:
+  """Returns whether touch 'i' between two bodies cannot press within
+  'seconds' ('nearTouch'): the balls about them holding all either
+  touches with (its shape; a tyre's tread or a probe as far again)
+  further apart than their speeds and turning carry them in that time,
+  twice over, and 'NEAR_MARGIN'."""
+  k = t.first[i]
+  o = t.second[i]
+  reach = b.reach[k] + t.reach[i] + wp.length(t.hub[i])
+  gap = wp.length(apartOf(b, k, o)) - reach - b.reach[o]
+  speed = wp.length(b.velocity[k] - b.velocity[o]) + wp.length(
+    b.spin[k]) * reach + wp.length(b.spin[o]) * b.reach[o]
+  if gap > 2.0 * speed * seconds + NEAR_MARGIN:
+    return 1
+  return 0
+
+
+@wp.func
+def forgotten(t: Touches, i: int):
+  """Touch 'i' not looked for ('nearTouch'): it presses nothing, its
+  face forgotten."""
+  t.near[i] = 0
+  t.depth[i] = 0.0
+  t.pushed[i] = 0.0
+  t.gripped[i] = 0.0
+  t.face[i] = -1
+
+
+@wp.func
+def outsideBox(b: Bodies, o: int, apart: wp.vec3) -> float:
+  """Returns how far the point 'apart' from body 'o''s centre (in the
+  world) lies outside the box about all its pieces ('boxLow', 'boxHigh':
+  along its principal axes; a body with none, its reach ball's box),
+  m; nought inside."""
+  inside = wp.quat_rotate_inv(b.turn[o], apart)
+  low = b.boxLow[o]
+  high = b.boxHigh[o]
+  out = wp.vec3(wp.max(wp.max(low[0] - inside[0], inside[0] - high[0]),
+                       0.0),
+                wp.max(wp.max(low[1] - inside[1], inside[1] - high[1]),
+                       0.0),
+                wp.max(wp.max(low[2] - inside[2], inside[2] - high[2]),
+                       0.0))
+  return wp.length(out)
+
+
+@wp.func
+def pointFar(b: Bodies, s: Shapes, t: Touches, i: int,
+             seconds: float) -> int:
+  """Returns whether skin point touch 'i' ('POINT_PIECES') cannot press
+  within 'seconds': its point further outside the box about the other's
+  pieces ('outsideBox': a point outside it is in none of them, 'found'
+  passing it over) than their speeds and turning carry it in that time,
+  twice over, and 'NEAR_MARGIN' (found 2026-11-16: by the other's ball,
+  a derailed cart's 8 m body near the track kept 14 700 touches looked
+  for, most far from its slender self)."""
+  k = t.first[i]
+  o = t.second[i]
+  arm = wp.quat_rotate(b.turn[k], s.arm[t.point[i]])
+  gap = outsideBox(b, o, apartOf(b, k, o) + arm)
+  speed = wp.length(b.velocity[k] - b.velocity[o]) + wp.length(
+    b.spin[k]) * wp.length(arm) + wp.length(b.spin[o]) * b.reach[o]
+  if gap > 2.0 * speed * seconds + NEAR_MARGIN:
+    return 1
+  return 0
+
+
+@wp.func
+def groupFar(b: Bodies, t: Touches, g: int, k: int, o: int,
+             seconds: float) -> int:
+  """Returns whether the skin points of group 'g' (body 'k''s against
+  body 'o''s pieces) cannot press within 'seconds': the ball about them
+  ('groupMiddle', 'groupReach': along 'k''s principal axes from its
+  centre) further outside the box about 'o''s pieces ('outsideBox')
+  than their speeds and turning carry them in that time, twice over,
+  and 'NEAR_MARGIN'."""
+  middle = wp.quat_rotate(b.turn[k], t.groupMiddle[g])
+  r = t.groupReach[g]
+  gap = outsideBox(b, o, apartOf(b, k, o) + middle) - r
+  speed = wp.length(b.velocity[k] - b.velocity[o]) + wp.length(
+    b.spin[k]) * (wp.length(middle) + r) + wp.length(b.spin[o]) * (
+    b.reach[o])
+  if gap > 2.0 * speed * seconds + NEAR_MARGIN:
+    return 1
+  return 0
+
+
+@wp.func
+def groupForgotten(t: Touches, g: int):
+  """The touches of group 'g' not looked for ('forgotten'), if they
+  were."""
+  if t.groupNear[g] == 0:
+    return
+  i = t.groupFirst[g]
+  for j in range(t.groupCount[g]):
+    if t.near[i + j] != 0:
+      forgotten(t, i + j)
+  t.groupNear[g] = 0
+
+
+@wp.func
+def nearWay(b: Bodies, t: Touches, w: int, seconds: float):
+  """Notes whether the touches of way 'w' could press within 'seconds',
+  as a whole: one body's skin points against another's pieces
+  ('POINT_PIECES': 'wayCount' groups of at most 'GROUP_MOST' points
+  side by side) by the two bodies' balls ('pairFar'), forgotten as
+  they go out of reach; the groups of a way that could, and a way of
+  one touch, listed to be looked through ('groupList', 'nearGroup'),
+  in the order they come. Found 2026-11-16: a crate spawned by the
+  loop's track looked for its 284 000 touches with the 214 still
+  bodies there one by one every 'NEAR_EVERY' steps (three times the
+  rest of the world's steps), and, near, for every point of the
+  island's edges against it each step."""
+  g0 = t.wayFirst[w]
+  count = t.wayCount[w]
+  if count > 1 or t.groupCount[g0] > 1:
+    if pairFar(b, t, t.groupFirst[g0], seconds) != 0:
+      if t.wayNear[w] != 0:
+        for g in range(g0, g0 + count):
+          groupForgotten(t, g)
+        t.wayNear[w] = 0
+      return
+    t.wayNear[w] = 1
+  start = wp.atomic_add(t.groupListCount, 0, count)
+  for j in range(count):
+    t.groupList[start + j] = g0 + j
+
+
+@wp.func
+def nearGroup(run: Run, b: Bodies, s: Shapes, t: Touches, g: int,
+              seconds: float):
+  """Notes whether the touches of group 'g' could press within
+  'seconds' (its way's bodies near: 'nearWay'): a group of one as that
+  touch ('nearTouch'); skin points by the ball about them ('groupFar'),
+  then point by point ('pointFar')."""
+  i = t.groupFirst[g]
+  count = t.groupCount[g]
+  if count == 1:
+    nearTouch(run, b, s, t, i, seconds)
+    return
+  if groupFar(b, t, g, t.first[i], t.second[i], seconds) != 0:
+    groupForgotten(t, g)
+    return
+  for j in range(count):
+    e = i + j
+    if pointFar(b, s, t, e, seconds) != 0:
+      if t.near[e] != 0:
+        forgotten(t, e)
+    else:
+      t.near[e] = 1
+      t.nearList[wp.atomic_add(t.nearCount, 0, 1)] = e
+  t.groupNear[g] = 1
 
 
 @wp.func
@@ -3529,9 +3765,14 @@ def stepsRun(run: Run, b: Bodies, s: Shapes, t: Touches,
     if step % NEAR_EVERY == 0:
       if tid == 0:
         t.nearCount[0] = 0
+        t.groupListCount[0] = 0
       barrier()
-      for i in range(tid, run.touches, n):
-        nearTouch(run, b, s, t, i, h * float(NEAR_EVERY))
+      for w in range(tid, run.ways, n):
+        nearWay(b, t, w, h * float(NEAR_EVERY))
+      barrier()
+      listed = t.groupListCount[0]
+      for e in range(tid, listed, n):
+        nearGroup(run, b, s, t, t.groupList[e], h * float(NEAR_EVERY))
       barrier()
       last = marked(run, tid, 0, last)
     near = t.nearCount[0]
@@ -3794,17 +4035,28 @@ def hingePart(run: Run, b: Bodies, hg: Hinges,
 
 @wp.kernel
 def nearResetPart(t: Touches):
-  """The touches looked for forgotten, to be gathered anew
-  ('nearPart')."""
+  """The touches looked for and the groups listed forgotten, to be
+  gathered anew ('nearPart')."""
   t.nearCount[0] = 0
+  t.groupListCount[0] = 0
 
 
 @wp.kernel
 def nearPart(run: Run, b: Bodies, s: Shapes, t: Touches,
              clock: wp.array(dtype=float), steps: int):
-  """Every touch noted whether it could press in the next 'steps' steps
-  ('nearTouch')."""
-  nearTouch(run, b, s, t, wp.tid(), clock[0] * float(steps))
+  """Every way of touches noted whether it could press in the next
+  'steps' steps ('nearWay')."""
+  nearWay(b, t, wp.tid(), clock[0] * float(steps))
+
+
+@wp.kernel
+def nearGroupPart(run: Run, b: Bodies, s: Shapes, t: Touches,
+                  clock: wp.array(dtype=float), steps: int):
+  """Every group of touches listed ('nearWay') noted whether it could
+  press in the next 'steps' steps ('nearGroup')."""
+  e = wp.tid()
+  if e < t.groupListCount[0]:
+    nearGroup(run, b, s, t, t.groupList[e], clock[0] * float(steps))
 
 
 @wp.kernel

@@ -23,12 +23,16 @@ jittered, its DC taken off, a little of its derivative mixed in, its
 flow textured by air noise, convolved with the impulse response, low
 passed, levelled.
 
-The engine: a naturally aspirated V12 after a 1980s Lamborghini's (its
-figures: a 60 degree vee, 85.5 by 75 mm, 5.2 litres, 9.5 to 1), laid out
-as his Ferrari 412 T2 is (a six throw crank, 0 120 240 240 120 0, each
-bank fired 60 degrees after the other: one cylinder every 60 degrees),
-on his Ferrari's port flows, a road car's cams, one plenum and one
-exhaust to a bank, his 'minimal_muffling_01' heard through.
+The engine: the real car's (user, 2026-11-15: "this engine sound needs
+to chill out lol... it's not a V12 anymore"; the car's "naturally
+aspirated inline 4 with DOHC and 1965cc"): an inline four, 87.5 by
+81.7 mm, 10 to 1, its flat crank firing 1 3 4 2 (one cylinder every
+180 degrees), twin overhead cams of a racing four's longer lobes, its
+carburettors feeding one plenum, its four primaries into one pipe, on
+his Ferrari's port flows, his 'mild_exhaust' heard through. (It was a
+V12 after a 1980s Lamborghini's, 5.2 litres, on his Ferrari 412 T2's
+layout, the user's "Naturally aspirated V12 pls" of 2026-11-14, while
+the car was mid-engined: in git.)
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -77,7 +81,11 @@ LEVEL_SLOW = 0.3
 #  revolutions (at 'LOUDEST' rpm) and with throttle (his leveller holds
 #  every engine as loud idling as flat out: his app's volume does the
 #  rest; and half way to the top, its transients clipped at the top).
-QUIET, WITH_RPM, WITH_LOAD, LOUDEST = 0.25, 0.15, 0.1, 7500.0
+#  The four quieter than the V12 was (user, 2026-11-15: "needs to chill
+#  out": at 0.25, 0.15, 0.1 the four, its pulses fewer and apart, played
+#  twice the V12's idling and near thrice its blips; now half as loud
+#  idling, two thirds flat out).
+QUIET, WITH_RPM, WITH_LOAD, LOUDEST = 0.12, 0.12, 0.08, 7500.0
 #  Where his impulse responses are.
 SOUNDS = os.path.join(os.path.dirname(__file__), 'sounds')
 UNITS_INCH, UNITS_THOU = 0.0254, 0.0000254
@@ -145,17 +153,21 @@ class EngineSpec(NamedTuple):
   rate: float
 
 
-_BANK = (0.0, 480.0, 240.0, 600.0, 120.0, 360.0)
-V12 = EngineSpec(
-  _BANK + tuple(phase + 60.0 for phase in _BANK), 0.0855, 0.075, 0.130,
-  9.5, (0,) * 6 + (1,) * 6, 149.6e-6, 50.0e-6,
+#  The real car's four: its cylinders' places in the cycle (1 to 4 down
+#  the block, firing 1 3 4 2), one bank; its runners a little larger than
+#  the V12's for a cylinder a ninth larger; the V12's ports; a racing
+#  four's longer cams, overlapping more; one plenum, its throttles' and
+#  one outlet's flows for two litres; its primaries' shares nearly alike
+#  (four of a length into one).
+FOUR = EngineSpec(
+  (0.0, 540.0, 180.0, 360.0), 0.0875, 0.0817, 0.140, 10.0, (0,) * 4,
+  170e-6, 57e-6,
   (0, 58, 103, 156, 214, 249, 268, 280, 280, 281),
   (0, 37, 72, 113, 160, 196, 222, 235, 245, 246),
-  Lobe(252.0, 0.8, 10.5e-3), Lobe(256.0, 0.8, 10.0e-3), 108.0, 112.0,
-  1.5e-3, 900.0, 220.0, 220.0, 1500.0, 40e-3, 20.0 * UNITS_INCH,
-  (0.5, 1.0, 0.75, 0.9, 0.7, 1.0, 0.5, 0.3, 0.8, 1.2, 0.9, 0.7), 0.004,
-  (12.0, 34.0), 0.01, 0.05, 0.0, 'minimal_muffling_01.wav', 0.01,
-  40000.0)
+  Lobe(270.0, 0.8, 10.0e-3), Lobe(270.0, 0.8, 9.5e-3), 105.0, 108.0,
+  1.0e-3, 700.0, 220.0, 220.0, 1200.0, 20e-3, 20.0 * UNITS_INCH,
+  (1.0, 0.9, 0.85, 0.95), 0.004, (10.0, 36.0), 0.01, 0.05, 0.0,
+  'mild_exhaust.wav', 0.01, 40000.0)
 
 
 def molesPerSecond(scfm: float) -> float:
@@ -479,7 +491,7 @@ class EngineSimVoice:
   ring the user heard as "audio artifacts"); 'seed' the noises'.
   """
 
-  def __init__(self, rate: int, spec: EngineSpec = V12,
+  def __init__(self, rate: int, spec: EngineSpec = FOUR,
                seed: int = 0) -> None:
     import warp as wp
     wp.init()

@@ -59,6 +59,13 @@ Item {
   //  The ground margins of an oval's own track mesh (its surfaces drawn
   //  following its curves), dirt as the terrain
   property var trackGroundShape: null
+  //  What is drawn in its photographs, each {geometry, map, both}: a
+  //  mesh in the scene as it is, its picture ('map'), seen from both
+  //  sides where 'both'; unlit (the photographs' light their own),
+  //  casting no shadow (a road along its rows, houses only to look at).
+  //  While there are any, the scene's colours are left as they are
+  //  (no filmic curve: the photographs as taken)
+  property var photographed: []
 
   //  How much bigger than it is the world is drawn (a world shrunk for
   //  a walker is drawn at their size, so the camera's near cut, the
@@ -70,6 +77,13 @@ Item {
   //  line of help along the bottom (none: empty)
   property bool crosshair: false
   property string hint: ""
+  //  The speedometer in the corner (shown while riding a car): its
+  //  dial's picture, its needle's angle right of upright, deg, its
+  //  figure
+  property bool speedometer: false
+  property string dialFace: ""
+  property real speedAngle: -135
+  property string speedText: ""
 
   //  The camera, and the turns of the sun and the sky's light (each
   //  shining along its own -z)
@@ -104,7 +118,9 @@ Item {
                                            : SceneEnvironment.NoAA
       antialiasingQuality: root.aaSamples > 2 ? SceneEnvironment.High
                                               : SceneEnvironment.Medium
-      tonemapMode: SceneEnvironment.TonemapModeFilmic
+      tonemapMode: root.photographed.length > 0
+                   ? SceneEnvironment.TonemapModeLinear
+                   : SceneEnvironment.TonemapModeFilmic
       ditheringEnabled: true
       //  Glass sorted per pixel, every layer in its true order (user,
       //  2026-11-13: QtQuick was "not having consistent transparent
@@ -122,6 +138,9 @@ Item {
       fieldOfView: 58
       clipNear: root.cameraNear
       clipFar: 300000
+      //  Among houses in photographs (hundreds of pieces, 2.5 million
+      //  triangles) what is out of sight is not drawn
+      frustumCullingEnabled: root.photographed.length > 0
     }
 
     DirectionalLight {
@@ -257,6 +276,32 @@ Item {
       }
 
       Repeater3D {
+        model: root.photographed
+        delegate: Model {
+          required property var modelData
+          geometry: modelData.geometry
+          castsShadows: false
+          receivesShadows: false
+          Texture {
+            id: photo
+            source: modelData.map
+            tilingModeHorizontal: Texture.ClampToEdge
+            tilingModeVertical: Texture.ClampToEdge
+            generateMipmaps: true
+            mipFilter: Texture.Linear
+          }
+          materials: PrincipledMaterial {
+            lighting: PrincipledMaterial.NoLighting
+            baseColorMap: photo
+            metalness: 0.0
+            roughness: 1.0
+            cullMode: modelData.both ? Material.NoCulling
+                                     : Material.BackFaceCulling
+          }
+        }
+      }
+
+      Repeater3D {
         model: root.parts
         delegate: Model {
           required property var modelData
@@ -322,6 +367,59 @@ Item {
     Rectangle { x: 15; y: 10; width: 7; height: 2; color: "#c8ebebf0" }
     Rectangle { x: 10; y: 0; width: 2; height: 7; color: "#c8ebebf0" }
     Rectangle { x: 10; y: 15; width: 2; height: 7; color: "#c8ebebf0" }
+  }
+  Item {
+    id: speedo
+    visible: root.speedometer
+    width: 190
+    height: 214
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.margins: 18
+    Image {
+      id: dial
+      width: 190
+      height: 190
+      source: root.dialFace
+      smooth: true
+      mipmap: true
+    }
+    Rectangle {
+      x: dial.width / 2 - width / 2
+      y: dial.height / 2 - 80
+      width: 4
+      height: 92
+      radius: 2
+      color: "#ff6824"
+      antialiasing: true
+      transformOrigin: Item.Bottom
+      transform: Rotation {
+        origin.x: 2
+        origin.y: 80
+        angle: root.speedAngle
+      }
+    }
+    Rectangle {
+      x: dial.width / 2 - 9
+      y: dial.height / 2 - 9
+      width: 18
+      height: 18
+      radius: 9
+      color: "#2a2a2e"
+      border.color: "#9a9ca0"
+      border.width: 2
+    }
+    Text {
+      anchors.horizontalCenter: dial.horizontalCenter
+      anchors.top: dial.bottom
+      anchors.topMargin: 2
+      text: root.speedText
+      color: "#ebebf0"
+      style: Text.Outline
+      styleColor: "#202024"
+      font.pixelSize: 18
+      font.bold: true
+    }
   }
   Text {
     visible: root.hint.length > 0

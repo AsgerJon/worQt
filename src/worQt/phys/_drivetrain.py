@@ -202,6 +202,17 @@ class DrivetrainControls:
     self.shifter.across, self.shifter.throw = 0.0, 0.0
     self.shifter.engaged, self.shifter.blocked = None, None
 
+  def worked(self, states: tuple, seconds: float) -> None:
+    """The 'worked' method works the drivetrain for the next 'seconds'
+    as the driver asks, the bodies as 'states' have them
+    ('_partsWorked')."""
+    _partsWorked(self, states, seconds)
+
+  def reading(self, states: tuple) -> Reading:
+    """The 'reading' method returns what the drivetrain reads out as
+    'states' have it ('_partsReading')."""
+    return _partsReading(self, states)
+
 
 class Shifter:
   """
@@ -298,19 +309,36 @@ def spinAbout(state: State, axis: Vector) -> float:
 
 def drivetrainWorked(controls: DrivetrainControls, states: tuple,
                      seconds: float) -> None:
-  """The 'drivetrainWorked' function works the drivetrain for the next
-  'seconds' as the driver asks, the bodies as 'states' have them: the
-  foot opens or closes the throttle and pushes or lets up the clutch
-  (at their rates), the clutch's clamp follows the pedal, the engine
-  twists its flywheel ('engineTwist'; stalling under 'STALL', caught by
-  the starter at 'CATCH'), the hand moves the stick ('Shifter.moved'),
-  each free gear's coupling then its synchro's cone (the gear the stick
-  is held at), its dogs (the gear in) or nothing."""
+  """The 'drivetrainWorked' function works the drivetrain 'controls'
+  drive for the next 'seconds' as the driver asks, the bodies as
+  'states' have them ('DrivetrainControls.worked': this one's of parts,
+  '_partsWorked'; another drivetrain its own, the stand-in car's
+  automatic, '_automatic.AutomaticDrive')."""
+  controls.worked(states, seconds)
+
+
+def footWorked(controls: DrivetrainControls, seconds: float) -> None:
+  """The 'footWorked' function moves the feet for the next 'seconds' as
+  the driver asks: the right opens or closes the throttle, the left
+  pushes the clutch down or lets it up, at their rates."""
   c = controls
   c.open = _toward(c.open, c.throttle, (
     THROTTLE_OPEN if c.throttle > c.open else THROTTLE_CLOSE) * seconds)
   c.pressed = _toward(c.pressed, c.pedal, (
     PEDAL_DOWN if c.pedal > c.pressed else PEDAL_UP) * seconds)
+
+
+def _partsWorked(controls: DrivetrainControls, states: tuple,
+                 seconds: float) -> None:
+  """Works the drivetrain of parts for the next 'seconds' as the driver
+  asks, the bodies as 'states' have them: the feet ('footWorked'), the
+  clutch's clamp following the pedal, the engine twisting its flywheel
+  ('engineTwist'; stalling under 'STALL', caught by the starter at
+  'CATCH'), the hand moving the stick ('Shifter.moved'), each free
+  gear's coupling then its synchro's cone (the gear the stick is held
+  at), its dogs (the gear in) or nothing."""
+  c = controls
+  footWorked(c, seconds)
   c.clutch.pressure = CLAMP * min(1.0, max(0.0, (FREE - c.pressed) / (
     FREE - BITE)))
   bodies = c.layout
@@ -734,8 +762,14 @@ class Reading(NamedTuple):
 
 
 def readingOf(controls: DrivetrainControls, states: tuple) -> Reading:
-  """The 'readingOf' function returns the bench's reading as 'states'
-  have it."""
+  """The 'readingOf' function returns the reading of the drivetrain
+  'controls' drive as 'states' have it ('DrivetrainControls.reading':
+  this one's of parts, '_partsReading'; another its own)."""
+  return controls.reading(states)
+
+
+def _partsReading(controls: DrivetrainControls, states: tuple) -> Reading:
+  """Returns the drivetrain of parts' reading as 'states' have it."""
   from ._tyred import tyreOf
   radius = tyreOf(1, 2.3e5).radius
   stick, bodies = controls.shifter, controls.layout

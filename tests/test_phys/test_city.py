@@ -1,15 +1,20 @@
 """
 TestCity covers the real car in town (user, 2026-11-15: uncannyball's
-lap of central Copenhagen, 'previews/uncannyball_readme.md'): a road
-laid along a line read from its OpenCRG file ('_crg.readCrg': a circle
+lap of central Copenhagen, its files in 'previews/tracks'): a road laid
+along a line read from its OpenCRG file ('_crg.readCrg': a circle
 written here, its rows on it, its heights as written), laid onto a
 regular terrain ('crgTerrain': on the road within a centimetre, its
-slope the ground's), as a
-course ('_course.CrgCourse': a point's place along and right of the
-middle and back, to a centimetre); and, where the lap's file is
-('_city.CITY_TRACK', not in git), the palace square clear of the road
-('amalienborg') and the city racer ('CityDriver') pulling away and
-keeping to its line.
+slope the ground's), as a course ('_course.CrgCourse': a point's place
+along and right of the middle and back, to a centimetre), drawn in its
+photographs ('gui._meshes.crgMesh': each stretch's picture up it, its
+foot where the stretch begins, its left edge the road's leftmost
+column; the road on the terrain; none where the file holds no ground,
+none where scenery covers it, 'crgBase' likewise); and, where the lap's
+files are ('_city.cityHere', not in git), the scenery's ground under
+the road where the terrain has it ('sceneryBox' round the start), the
+town's walls clear of the road's middle line ('cityWall'), and the
+city racer ('CityDriver') pulling away and keeping to its line between
+them.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -23,7 +28,7 @@ import numpy
 
 from worQt.phys import BrakeLine, FourthWall, SmallSteps
 from worQt.phys._course import CrgCourse
-from worQt.phys._crg import crgTerrain, readCrg
+from worQt.phys._crg import CrgTrack, crgTerrain, readCrg
 from worQt.phys._drivetrain import DrivetrainControls, drivetrainWorked
 from worQt.phys._realcar import Antilock, CORNERS, RealCarControls
 from worQt.phys._rig import TuneUp, WheelSetup
@@ -134,22 +139,119 @@ class TestCity(PhysTest):
         self.assertAlmostEqual(found, out, delta=0.01)
         self.assertAlmostEqual(round_, along, delta=0.01)
 
-  def test_square(self) -> None:
-    """Where the lap's file is: the palace square's every part stands
-    clear of the road's middle by more than 7 m, the statue more than
-    25 m (the lap's hairpin round it)."""
-    from worQt.phys._city import CITY_TRACK, amalienborg, cityTrack
-    if not os.path.isfile(os.path.normpath(CITY_TRACK)):
+  def test_photographed(self) -> None:
+    """Drawn in two pictures, half the circle each: a mesh each, every
+    place on its picture within it, its foot where its stretch begins,
+    its top where it ends, its left edge the road's leftmost column;
+    the road's corners on the terrain (to a millimetre); a stretch where
+    the file holds no ground drawn not at all."""
+    from worQt.phys.gui._meshes import CRG_DOWN, SCALE, crgMesh
+    t = self.track
+    terrain = crgTerrain(t, 0.5, 2.0)
+    length = ROWS * t.step
+    pictures = ((0.0, 0.5 * length, 'a.jpg'), (0.5 * length, length,
+                                                'b.jpg'))
+    meshes = crgMesh(t, terrain, pictures)
+    self.assertEqual([path for _, _, path in meshes], ['a.jpg', 'b.jpg'])
+    for vertices, indices, _ in meshes:
+      self.assertGreaterEqual(vertices[:, 6:8].min(), 0.0)
+      self.assertLessEqual(vertices[:, 6:8].max(), 1.0)
+      self.assertEqual(vertices[:, 7].min(), 0.0)
+      self.assertEqual(vertices[:, 7].max(), 1.0)
+      self.assertLess(int(indices.max()), len(vertices))
+    vertices = meshes[0][0][-len(meshes[0][0]) // len(CRG_DOWN):]
+    x, y = vertices[:, 0] / SCALE, -vertices[:, 2] / SCALE
+    left = numpy.hypot(x, y) < RADIUS - 4.9
+    self.assertLess(vertices[left, 6].max(), 1e-6)
+    worst = max(abs(terrain.heightAt(float(a), float(b)) - float(z) / SCALE)
+                for a, b, z in zip(x[::5], y[::5], vertices[::5, 1]))
+    self.assertLess(worst, 1e-3)
+    heights = numpy.array(t.heights)
+    heights[:ROWS // 2 + 1] = numpy.nan
+    holed = crgMesh(CrgTrack(t.step, t.x, t.y, t.leftX, t.leftY, t.across,
+                             heights, t.heading), terrain, pictures)
+    self.assertEqual([path for _, _, path in holed], ['b.jpg'])
+
+  def test_hole(self) -> None:
+    """Where scenery covers the ground (a square about the start), no
+    square of the road's mesh nor of the terrain's lies wholly in it, the
+    corners in it of those across its edge lowered under it; elsewhere
+    as ever."""
+    from worQt.phys.gui._meshes import SCALE, SCENERY_DOWN, crgBase
+    from worQt.phys.gui._meshes import crgMesh
+    t = self.track
+    terrain = crgTerrain(t, 0.5, 2.0)
+    hole = (RADIUS - 12.0, -12.0, RADIUS + 12.0, 12.0)
+    pictures = ((0.0, ROWS * t.step, 'a.jpg'),)
+    whole = crgMesh(t, terrain, pictures)[0]
+    vertices, indices, _ = crgMesh(t, terrain, pictures, hole)[0]
+    self.assertLess(len(indices), len(whole[1]))
+    x, y = vertices[:, 0] / SCALE, -vertices[:, 2] / SCALE
+    inside = (x > hole[0]) & (x < hole[2]) & (y > hole[1]) & (y < hole[3])
+    self.assertFalse(inside[indices.reshape(-1, 6)].all(1).any())
+    lowered = numpy.abs(vertices[:, 1] - whole[0][:, 1]) / SCALE
+    self.assertLess(numpy.abs(lowered[inside] - SCENERY_DOWN).max(), 1e-4)
+    self.assertLess(lowered[~inside].max(), 1e-6)
+    coarse, dropped = crgBase(terrain, t, hole)
+    plain, _ = crgBase(terrain, t)
+    xs = coarse.origin[0] + coarse.cell * numpy.arange(len(coarse.heights))
+    ys = coarse.origin[1] + coarse.cell * numpy.arange(
+      len(coarse.heights[0]))
+    gx, gy = numpy.meshgrid(xs, ys, indexing='ij')
+    inside = (gx > hole[0]) & (gx < hole[2]) & (gy > hole[1]) & (
+      gy < hole[3])
+    self.assertTrue(dropped[inside].all())
+    drop = numpy.asarray(plain.heights) - numpy.asarray(coarse.heights)
+    self.assertLess(numpy.abs(drop[inside] - SCENERY_DOWN).max(), 1e-9)
+    self.assertLess(numpy.abs(drop[~inside]).max(), 1e-12)
+
+  def test_scenery(self) -> None:
+    """Where the lap's files are: the scenery's square holds the lap's
+    start; every piece's corners and its picture are there, its places
+    on it within it to a hundredth (the ground's pieces overhang their
+    64 m squares by half a metre: their pictures' edges drawn on); its
+    ground within 2 m of the road's middle stands where the terrain has
+    it (99 in 100 within a centimetre)."""
+    from scipy.spatial import cKDTree
+    from worQt.phys._city import cityGround, cityHere, cityScenery
+    from worQt.phys._city import cityTrack, sceneryBox
+    if not cityHere():
       self.skipTest('the city lap is not here')
     t = cityTrack()
-    mx, my = t.x[:-1], t.y[:-1]
-    for key, (length, width, _), (x, y, _), heading in amalienborg():
-      c, s = math.cos(heading), math.sin(heading)
-      u = numpy.abs((mx - x) * c + (my - y) * s) - 0.5 * length
-      v = numpy.abs(-(mx - x) * s + (my - y) * c) - 0.5 * width
-      gap = numpy.hypot(numpy.maximum(u, 0.0), numpy.maximum(v, 0.0))
-      self.assertGreater(gap.min(), 25.0 if key in ('pedestal', 'bronze')
-                         else 7.0, key)
+    x0, y0, x1, y1 = sceneryBox()
+    self.assertTrue(x0 < t.x[0] < x1 and y0 < t.y[0] < y1)
+    pieces, pictures = cityScenery()
+    for piece in pieces:
+      self.assertLess(piece.picture, len(pictures))
+      self.assertLess(int(piece.triangles.max()), len(piece.xyz))
+      self.assertGreater(piece.uv.min(), -0.01)
+      self.assertLess(piece.uv.max(), 1.01)
+    corners = numpy.concatenate([piece.xyz for piece in pieces
+                                 if not piece.both]).astype(numpy.float64)
+    far, _ = cKDTree(numpy.stack((t.x, t.y), 1)).query(corners[:, :2])
+    near = corners[far < 2.0][::7]
+    terrain = cityGround().terrain
+    off = numpy.array([z - terrain.heightAt(float(x), float(y))
+                       for x, y, z in near])
+    self.assertGreater(len(off), 1000)
+    self.assertLess(numpy.percentile(numpy.abs(off), 99.0), 0.01)
+
+  def test_walls(self) -> None:
+    """Where the lap's files are: the town's walls ('cityWall') keep 2.5
+    m or more clear of the road's middle line all the way round (a
+    tree over it is overhead), stand where the houses do (a million
+    points of the grid and more), as tall as they stand (under 80 m)."""
+    from worQt.phys._city import cityGround, cityHere, cityTrack
+    if not cityHere():
+      self.skipTest('the city lap is not here')
+    t = cityTrack()
+    wall = cityGround().wall
+    worst = max(wall.beyond(float(x), float(y))[0]
+                for x, y in zip(t.x[::5], t.y[::5]))
+    self.assertLess(worst, -2.5)
+    self.assertGreater(int((wall.inside > 0.0).sum()), 1000000)
+    self.assertLess(wall.tallest(), 80.0)
+    self.assertGreater(wall.tallest(), 20.0)
 
   def test_drives_in_town(self) -> None:
     """Where the lap's file is: the city racer pulls away from the start
@@ -157,10 +259,10 @@ class TestCity(PhysTest):
     (within 4 m of its middle: it is drawn 5 m either side), slipping
     under 15 degrees (it slides the 90 degree corners: tyres are
     chaotic), never stranded."""
-    from worQt.phys._city import CITY_TRACK, cityCourse, cityGround
+    from worQt.phys._city import cityCourse, cityGround, cityHere
     from worQt.phys._city import realCarInCity
     from worQt.phys._realdriver import CityDriver
-    if not os.path.isfile(os.path.normpath(CITY_TRACK)):
+    if not cityHere():
       self.skipTest('the city lap is not here')
     controls = RealCarControls(BrakeLine(0.0), FourthWall(0.0),
                                TuneUp((WheelSetup(),) * len(CORNERS)),

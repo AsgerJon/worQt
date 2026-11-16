@@ -63,7 +63,8 @@ class RunWalkKeys(WidgetTest):
     window = WalkWindow()
     self.window = window
     names = [place.name for place in PLACES]
-    window.placeBox.setCurrentIndex(names.index('The real car'))
+    window.placeBox.setCurrentIndex(names.index(
+      'The real car, every part'))
     window.reset()
     self.showLive(window)
     self.waitUntil(lambda: window.clock > 1.0 or window.failed is not None,

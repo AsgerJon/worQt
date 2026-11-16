@@ -422,6 +422,43 @@ SHOW_TESTS = WARP_TESTS + ('tests.test_phys.test_realoval',
                            'tests.test_phys.run_city')
 
 
+#  Before the loop in the void (user, 2026-11-15: "a void world, like in
+#  skyblock, where there is only enough terrain for the loop de loop"):
+#  the track as a ribbon, the track drawn along it, the wheelset rolling
+#  on it (user: "some kinda vehicle?").
+LOOP_TESTS = ('tests.test_phys.test_ribbon',
+              'tests.test_phys.test_trackdress',
+              'tests.test_phys.test_wheelset',
+              'tests.test_phys.test_axlebox')
+
+
+SANDBOX_TESTS = ('tests.test_sandbox.test_universe',
+                 'tests.test_sandbox.test_world',
+                 'tests.test_sandbox.test_avatar',
+                 'tests.test_sandbox.test_hotbar',
+                 'tests.test_sandbox.test_gravitygun',
+                 'tests.test_sandbox.test_item',
+                 'tests.test_sandbox.test_gait',
+                 'tests.test_sandbox.test_vehicle',
+                 'tests.test_sandbox.test_mixer',
+                 'tests.test_sandbox.test_skin',
+                 'tests.test_sandbox.test_fourthpeep')
+TRAINS_TESTS = ('tests.test_trains.test_loopworld',
+                'tests.test_trains.test_minecart')
+
+
+def sandboxTests(*args, ) -> int:
+  """Runs 'SANDBOX_TESTS' and 'TRAINS_TESTS' (half a minute or so).
+  Returns 0 when all passed, 1 otherwise."""
+  return runTests(*SANDBOX_TESTS, *TRAINS_TESTS)
+
+
+def loopTests(*args, ) -> int:
+  """Runs 'LOOP_TESTS' (a minute or two). Returns 0 when all passed, 1
+  otherwise."""
+  return runTests(*LOOP_TESTS)
+
+
 def showTests(*args, ) -> int:
   """Runs 'SHOW_TESTS' (five minutes or so). Returns 0 when all passed,
   1 otherwise."""
@@ -748,6 +785,37 @@ def gpuProfile(*args, ) -> int:
             name,
             100.0 * cycles / total,
             1e6 * took / steps * cycles / total))
+  return 0
+
+
+def preloadKernels(*args, ) -> int:
+  """Starts loading the small steps' kernels for the GPU in a thread of
+  its own, and nothing else ('preloadGpu' lays out the oval and the city
+  too: the loop needs neither). The show waits for it
+  ('_preloadWaited'). Returns 0."""
+  import threading
+  import time
+
+  def ready() -> None:
+    """Compiles or loads the kernels, saying what and how long."""
+    began = time.perf_counter()
+    try:
+      from worQt.phys._compiled import gpuDevice
+      from worQt.phys._small_steps import preloaded
+      device = gpuDevice() or 'cpu'
+      print('[preload] the small steps\' kernels for %s: a minute or two '
+            'after a change, seconds from Warp\'s cache' % device,
+            flush=True)
+      preloaded(device)
+      print('[preload] the small steps\' kernels ready on %s (%.0f s)' % (
+          device, time.perf_counter() - began), flush=True)
+    except Exception as error:
+      print('[preload] failed: %s: %s' % (type(error).__name__, error),
+            flush=True)
+
+  thread = threading.Thread(target=ready, daemon=True)
+  thread.start()
+  _PRELOAD.append(thread)
   return 0
 
 
@@ -1583,6 +1651,60 @@ def cityShow(*args, ) -> int:
   return app.returnCode
 
 
+def loopShow(*args, ) -> int:
+  """Opens the walk at the loop in the void (user, 2026-11-15: "a void
+  world, like in skyblock, where there is only enough terrain for the
+  loop de loop"): the walker on a floating island at the head of the
+  track, 30 m up; down a 30 degree grade, once round a 10 m loop that
+  drifts 3 m sideways, up a climb to 32 m; nothing else but the track's
+  bed. Fall off and you are set back on the island. A wheelset rolls off
+  the head of the grade at once, down, round the loop, up the climb and
+  back, again and again (the rail world: R starts it over). Shown
+  without taking the focus.
+  Returns the exit code once its window closes. Waits first for a
+  preload, if one runs."""
+  _preloadWaited()
+  from PySide6.QtCore import Qt
+  from worQt.phys.gui import WalkApp
+  from worQt.phys.gui._walk import PLACES
+  with WalkApp(*sys.argv) as app:
+    window = app.window
+    window.placeBox.setCurrentIndex([place.name for place in PLACES].index(
+        'The loop'))
+    window.reset()
+    window.resize(1920, 1080)
+    window.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    window.show()
+  return app.returnCode
+
+
+def trainsShow(*args, ) -> int:
+  """Opens the trains (worQt.gaming.trains, on the sandbox): the loop's
+  world, your avatar on its island. Click to look round, W A S D walk,
+  Shift runs, Space jumps (twice: flies), E items, 1 to 9 the hotbar,
+  Esc lets the mouse go. Returns the exit code once its window
+  closes."""
+  from worQt.gaming.trains._trainsapp import TrainsApp
+  with TrainsApp(*sys.argv) as app:
+    app.window.resize(1920, 1080)
+    app.window.show()
+  return app.returnCode
+
+
+def sandboxShots(*args, ) -> int:
+  """Renders the sandbox's loop world with the GPU to
+  'previews/render-<view>-<variant>.png', as 'previews/render_sandbox.py'
+  does (each view in each shadow variant; a window shown a few seconds,
+  taking no focus), in a process of its own (it ends itself with
+  os._exit), and returns its exit code."""
+  import subprocess
+  env = dict(os.environ)
+  env['PYTHONPATH'] = src
+  env['PYTHONDONTWRITEBYTECODE'] = '1'
+  path = os.path.join(here, 'previews', 'render_sandbox.py')
+  return subprocess.run([sys.executable, path], env=env).returncode
+
+
 def drivetrainShow(*args, ) -> int:
   """Opens the walk at the drivetrain bench: an engine, the clutch, a
   five-speed transaxle with a dog-leg gate (R 2 4 forward, 1 3 5 back)
@@ -1797,4 +1919,7 @@ def trainRacer(*args, ) -> int:
 
 if __name__ == '__main__':
   # yolo(preloadGpu, showTests, cityShow, )
-  yolo(cityShow, )
+  # yolo(cityShow, )
+  # yolo(preloadKernels, loopTests, loopShow, )
+  # yolo(sandboxShots, )
+  yolo(trainsShow, )

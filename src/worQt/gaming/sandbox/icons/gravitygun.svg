@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The gravity gun's hotbar icon: a stubby ray gun of our own drawing,
+     a 3 painted on its side (user, 2026-11-15: "have a gun icon with the
+     number 3 attached to it. Then noone can accuse us of copying
+     valve"; 2026-11-16: "put the '3' inside the guns texture").
+     Apache-2.0, Copyright (c) 2026 Asger Jon Vistisen. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- grip -->
+  <path d="M16 36 L28 36 L24 56 Q23 59 20 59 L13 59 Q10 59 11 56 Z"
+        fill="#2b2f36" stroke="#14171b" stroke-width="1.5"/>
+  <!-- trigger guard -->
+  <path d="M27 38 Q34 38 33 46 L28 46" fill="none" stroke="#14171b"
+        stroke-width="2"/>
+  <!-- body -->
+  <rect x="4" y="16" width="42" height="21" rx="5" fill="#4a505b"
+        stroke="#14171b" stroke-width="1.5"/>
+  <!-- the 3, painted on the body -->
+  <text x="9" y="33" font-family="sans-serif" font-size="18"
+        font-weight="bold" fill="#ffd23f" stroke="#14171b"
+        stroke-width="1" paint-order="stroke">3</text>
+  <!-- glowing stripe -->
+  <rect x="23" y="24" width="18" height="5" rx="2" fill="#ff9a2e"/>
+  <!-- barrel and its prongs -->
+  <rect x="44" y="21" width="10" height="11" rx="2" fill="#363b44"
+        stroke="#14171b" stroke-width="1.5"/>
+  <path d="M54 20 L61 16 M54 26.5 L62 26.5 M54 33 L61 37" stroke="#ff9a2e"
+        stroke-width="2.5" stroke-linecap="round"/>
+</svg>

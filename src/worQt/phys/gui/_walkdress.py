@@ -9,7 +9,10 @@ lumps), its faces as the bodies lie now, tinted where a lump under them
 is; 'TyreDress', cord tyres' rubber over their hidden nodes;
 'RamDress', hydraulic rams as barrel and rod; 'HumpDress', the humps
 bolted across a turntable, turning with it; 'ParkedDress', the old car
-parked on the oval, dressed as its own window dresses it.
+parked on the oval, dressed as its own window dresses it; 'LinksDress',
+rods drawn between bodies' points (the stand-in car's links, drawing
+only); 'GaugeDress', the needle of the real car's speedometer, turned
+for its speed.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -58,6 +61,68 @@ class LegsDress:
     if not out:
       return {}
     return {'legs': numpy.array(out, numpy.float64).reshape(-1, 4, 6)}
+
+
+class GaugeDress:
+  """
+  GaugeDress draws the needle of the real car's speedometer on its dash
+  ('_gauge': user, 2026-11-15, "a diegetic one next to the steering
+  wheel"), turned for how fast body 'chassis' goes along its own
+  forward as 'states' have it, a thin round rod ('rodQuads') under the
+  key 'needle'.
+  """
+
+  around = None
+
+  def __init__(self, assembly: object, chassis: int) -> None:
+    self.assembly, self.chassis, self.tones = assembly, chassis, {}
+
+  def quads(self, states: tuple) -> dict[str, numpy.ndarray]:
+    """The 'quads' method returns the needle as 'states' have the car
+    (its speed in km/h, 'needleOf'), in the world."""
+    from .._gauge import HALF, needleOf
+    from .._vectors import conjugate, rotated
+    body, state = self.assembly.bodies[self.chassis], states[self.chassis]
+    ahead = rotated(conjugate(state.turn), state.velocity)[0]
+    tail, tip = needleOf(3.6 * ahead)
+    quads = rodQuads(body.placeOf(state, tail), body.placeOf(state, tip),
+                     HALF, 6)
+    return {'needle': numpy.array(quads, numpy.float64).reshape(-1, 4, 6)}
+
+
+class LinksDress:
+  """
+  LinksDress draws rods between two bodies' points as 'states' have the
+  bodies, drawing only (the stand-in car's wishbones, links, struts'
+  rods and half shafts: '_magiccar.magicLinks'): each link in 'links'
+  its first body and point (in its own frame), its second and point,
+  its radius, its key, and how far it reaches from the first's point
+  toward the second's (None: all the way), round ('rodQuads'), under
+  its key.
+  """
+
+  around = None
+
+  def __init__(self, assembly: object, links: tuple) -> None:
+    self.assembly, self.links, self.tones = assembly, tuple(links), {}
+
+  def quads(self, states: tuple) -> dict[str, numpy.ndarray]:
+    """The 'quads' method returns the rods as 'states' have the bodies,
+    by key: 'ROD_SIDES' quads a rod, a corner a row of its place and
+    normal."""
+    bodies = self.assembly.bodies
+    out = {}
+    for first, there, second, here, radius, key, reach in self.links:
+      start = bodies[first].placeOf(states[first], there)
+      end = bodies[second].placeOf(states[second], here)
+      if reach is not None:
+        way = minus(end, start)
+        length = norm(way)
+        if length > 0.0:
+          end = plus(start, scaled(way, min(1.0, reach / length)))
+      out.setdefault(key, []).extend(rodQuads(start, end, radius))
+    return {key: numpy.array(quads, numpy.float64).reshape(-1, 4, 6)
+            for key, quads in out.items() if quads}
 
 
 class CoilDress:

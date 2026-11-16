@@ -68,11 +68,21 @@ from .._realcar import FLYWHEEL_MASS, FOOT, Antilock, RealCarControls
 from .._realcar import realCar
 from .._realcar import realCarCoils
 from .._realcar import realCarFinishes
+from .._automatic import AutomaticDrive
+from .._magiccar import CARRIERS as MAGIC_CARRIERS
+from .._magiccar import CHASSIS as MAGIC_CHASSIS
+from .._magiccar import COLUMN as MAGIC_COLUMN
+from .._magiccar import WHEELS as MAGIC_WHEELS
+from .._magiccar import magicCar, magicCarCoils, magicCarFinishes
+from .._magiccar import magicLinks
 from .._carcass import TYRE_YARD, rimFinishes, tyreYard, wheelGiven
 from .._laps import LapTimer, lapText
-from .._city import CITY_TRACK, cityCourse, cityGround, cityTrack
-from .._city import realCarInCity, squareFinishes
-from .._crg import ATTRIBUTION
+from .._city import CITY_CREDIT, cityCourse, cityGround, cityHere
+from ..rail import RailWorld, loopRails, loopStage, loopTrack
+from ..rail import stageFinishes
+from ._trackdress import TrackDress
+from .._city import cityPictures, cityScenery, cityTrack, realCarInCity
+from .._city import sceneryBox
 from .._realdriver import CityDriver, RealCarRacer
 from .._realoval import ovalGround, parkedFinishes, realCarOnOval
 from .._carcass import wheelsOf
@@ -90,7 +100,8 @@ from ._toggle import Toggle
 from ._tune import TunePanel
 from ._steeringwheel import axleFinishes, columnFinish
 from ._walkdress import CoilDress, HumpDress, LegsDress, RamDress
-from ._walkdress import ParkedDress, SkinDress, TyreDress
+from ._walkdress import GaugeDress, LinksDress, ParkedDress, SkinDress
+from ._walkdress import TyreDress
 
 #  A frame steps the world on as long as it took since the last, but no
 #  less than half of 'FRAME' (s) nor more than two (slow frames slow it
@@ -170,7 +181,10 @@ class Place(NamedTuple):
   car parked on the oval), how the ground's terrain is drawn ('drawn':
   'oval', the oval's surfaces; 'crg', the city lap's road along its rows;
   None, the terrain's grid), and a credit its data asks to be shown
-  ('credit', in the readings: the city's heights). A place's ground may
+  ('credit', in the readings: the city's heights), and what rolls on
+  rails there ('rails': None, or a function of nothing returning a
+  track and the wheelset's body, for a 'RailWorld' round the small
+  steps: the loop). A place's ground may
   be a function returning it (the city's, seconds to lay out: made when
   the place is first chosen). Cord
   tyres
@@ -219,6 +233,7 @@ class Place(NamedTuple):
   extras: object = None
   drawn: str = None
   credit: str = None
+  rails: object = None
 
 
 class Ride(NamedTuple):
@@ -502,25 +517,42 @@ def _drivetrainBuilt() -> tuple:
 #  drivetrain), its looks (the soapbox's corners, the bench's
 #  drivetrain, the engine's block dark, the case glass: seen into, the
 #  gears turning; made opaque a while to spare the GPU, then back, the
-#  user, 2026-11-15: "bring back transparency"); its bodywork
-#  ('_bodyshell': user, 2026-11-15, "let's do something about our
-#  minecraft ass blocky car") a period's dark green, its intake's grille
-#  dark, its screen glass.
+#  user, 2026-11-15: "bring back transparency"; cast alloy again since
+#  the bodywork closed over it, 'test_car_geometry.test_inside': its
+#  glass was never seen and cost the GPU its sorted pass, user,
+#  2026-11-15, "phys still not at 100%"); its bodywork ('_bodyshell':
+#  user, 2026-11-15, "let's do something about our minecraft ass blocky
+#  car") a period's dark green, its intake's grille dark, its screen
+#  smoked, opaque (user, 2026-11-15: "the lotus needs no transparency":
+#  the car draws no glass at all).
 REALCAR = RealCarControls(BrakeLine(0.0), FourthWall(0.0),
                           TuneUp((WheelSetup(),) * len(CORNERS),
                                  FLYWHEEL_MASS),
                           DrivetrainControls(), Antilock())
+#  The stand-in car (user, 2026-11-15: "Create a copy of the car where you
+#  replace our physical parts with the equivalences at higher abstraction
+#  levels", "selectable defaulting to the new cheaper one"): its
+#  controls as the real car's, its drive a fake automatic ("audible
+#  only"), its anti-lock reading its own wheels ('_magiccar'); drawn in
+#  the real car's looks.
+MAGICCAR = RealCarControls(BrakeLine(0.0), FourthWall(0.0),
+                           TuneUp((WheelSetup(),) * len(CORNERS),
+                                  FLYWHEEL_MASS),
+                           AutomaticDrive(), Antilock(MAGIC_WHEELS))
 REALCAR_LOOKS = dict(SOAPBOX_LOOKS)
 REALCAR_LOOKS.update(DRIVETRAIN_LOOKS)
 REALCAR_LOOKS.update({
-  'case': (QColor(150, 215, 255, 85), 0.0, 0.1, False),
+  'case': (QColor(158, 160, 164), 0.4, 0.45, True, 'cast'),
   'paint': (QColor(20, 66, 44), 0.2, 0.3),
   'cockpit': (QColor(34, 32, 30), 0.0, 0.8),
   'coil': (QColor(26, 26, 28), 0.3, 0.4, True),
   'damper': (QColor(150, 152, 156), 0.5, 0.3, True),
   'tank': (QColor(176, 178, 182), 0.5, 0.35),
   'grille': (QColor(22, 22, 24), 0.4, 0.6),
-  'screen': (QColor(205, 228, 238, 60), 0.0, 0.05, False)})
+  'screen': (QColor(52, 60, 66), 0.2, 0.08, False),
+  'dial': (QColor(255, 255, 255), 0.0, 0.55, False, 'speedometer'),
+  'bezel': (QColor(220, 222, 226), 0.45, 0.12, True),
+  'needle': (QColor(255, 104, 36), 0.0, 0.45, False)})
 #  The oval's looks: the real car's, and the old car's parked by it (its
 #  own window's palette, each key 'old ' and its own; its rims gold, its
 #  tyres rubber).
@@ -528,15 +560,6 @@ OVAL_LOOKS = dict(REALCAR_LOOKS)
 OVAL_LOOKS.update({
   'old rim': (QColor(206, 164, 62), 0.3, 0.35),
   'old rubber': (QColor(36, 36, 40), 0.0, 0.9)})
-#  The city's looks: the real car's, and the palace square's (its
-#  palaces' warm grey plaster, their dark roofs, the statue's pale stone
-#  pedestal and green bronze).
-CITY_LOOKS = dict(REALCAR_LOOKS)
-CITY_LOOKS.update({
-  'palace': (QColor(222, 208, 178), 0.0, 0.85),
-  'roof': (QColor(64, 68, 72), 0.3, 0.6),
-  'pedestal': (QColor(196, 194, 188), 0.0, 0.7),
-  'bronze': (QColor(74, 122, 104), 0.6, 0.45)})
 
 
 def _realCarBuilt() -> tuple:
@@ -568,7 +591,7 @@ def _ovalFinishes(assembly: object) -> dict:
   """Returns how the real car and the old car parked by it are drawn
   ('_realCarFinishes', 'parkedFinishes')."""
   finishes = _realCarFinishes(assembly)
-  finishes.update(parkedFinishes())
+  finishes.update(parkedFinishes(assembly))
   return finishes
 
 
@@ -579,19 +602,10 @@ def _ovalRacer(assembly: object, controls: RealCarControls) -> object:
 
 def _cityBuilt() -> tuple:
   """Returns the real car anew at the city lap's start, its engine
-  idling in neutral, its brakes off, the palace square by it
-  ('realCarInCity')."""
+  idling in neutral, its brakes off ('realCarInCity')."""
   REALCAR.drive.reset()
   REALCAR.brakes.reset()
   return realCarInCity(REALCAR)
-
-
-def _cityFinishes(assembly: object) -> dict:
-  """Returns how the real car and the palace square are drawn
-  ('_realCarFinishes', 'squareFinishes')."""
-  finishes = _realCarFinishes(assembly)
-  finishes.update(squareFinishes())
-  return finishes
 
 
 def _cityRacer(assembly: object, controls: RealCarControls) -> object:
@@ -599,9 +613,70 @@ def _cityRacer(assembly: object, controls: RealCarControls) -> object:
   return CityDriver(assembly, controls, cityCourse())
 
 
+def _carExtras(assembly: object) -> tuple:
+  """Returns the real car's speedometer's needle ('GaugeDress'; its
+  dial drawn with the chassis)."""
+  return GaugeDress(assembly, _realcar.CHASSIS),
+
+
 def _ovalExtras(assembly: object) -> tuple:
-  """Returns the old car's dress as it stands parked ('ParkedDress')."""
-  return ParkedDress(),
+  """Returns the old car's dress as it stands parked ('ParkedDress'),
+  the real car's needle ('_carExtras')."""
+  return (ParkedDress(),) + _carExtras(assembly)
+
+
+def _magicCarBuilt() -> tuple:
+  """Returns the stand-in car anew ('magicCar'), in drive, idling, its
+  brakes off."""
+  MAGICCAR.drive.reset()
+  MAGICCAR.brakes.reset()
+  return magicCar(MAGICCAR)
+
+
+def _magicCarFinishes(assembly: object) -> dict:
+  """Returns how the stand-in car's bodies are drawn: as the real car's
+  ('magicCarFinishes'), its steering wheel and short column as the
+  steering bench's."""
+  finishes = dict(magicCarFinishes(assembly))
+  finishes[MAGIC_COLUMN] = columnFinish(_realcar.COLUMN_LENGTH)
+  return finishes
+
+
+def _magicCarExtras(assembly: object) -> tuple:
+  """Returns the stand-in car's links drawn ('LinksDress': its
+  wishbones, links, struts' rods and half shafts, drawing only) and its
+  speedometer's needle ('_carExtras')."""
+  return (LinksDress(assembly, magicLinks()),) + _carExtras(assembly)
+
+
+def _magicOvalBuilt() -> tuple:
+  """Returns the stand-in car anew on the oval's start, the old car
+  parked in the infield ('realCarOnOval')."""
+  MAGICCAR.drive.reset()
+  MAGICCAR.brakes.reset()
+  return realCarOnOval(MAGICCAR, magicCar)
+
+
+def _magicOvalFinishes(assembly: object) -> dict:
+  """Returns how the stand-in car and the old car parked by it are
+  drawn ('_magicCarFinishes', 'parkedFinishes')."""
+  finishes = _magicCarFinishes(assembly)
+  finishes.update(parkedFinishes(assembly))
+  return finishes
+
+
+def _magicOvalExtras(assembly: object) -> tuple:
+  """Returns the old car's dress, the stand-in car's links and its
+  needle."""
+  return (ParkedDress(),) + _magicCarExtras(assembly)
+
+
+def _magicCityBuilt() -> tuple:
+  """Returns the stand-in car anew at the city lap's start
+  ('realCarInCity')."""
+  MAGICCAR.drive.reset()
+  MAGICCAR.brakes.reset()
+  return realCarInCity(MAGICCAR, magicCar)
 
 
 def _soapboxBuilt() -> tuple:
@@ -660,7 +735,37 @@ def _wheelDressed() -> tuple:
 #  outer ring alone with three giant balls in
 #  its groove and one on the apron; none sleeping; the yard, the walker
 #  facing the crates, its many bodies let sleep.
-PLACES = (Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
+#  The loop in the void (user, 2026-11-15: "a void world, like in
+#  skyblock, where there is only enough terrain for the loop de loop"):
+#  the track's rails, sleepers and bed ('TrackDress'), the island's
+#  grass and dirt; how far under the loop's foot the walker falls before
+#  they are set back on the island, m.
+LOOP_LOOKS = {
+  'rail': (QColor(148, 150, 154), 0.9, 0.35),
+  'sleeper': (QColor(168, 166, 158), 0.0, 0.8),
+  'grass': (QColor(86, 128, 54), 0.0, 0.95),
+  'dirt': (QColor(112, 84, 58), 0.0, 1.0),
+  'wheelset': (QColor(122, 124, 128), 0.85, 0.4)}
+LOOP_FALL = -20.0
+
+
+@functools.lru_cache(maxsize=1)
+def _loopDress() -> TrackDress:
+  """Returns the loop's track drawn ('TrackDress'), made once."""
+  return TrackDress(loopTrack())
+
+
+def _loopExtras(assembly: object) -> tuple:
+  """Returns the loop's track, drawn beside the bodies."""
+  return (_loopDress(),)
+
+
+PLACES = (Place('The loop', loopStage, None, Grabber(), math.pi, 1.0,
+                None, oakBallGiven, None, 1.0, None, FULL, True, (),
+                RIG_STEP, False, LOOP_FALL, (), stageFinishes, LOOP_LOOKS,
+                'ball', 1, 0.0, None, None, None, None, None, None, None,
+                None, _loopExtras, None, None, loopRails),
+          Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
                 -0.5 * math.pi, 1.0, None, tyredGiven, None, 1.0, None,
                 FULL, True, (), TYRED_STEP, False, None, (),
                 tyredFinishes, TYRE_LOOKS, 'wheel'),
@@ -701,16 +806,35 @@ PLACES = (Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
                 (GEARBOX_CASE,), drivetrainFinishes, DRIVETRAIN_LOOKS,
                 'ball', 1, HINGE_GREASE, DRIVETRAIN.line, None, None, None,
                 None, DRIVETRAIN),
-          Place('The real car', _realCarBuilt, TYRE_YARD, Grabber(),
+          Place('The real car', _magicCarBuilt, TYRE_YARD, Grabber(),
                 math.pi, 1.0, None, oakBallGiven, None, 1.0, None, FULL,
-                True, (), RIG_STEP, False, None, (), _realCarFinishes,
+                True, (), RIG_STEP, False, None, (), _magicCarFinishes,
+                REALCAR_LOOKS, 'ball', 1, HINGE_GREASE, MAGICCAR.line,
+                magicCarCoils, MAGICCAR.steer, None, None, MAGICCAR.drive,
+                Ride(MAGIC_CHASSIS, _realcar.SEAT, MAGICCAR.tune,
+                     MAGIC_CARRIERS[:2], MAGICCAR.brakes), None,
+                _magicCarExtras),
+          Place('The real car, every part', _realCarBuilt, TYRE_YARD,
+                Grabber(), math.pi, 1.0, None, oakBallGiven, None, 1.0,
+                None, FULL, True, (), RIG_STEP, False, None, (),
+                _realCarFinishes,
                 REALCAR_LOOKS, 'ball', 1, HINGE_GREASE, REALCAR.line,
                 realCarCoils, REALCAR.steer, None, None, REALCAR.drive,
                 Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
-                     _realcar.KNUCKLES[:2], REALCAR.brakes)),
-          Place('The oval', _ovalBuilt, ovalGround(), Grabber(), math.pi,
-                1.0, None, oakBallGiven, None, 1.0, None, FULL, True, (),
-                RIG_STEP, False, None, (), _ovalFinishes, OVAL_LOOKS,
+                     _realcar.KNUCKLES[:2], REALCAR.brakes), None,
+                _carExtras),
+          Place('The oval', _magicOvalBuilt, ovalGround(), Grabber(),
+                math.pi, 1.0, None, oakBallGiven, None, 1.0, None, FULL,
+                True, (), RIG_STEP, False, None, (), _magicOvalFinishes,
+                OVAL_LOOKS, 'ball', 1, HINGE_GREASE, MAGICCAR.line,
+                magicCarCoils, MAGICCAR.steer, None, None, MAGICCAR.drive,
+                Ride(MAGIC_CHASSIS, _realcar.SEAT, MAGICCAR.tune,
+                     MAGIC_CARRIERS[:2], MAGICCAR.brakes),
+                _ovalRacer, _magicOvalExtras, 'oval'),
+          Place('The oval, every part', _ovalBuilt, ovalGround(),
+                Grabber(), math.pi, 1.0, None, oakBallGiven, None, 1.0,
+                None, FULL, True, (), RIG_STEP, False, None, (),
+                _ovalFinishes, OVAL_LOOKS,
                 'ball', 1, HINGE_GREASE, REALCAR.line, realCarCoils,
                 REALCAR.steer, None, None, REALCAR.drive,
                 Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
@@ -756,15 +880,23 @@ PLACES = (Place('The tyre yard', wheelYard, TYRE_YARD, Grabber(),
                 None, 1.0),
           Place('The yard', walkingYard, YARD_GROUND, Grabber(), math.pi,
                 1.0, Sleep(), oakBallGiven, None, 1.0)) + ((
-  Place('Copenhagen', _cityBuilt, cityGround, Grabber(), math.pi, 1.0,
-        None, oakBallGiven, None, 1.0, None, FULL, True, (), RIG_STEP,
-        False, None, (), _cityFinishes, CITY_LOOKS, 'ball', 1,
+  Place('Copenhagen', _magicCityBuilt, cityGround, Grabber(), math.pi,
+        1.0, None, oakBallGiven, None, 1.0, None, FULL, True, (), RIG_STEP,
+        False, None, (), _magicCarFinishes, REALCAR_LOOKS, 'ball', 1,
+        HINGE_GREASE, MAGICCAR.line, magicCarCoils, MAGICCAR.steer, None,
+        None, MAGICCAR.drive,
+        Ride(MAGIC_CHASSIS, _realcar.SEAT, MAGICCAR.tune,
+             MAGIC_CARRIERS[:2], MAGICCAR.brakes),
+        _cityRacer, _magicCarExtras, 'crg', CITY_CREDIT),
+  Place('Copenhagen, every part', _cityBuilt, cityGround, Grabber(),
+        math.pi, 1.0, None, oakBallGiven, None, 1.0, None, FULL, True, (),
+        RIG_STEP,
+        False, None, (), _realCarFinishes, REALCAR_LOOKS, 'ball', 1,
         HINGE_GREASE, REALCAR.line, realCarCoils, REALCAR.steer, None,
         None, REALCAR.drive,
         Ride(_realcar.CHASSIS, _realcar.SEAT, REALCAR.tune,
              _realcar.KNUCKLES[:2], REALCAR.brakes),
-        _cityRacer, None, 'crg', ATTRIBUTION),) if os.path.isfile(
-  os.path.normpath(CITY_TRACK)) else ())
+        _cityRacer, _carExtras, 'crg', CITY_CREDIT),) if cityHere() else ())
 
 
 
@@ -1154,7 +1286,8 @@ class WalkWindow(QMainWindow):
                                'toe (the car or rig is set up anew with '
                                'them)')
     self.soundButton = Toggle('Sound (M)', 'The drivetrain bench\'s engine '
-                              'heard: a V12, as AngeTheGreat\'s Engine '
+                              'heard: a twin cam four, as AngeTheGreat\'s '
+                              'Engine '
                               'Simulator hears one (its gas stepped in a '
                               'process of its own; the first time it '
                               'compiles a few seconds)', False)
@@ -1278,9 +1411,13 @@ class WalkWindow(QMainWindow):
     self.view.void = ground is None
     terrain = None if ground is None else ground.terrain
     self.view.terrain = terrain
-    self.view.wall = None if ground is None else ground.wall
+    town = place.drawn == 'crg'
+    self.view.wall = None if ground is None or town else ground.wall
     self.view.oval = terrain is not None and place.drawn == 'oval'
-    self.view.crg = cityTrack() if place.drawn == 'crg' else None
+    self.view.crg = cityTrack() if town else None
+    self.view.pictures = cityPictures() if town else ()
+    self.view.scenery = cityScenery() if town else None
+    self.view.sceneryBox = sceneryBox() if town else None
     self.view.glass = {index: MANA_GLASS for index in place.glass}
     self.view.finishLooks = {} if place.looks is None else place.looks
     self.giveButton.setText('Give %s' % place.gift)
@@ -1315,7 +1452,9 @@ class WalkWindow(QMainWindow):
     self.assembly, self.states = place.built()
     self.spawn = self.states[0]
     self.racer = None if place.racing is None else place.racing(
-      self.assembly, REALCAR)
+      self.assembly, RealCarControls(place.brake, place.steer,
+                                     place.ride.tune, place.drivetrain,
+                                     place.ride.brakes))
     self.lapTimer = LapTimer(0.0, None if self.racer is None else (
       self.racer.course))
     self.rescueAsked = False
@@ -1379,8 +1518,12 @@ class WalkWindow(QMainWindow):
       self.solver = 'small steps, %s%s' % (device, (
         ', whole GPU' if spread else ', one block') if device != 'cpu'
                                             else '')
-      return SmallSteps(GRAVITY, self.ground, place.small, place.passes,
-                        place.grease, device, THREADS, spread)
+      world = SmallSteps(GRAVITY, self.ground, place.small, place.passes,
+                         place.grease, device, THREADS, spread)
+      if place.rails is not None:
+        self.solver += ', rails on the CPU'
+        world = RailWorld(world, *place.rails())
+      return world
     self.solver = 'springs, %s' % fastestDevice()
     return World(GRAVITY, 1e-3, self.ground, None, True, place.sleeping,
                  fastestDevice(), place.fidelity)
@@ -2259,7 +2402,8 @@ class WalkWindow(QMainWindow):
     grabber points at within its reach (asleep or not, bodies keep their
     own tones; sat in a car, nothing: its ray was a tenth of a frame's
     work); returns what it points at. Sat in a car with the chase view
-    on, from behind it ('_chased')."""
+    on, from behind it ('_chased'). A place with a car to ride shows its
+    speed on the speedometer in the corner ('GpuView.speedometer')."""
     eyeStep, step = 1e-5 * self.place.scale, 1e-6 * self.place.scale
     hit = None
     if self.seated and self.view.chasing:
@@ -2278,6 +2422,13 @@ class WalkWindow(QMainWindow):
     if self.held is not None:
       tones[self.held] = _HELD_TONE
     self.view.tones = tones
+    ride = self.place.ride
+    if ride is None:
+      self.view.speedometer = None
+    else:
+      chassis = self.states[ride.chassis]
+      self.view.speedometer = 3.6 * rotated(conjugate(chassis.turn),
+                                            chassis.velocity)[0]
     self.view.show_(self.assembly, tuple(
       State(tuple(round(x / step) * step for x in state.place),
             tuple(round(x, 9) for x in state.turn), state.velocity,

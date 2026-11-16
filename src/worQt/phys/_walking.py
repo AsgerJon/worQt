@@ -155,27 +155,32 @@ class Walker(NamedTuple):
     return State(state.place, state.turn, velocity, (0.0, 0.0, 0.0),
                  state.bristles, state.holds, 0.0)
 
-  def jumped(self, body: Body, state: State) -> tuple[State, Vector]:
+  def jumped(self, body: Body, state: State,
+             gravity: float = 9.81) -> tuple[State, Vector]:
     """The 'jumped' method returns the ball in 'state' as the legs leave
     it jumping, and the impulse they gave it, N s: straight up, as hard
-    as rises 'jump' m (what it stood on is pushed down as hard)."""
-    impulse = (0.0, 0.0, body.mass * math.sqrt(2.0 * 9.81 * self.jump))
+    as rises 'jump' m under 'gravity' m/s² (what it stood on is pushed
+    down as hard)."""
+    impulse = (0.0, 0.0, body.mass * math.sqrt(2.0 * gravity * self.jump))
     return poked(body, state, state.place, impulse), impulse
 
   def standingOn(self, assembly: Assembly, states: tuple[State, ...],
-                 index: int, ground: object = None) -> tuple | None:
+                 index: int, ground: object = None,
+                 level: bool = True) -> tuple | None:
     """The 'standingOn' method returns what the walker (body 'index' of
     'assembly' in 'states') stands on: (None, point) the ground (level at
     nought, or the terrain of 'ground' if it has one: on the oval's
-    banking, user, 2026-11-15; measured along its normal there), (body,
-    point) a body, the point where it holds them up; None while in the
-    air (their ball nowhere within '_STANDING' of anything under it)."""
+    banking, user, 2026-11-15; measured along its normal there; with no
+    'ground' and not 'level', none: the void), (body, point) a body, the
+    point where it holds them up; None while in the air (their ball
+    nowhere within '_STANDING' of anything under it)."""
     state = states[index]
     x, y, z = state.place
     terrain = None if ground is None else ground.terrain
     base, up = (0.0, 1.0) if terrain is None else (
       terrain.heightAt(x, y), terrain.normalAt(x, y)[2])
-    if (z - base) * up <= self.radius + _STANDING:
+    floored = level or terrain is not None
+    if floored and (z - base) * up <= self.radius + _STANDING:
       return None, (x, y, base)
     passed = tuple(
       other for other, (body, there) in enumerate(zip(assembly.bodies,

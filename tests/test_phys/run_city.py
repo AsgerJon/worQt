@@ -3,8 +3,9 @@ RunCity covers the walk window in town (user, 2026-11-15: uncannyball's
 lap of central Copenhagen): where the lap's file is, the real car at its
 start, the walker sat in it, the city driver at its wheel ('Robot hands'
 on): it pulls away along the lap, the readings saying so, the lap it
-runs and the height data's credit (its maker's terms); the road drawn
-along its rows ('crg'), the palace square drawn in its finishes; V the
+runs and the data's credit (its maker's terms); the road drawn along
+its rows in its photographs ('crg', 'pictures'), the houses round the
+start in theirs ('scenery'); V the
 chase view (user, 2026-11-15: "more camera views like chase where the
 mouse can look around, like in GTA V"): the camera behind the car and
 over it, level, a look turned away easing back behind as the car goes,
@@ -16,7 +17,6 @@ printed; every time here is the car's own.
 from __future__ import annotations
 
 import math
-import os
 import time
 
 from PySide6.QtCore import QEvent, Qt
@@ -24,9 +24,8 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
 from worQt.phys import norm, rotated
-from worQt.phys._city import CITY_TRACK, squareFirst
+from worQt.phys._city import CITY_CREDIT, cityHere
 from worQt.phys._realcar import CHASSIS
-from worQt.phys._crg import ATTRIBUTION
 from worQt.phys.gui._walk import CHASE_DISTANCE, CHASE_LIFT, PLACES
 from worQt.phys.gui._walk import WalkWindow
 from worQt.qtest import WidgetTest
@@ -53,7 +52,7 @@ class RunCity(WidgetTest):
   def opened(self, ) -> WalkWindow:
     """Returns the walk window in town, shown, its physics going (a
     second of the car's time); skipped where the lap's file is not."""
-    if not os.path.isfile(os.path.normpath(CITY_TRACK)):
+    if not cityHere():
       self.skipTest('the city lap is not here')
     window = WalkWindow()
     self.window = window
@@ -110,19 +109,20 @@ class RunCity(WidgetTest):
   def run_drives(self) -> None:
     """The city driver drives at once: in ten seconds of the car's it is
     50 m round or more; the readings say who drives, the lap and the
-    credit; the road and the square are drawn; its share of real time
-    printed."""
+    credit; the road and the houses are drawn in their photographs; its
+    share of real time printed."""
     window = self.opened()
     self.assertTrue(window.robotHands)
     self.assertIsNotNone(window.view.crg)
-    self.assertIn(squareFirst(), window.view.finishes)
+    self.assertTrue(window.view.pictures)
+    self.assertIsNotNone(window.view.scenery)
     until = window.clock + 10.0
     self.waitUntil(lambda: window.clock >= until
                    or window.failed is not None, 600000)
     self.assertIsNone(window.failed)
     self.assertGreater(window.racer.along, 50.0)
     lines = window.status.text().split('\n')
-    for start in ('robot driving', 'lap 1 ', ATTRIBUTION[:20]):
+    for start in ('robot driving', 'lap 1 ', CITY_CREDIT[:20]):
       self.assertTrue(any(line.startswith(start) for line in lines),
                       (start, lines))
     print('the real car in town on %s: %.0f %% of real time, %.1f m/s' % (
