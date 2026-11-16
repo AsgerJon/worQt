@@ -27,12 +27,12 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
   from . import windows
 
 __all__ = (
-  'ClassBodyTemplate',
-  'mixin',
-  'qtest',
-  'layouts',
-  'widgets',
-  'windows',
+    'ClassBodyTemplate',
+    'mixin',
+    'qtest',
+    'layouts',
+    'widgets',
+    'windows',
 )
 
 _LAZY_PACKAGES = ('mixin', 'qtest', 'layouts', 'widgets', 'windows')
