@@ -218,3 +218,92 @@ def _clipped(polygon: list, normal: numpy.ndarray, offset: float) -> list:
       out.append((place + t * (after - place),
                   turned + t * (afterTurned - turned)))
   return out
+
+
+#  The model's baked animation ('scene-motion'): its rods and valve gear
+#  go round once every 'TURN_SECONDS' (the coupling rod's pin a circle
+#  of the cranks' throw), the right crank (the model's '_l') ahead at
+#  nought and going down (the engine running ahead); keyed every 1/30 s
+#  over two turns.
+TURN_SECONDS = 2.0
+
+
+def _sampled(doc: dict, binary: bytes, sampler: dict, at: float) -> tuple:
+  """Returns a glTF animation 'sampler''s value at time 'at' (linear;
+  rotations normalized after)."""
+  times = _accessed(doc, binary, sampler['input']).ravel()
+  values = _accessed(doc, binary, sampler['output'])
+  values = values.reshape(len(times), -1).astype(numpy.float64)
+  if at <= times[0]:
+    return values[0]
+  if at >= times[-1]:
+    return values[-1]
+  k = int(numpy.searchsorted(times, at)) - 1
+  share = (at - times[k]) / (times[k + 1] - times[k])
+  one, two = values[k], values[k + 1]
+  if len(one) == 4 and float(one @ two) < 0.0:
+    two = -two
+  out = one + share * (two - one)
+  return out / numpy.linalg.norm(out) if len(out) == 4 else out
+
+
+@functools.lru_cache(maxsize=4)
+def modelMotion(names: tuple, path: Path = MODEL) -> tuple:
+  """The 'modelMotion' function returns how the model's baked animation
+  moves its parts 'names' over one turn (made once): (the turn's key
+  times, s, from nought to 'TURN_SECONDS', and {name: one move a key,
+  (turn: 3 x 3, shift: 3)}), each a move of the engine's own frame (x
+  ahead, y left, z up, as 'modelParts' puts the parts) taking the part
+  as it stands at rest to where it is at that time."""
+  data = Path(path).read_bytes()
+  length, _ = struct.unpack_from('<I4s', data, 12)
+  doc = json.loads(data[20:20 + length])
+  rest = 20 + length
+  size, _ = struct.unpack_from('<I4s', data, rest)
+  binary = data[rest + 8:rest + 8 + size]
+  nodes = doc['nodes']
+  parent = {child: index for index, node in enumerate(nodes)
+            for child in node.get('children', ())}
+  animation = doc['animations'][0]
+  channels = {}
+  for channel in animation['channels']:
+    target = channel['target']
+    channels.setdefault(target['node'], {})[target['path']] = (
+      animation['samplers'][channel['sampler']])
+
+  def local(index: int, at: float) -> numpy.ndarray:
+    node, keyed = dict(nodes[index]), channels.get(index, {})
+    for key in ('translation', 'rotation', 'scale'):
+      if key in keyed:
+        node[key] = tuple(_sampled(doc, binary, keyed[key], at))
+    if keyed:
+      node.pop('matrix', None)
+    return _matrixOf(node)
+
+  def placed(index: int, at: float) -> numpy.ndarray:
+    out = local(index, at)
+    while index in parent:
+      index = parent[index]
+      out = local(index, at) @ out
+    return out
+
+  main = next(k for k, node in enumerate(nodes)
+              if node.get('name') == MAIN_PART)
+  origin = placed(main, 0.0)[:3, 3]
+  engine = numpy.zeros((4, 4))
+  engine[0, 2] = engine[1, 0] = engine[2, 1] = engine[3, 3] = 1.0
+  engine[:3, 3] = -origin[[2, 0, 1]] + numpy.array((0.0, 0.0, origin[1]))
+  times = numpy.linspace(0.0, TURN_SECONDS, int(round(30 * TURN_SECONDS))
+                         + 1)
+  out = {}
+  for name in names:
+    index = next(k for k, node in enumerate(nodes)
+                 if node.get('name') == name)
+    still = numpy.linalg.inv(placed(index, 0.0))
+    moves = []
+    for at in times:
+      move = engine @ placed(index, float(at)) @ still @ numpy.linalg.inv(
+        engine)
+      moves.append((move[:3, :3].copy(), move[:3, 3].copy()))
+    out[name] = moves
+  return times, out

@@ -49,7 +49,9 @@ class TestHandPicture(BilliardsWidgetTest):
     sent = [cueBackAt(0.76 + 0.02 * k, wait, most) for k in range(13)]
     steps = [a - b for a, b in zip(sent, sent[1:])]
     self.assertTrue(all(b > a > 0.0 for a, b in zip(steps, steps[1:])))
-    self.assertAlmostEqual(cueBackAt(wait - 1e-9, wait, most), 0.0, 6)
+    #  A nanosecond before it meets the ball it is still its speed, 833
+    #  mm/s, times that back: 8e-7 mm, which six places do not hide.
+    self.assertAlmostEqual(cueBackAt(wait - 1e-9, wait, most), 0.0, 5)
     self.assertEqual(cueBackAt(wait, wait, most), 0.0)
     through = [cueBackAt(wait + 0.01 * k, wait, most) for k in range(16)]
     self.assertTrue(all(b < a for a, b in zip(through, through[1:])))

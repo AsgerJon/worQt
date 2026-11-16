@@ -35,8 +35,10 @@ class World:
   step) and the 'vehicles' in it ('addVehicle': each puts its bodies
   in). A drawn body may be dressed ('dressedWith': meshes of its own,
   each its look: a model's parts, 'dressed') instead of drawn as its
-  shape. Bodies are 'fixed' (held still: the world's own, their indices
-  in 'still') or 'spawned' (free); bodies already in are joined by a
+  shape, and carry parts moving on it ('posedWith': each drawn where a
+  call of its owner's puts it every frame, 'posed': a valve gear).
+  Bodies are 'fixed' (held still: the world's own, their indices in
+  'still') or 'spawned' (free); bodies already in are joined by a
   connection ('connected': a tie, an axlebox) and let go again
   ('loosened'). Once 'start'ed it steps itself on a
   thread of its own, each step as long as the real time passed, never
@@ -73,6 +75,7 @@ class World:
   vehicles: list
   peeps: list
   dressed: dict
+  posed: dict
   time: float
   trouble: str
   loading: str
@@ -89,7 +92,7 @@ class World:
     self.still, self.looks = frozenset(), dict(self.LOOKS)
     self.actors, self.time, self.trouble = [], 0.0, None
     self.vehicles, self.placings, self.peeps = [], {}, []
-    self.dressed = {}
+    self.dressed, self.posed = {}, {}
     self.loading, self.share, self.took = None, 1.0, 0.0
     self.solver, self._shown = None, (self.assembly, (), 0.0)
     self._lock = threading.RLock()
@@ -158,6 +161,23 @@ class World:
       dressed = dict(self.dressed)
       dressed[index] = tuple(parts)
       self.dressed, self.drawn = dressed, dict(self.drawn)
+      self._shown = self.assembly, self.states, self.time
+
+  def posedWith(self, index: int, parts: tuple, looks: dict,
+                poser: object) -> None:
+    """The 'posedWith' method has body 'index' carry 'parts' moving on
+    it (each (rows, indices, look) as 'dressedWith' takes them, about
+    the body's centre as they stand at rest), 'looks' adding any it
+    names; each frame 'poser(states)' (called on the drawing's thread
+    with the world's last states) returns where each part is now, one
+    (place, turn) a part in the body's own frame about its centre: the
+    part as it stands at rest, turned by 'turn' about that centre, then
+    moved by 'place'."""
+    with self._lock:
+      self.looks.update(looks)
+      posed = dict(self.posed)
+      posed[index] = (tuple(parts), poser)
+      self.posed, self.drawn = posed, dict(self.drawn)
       self._shown = self.assembly, self.states, self.time
 
   def connected(self, connection: object) -> None:

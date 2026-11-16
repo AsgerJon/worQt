@@ -182,12 +182,13 @@ class Walker(NamedTuple):
     floored = level or terrain is not None
     if floored and (z - base) * up <= self.radius + _STANDING:
       return None, (x, y, base)
+    near = self.radius + _STANDING
     passed = tuple(
       other for other, (body, there) in enumerate(zip(assembly.bodies,
                                                       states))
       if other == index or body.shape is None
-      or norm(minus(there.place, state.place))
-      > self.radius + reachOf(body) + _STANDING)
+      or (there.place[0] - x) ** 2 + (there.place[1] - y) ** 2
+      + (there.place[2] - z) ** 2 > (near + reachOf(body)) ** 2)
     if len(passed) == len(states):
       return None
     for way in _FEET:

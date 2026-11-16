@@ -53,7 +53,8 @@ def shut(app: object) -> None:
 
 
 def main() -> int:
-  """The 'main' function opens the billiard room, walking, and returns
+  """The 'main' function opens the billiard room, walking, its window
+  filling the screen ('show' first: it builds the window), and returns
   its exit code once its window closes (tried for 'KEGLEBILLARD_SMOKE'
   seconds when set)."""
   smoke = float(os.environ.get('KEGLEBILLARD_SMOKE', '0') or 0.0)
@@ -64,6 +65,7 @@ def main() -> int:
   from worQt.gaming.billiards.gui import BilliardsApp
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
+    app.window.showMaximized()
     app.window.startWalking()
     if smoke:
       QTimer.singleShot(int(1000.0 * smoke), lambda: shut(app))

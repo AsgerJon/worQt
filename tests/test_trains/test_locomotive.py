@@ -13,7 +13,8 @@ valves admit steam the way the gear runs the engine, for the first
 backs; the brake (a train brake: every vehicle's shoes) slows it; a
 tender shoved off its rails is taken off, the world going on, and put
 back as it was made; dressed in the model where the model is (the
-tender's corridor cut through it), the coaches in their own dress.
+tender's corridor cut through it), the coaches in their own dress; the
+valve gear moving as the model's animation, set by the right crank.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -29,8 +30,8 @@ from worQt.phys._vectors import rotated
 from worQt.gaming.trains._locomotive import CORRIDOR_FLOOR, CORRIDOR_HALF
 from worQt.gaming.trains._locomotive import CORRIDOR_HIGH, CORRIDOR_LOOKS
 from worQt.gaming.trains._locomotive import CRANKS, CUTOFF, TENDER_ENDS
-from worQt.gaming.trains._locomotive import Locomotive
-from worQt.gaming.trains._model import MODEL
+from worQt.gaming.trains._locomotive import VALVE_PARTS, Locomotive
+from worQt.gaming.trains._model import MODEL, modelMotion
 from worQt.gaming.trains._coach import Coach
 
 from . import TrainsTest
@@ -206,3 +207,29 @@ class TestLocomotive(TrainsTest):
                 & (middles[:, 0] > back) & (middles[:, 0] < front))
       with self.subTest(look=look):
         self.assertFalse(inside.any())
+
+  def test_valve_gear(self) -> None:
+    """Where the model is, the valve gear moves on the engine as the
+    model's animation moves it, its time set by the right crank: at
+    rest as built; a quarter turn ahead (the right crank pin down) as
+    the animation a quarter turn in; a whole turn as at rest."""
+    if not MODEL.is_file():
+      self.skipTest('the model is not here (it is not in git)')
+    world = self.ovalWorld()
+    engine = world.vehicles[0]
+    parts, poser = world.posed[engine.frame]
+    self.assertEqual(len(parts), len(engine._gearOwners))
+    times, moves = modelMotion(VALVE_PARTS)
+    centre = numpy.array(world.assembly.bodies[engine.frame].centre)
+    quarter = len(times) // 4
+    for angle, key in ((0.0, 0), (-0.5 * math.pi, quarter),
+                       (-2.0 * math.pi, 0)):
+      engine.crankOf = lambda states, side, angle=angle: angle
+      poses = poser(world.states)
+      for mesh, owner in enumerate(engine._gearOwners):
+        turn, shift = moves[VALVE_PARTS[owner]][key]
+        wanted = turn @ centre + shift - centre
+        with self.subTest(angle=angle, mesh=mesh):
+          self.assertLess(float(numpy.abs(numpy.array(poses[mesh][0])
+                                          - wanted).max()), 1e-6)
+

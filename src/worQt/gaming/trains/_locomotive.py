@@ -39,7 +39,8 @@ from worQt.gaming.sandbox._vehicle import Vehicle
 
 from ._coupling import CarEnd, carApart
 from ._dress import boxQuads, partsOf
-from ._model import MODEL, carvedOut, modelParts
+from ._model import MODEL, TURN_SECONDS, carvedOut, modelMotion
+from ._model import modelParts
 from ._offrails import putBack, tookOff
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -171,13 +172,16 @@ TRAIN_LAW = (1e6, 1.0, 0.5, 1e6, 2e3, 0.2)
 #  ahead, y down, z to the left), as columns.
 WHEEL_AXES = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))
 #  Which of the model's parts each body wears: the engine's (the frame,
-#  the boiler and the rest that do not move on it, the valve gear drawn
-#  where it stands), the bogie's, the tender's.
+#  the boiler and the rest that do not move on it, the expansion links
+#  (the model keeps them still)), the bogie's, the tender's; the valve
+#  gear moving on the engine as the model's own animation moves it, its
+#  turn set by the right crank's ('_valveGear').
 ENGINE_PARTS = ('frame', 'cylinders', 'boiler', 'smokebox', 'chimney',
-                'domes', 'cab', 'brakes', 'drawbar', 'combination_lever_l',
-                'combination_lever_r', 'valve_rod_l', 'valve_rod_r',
-                'radius_rod_l', 'radius_rod_r', 'expansion_link_l',
-                'expansion_link_r', 'eccentric_rod_l', 'eccentric_rod_r')
+                'domes', 'cab', 'brakes', 'drawbar', 'expansion_link_l',
+                'expansion_link_r')
+VALVE_PARTS = ('combination_lever_l', 'combination_lever_r', 'valve_rod_l',
+               'valve_rod_r', 'radius_rod_l', 'radius_rod_r',
+               'eccentric_rod_l', 'eccentric_rod_r')
 TENDER_PARTS = ('tender_frame', 'tender_body', 'tender_coal')
 WHEEL_PARTS = ('driver_1', 'driver_2', 'driver_3', 'trailing_wheel',
                'bogie_wheel_1', 'bogie_wheel_2', 'tender_wheel_1',
@@ -400,7 +404,7 @@ class Locomotive(Vehicle):
     self.wheelsets, self.boxes, self.rods = (), (), ()
     self.crossheads, self.steam, self.tender = {}, {}, None
     self._locals = {}
-    self.train, self.off = (), {}
+    self.train, self.off, self._gearOwners = (), {}, ()
     self.regulator = self.reverser = self.brake = None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -711,6 +715,40 @@ class Locomotive(Vehicle):
       if index == self.tender:
         worn += corridorParts(bodies[index].centre)
       self.world.dressedWith(index, worn, {**looks, **CORRIDOR_LOOKS})
+    centre = bodies[self.frame].centre
+    gear, owners = [], []
+    for k, name in enumerate(VALVE_PARTS):
+      for mesh in _worn([parts[name]], (0.0, 0.0, 0.0), None, centre):
+        gear.append(mesh)
+        owners.append(k)
+    self._gearOwners = tuple(owners)
+    self.world.posedWith(self.frame, tuple(gear), looks, self._valveGear)
+
+  def _valveGear(self, states: tuple) -> tuple:
+    """Returns where each mesh of the valve gear is now, on the engine
+    (one (place, turn) a mesh, about the engine's centre): the model's
+    animation ('_model.modelMotion') at the point of its turn the right
+    crank's angle says (its pin ahead at nought, the animation's time
+    running as the engine runs ahead), between its keys by share."""
+    times, moves = modelMotion(VALVE_PARTS)
+    angle = self.crankOf(states, -1.0)
+    at = (-angle / math.pi * 0.5 * TURN_SECONDS) % TURN_SECONDS
+    step = times[1] - times[0]
+    key = min(int(at / step), len(times) - 2)
+    share = (at - times[key]) / step
+    centre = numpy.array(self.world.assembly.bodies[self.frame].centre)
+    poses = []
+    for name in VALVE_PARTS:
+      (one, shift), (two, then) = moves[name][key], moves[name][key + 1]
+      turned = one + share * (two - one)
+      u, _, v = numpy.linalg.svd(turned)
+      turned = u @ v
+      moved = shift + share * (then - shift)
+      place = turned @ centre + moved - centre
+      poses.append((tuple(float(x) for x in place),
+                    turnOf(tuple(tuple(float(x) for x in row)
+                                 for row in turned))))
+    return tuple(poses[owner] for owner in self._gearOwners)
 
   def _levered(self, name: str, pivot: tuple, prompts: tuple) -> FourthPeep:
     """Returns a lever working 'name' at 'pivot' on the engine (thrown

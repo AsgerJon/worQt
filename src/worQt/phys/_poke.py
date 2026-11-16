@@ -127,14 +127,28 @@ def rotorSpinOf(motor: object, states: tuple[State, ...]) -> float:
   return dot(spin, axis)
 
 
+#  The reaches worked out, by the shape's identity: {id: (shape, centre,
+#  reach)} (a shape is a tuple of hundreds of corners: hashing it each
+#  time cost more than the answer; a solid track asks hundreds a frame).
+_REACHES: dict = {}
+
+
 def reachOf(body: Body) -> float:
   """The 'reachOf' function returns how far the shape of 'body' reaches
   from its centre of mass, m: the ball about the centre holding it
-  whole; nought for a body with no shape."""
-  return _reachOf(body.shape, body.centre)
+  whole; nought for a body with no shape. Worked out once a shape and
+  centre."""
+  shape, centre = body.shape, body.centre
+  kept = _REACHES.get(id(shape))
+  if kept is not None and kept[0] is shape and kept[1] == centre:
+    return kept[2]
+  if len(_REACHES) > 8192:
+    _REACHES.clear()
+  reach = _reachOf(shape, centre)
+  _REACHES[id(shape)] = (shape, centre, reach)
+  return reach
 
 
-@functools.lru_cache(maxsize=4096)
 def _reachOf(shape: object, centre: Vector) -> float:
   """Returns how far 'shape' reaches from 'centre'."""
   if shape is None:

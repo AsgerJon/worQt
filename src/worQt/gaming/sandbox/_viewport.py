@@ -83,6 +83,7 @@ class Viewport(QWidget):
     self.component, self.problems, self.loaded = None, (), False
     self._world, self._assembly, self._drawn = None, None, None
     self._kept, self._rows, self._pushed = [], {}, []
+    self._poses = ()
     self._hotbar, self._inHand, self._glowing = None, False, None
     self._figure, self._chased = None, None
     self._camera, self._prompt = None, None
@@ -151,6 +152,8 @@ class Viewport(QWidget):
                                 for state in states])
     root.setProperty('turns', [QQuaternion(*state.turn)
                                for state in states])
+    if self._poses:
+      self._posesShown(root, world, states)
     self._camera = eye, forward
     root.setProperty('cameraPlace', QVector3D(*_sceneOf(eye)))
     root.setProperty('cameraTurn', _turnAlong(forward, up))
@@ -430,8 +433,34 @@ class Viewport(QWidget):
       mesh = Mesh(*kept[1])
       meshes.append(mesh)
       out.append(_lookOf(world, look, {'geometry': mesh, 'body': index}))
+    slots = []
+    for index, (parts, _) in sorted(world.posed.items()):
+      for part, (rows, indices, look) in enumerate(parts):
+        mesh = Mesh(rows, indices)
+        meshes.append(mesh)
+        out.append(_lookOf(world, look, {'geometry': mesh, 'body': index,
+                                         'pose': len(slots)}))
+        slots.append((index, part))
+    self._poses = tuple(slots)
     self._pushed = (self._pushed + [meshes])[-KEPT_PUSHES:]
     return out
+
+  def _posesShown(self, root: object, world: World, states: tuple) -> None:
+    """Puts each posed part ('World.posedWith') where its owner's call
+    has it now: its body's place and turn, then its own in that body's
+    frame."""
+    asked, places, turns = {}, [], []
+    for index, part in self._poses:
+      if index not in asked:
+        asked[index] = world.posed[index][1](states)
+      place, turn = asked[index][part]
+      state = states[index]
+      body = QQuaternion(*state.turn)
+      moved = body.rotatedVector(QVector3D(*place))
+      places.append(QVector3D(*state.place) + moved)
+      turns.append(body * QQuaternion(*turn))
+    root.setProperty('posePlaces', places)
+    root.setProperty('poseTurns', turns)
 
 
 def _lookOf(world: World, look: str, entry: dict) -> dict:

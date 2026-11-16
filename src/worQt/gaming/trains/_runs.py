@@ -9,9 +9,10 @@ nothing and returns an exit code, nought when all went well.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
+
+from worQt.gaming._gamescope import scopedModule
 
 #  The tests the trains stand on: the sandbox's, the trains', the
 #  rail's (the ribbon, its dress, the wheelset, the axlebox, the points).
@@ -38,11 +39,6 @@ RAIL_TESTS = ('tests.test_phys.test_ribbon',
               'tests.test_phys.test_axlebox',
               'tests.test_phys.test_turnout',
               'tests.test_phys.test_crankpin')
-#  gamescope's options for the shows: its Wayland backend (a window on
-#  the desktop) as large as the window inside it, the window filling
-#  it.
-GAMESCOPE = ('--backend', 'wayland', '-w', '1920', '-h', '1080', '-W',
-             '1920', '-H', '1080', '--force-windows-fullscreen')
 
 
 def trainsTests() -> int:
@@ -129,27 +125,7 @@ def _previewed(name: str) -> int:
 
 
 def _scoped(*args: str) -> int:
-  """Runs 'python -m worQt.gaming.trains <args>' in a process of its own,
-  'src' on its path, and returns its exit code. On a Wayland desktop it
-  runs inside gamescope ('GAMESCOPE': a small compositor of its own,
-  seen in a window on the desktop; click into it): Wayland lets no
-  program move or hold the pointer, but gamescope's own X server lets
-  the sandbox put it back in the middle, and while the sandbox hides it
-  (looking round) gamescope locks the desktop's pointer to its window;
-  shown again (the menu, Esc) it is free to leave. Without gamescope
-  there it says so and opens straight on the desktop, where the
-  pointer can leave the window."""
-  root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))))))
-  env = dict(os.environ)
-  env['PYTHONPATH'] = os.path.join(root, 'src')
-  env['PYTHONDONTWRITEBYTECODE'] = '1'
-  command = [sys.executable, '-m', 'worQt.gaming.trains', *args]
-  scope = shutil.which('gamescope')
-  if env.get('WAYLAND_DISPLAY') and scope is None:
-    print('[trains] no gamescope found: the window opens straight on the '
-          'Wayland desktop, where the pointer can leave it', flush=True)
-  elif env.get('WAYLAND_DISPLAY'):
-    env['QT_QPA_PLATFORM'] = 'xcb'
-    command = [scope, *GAMESCOPE, '--'] + command
-  return subprocess.run(command, env=env).returncode
+  """Runs 'python -m worQt.gaming.trains <args>' in a process of its own
+  inside gamescope on Wayland ('worQt.gaming._gamescope.scopedModule',
+  shared with the space's shows), and returns its exit code."""
+  return scopedModule('worQt.gaming.trains', *args)

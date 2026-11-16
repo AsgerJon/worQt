@@ -29,6 +29,9 @@ Item {
   property var bodies: []
   property var places: []
   property var turns: []
+  //  Parts moving on a body (a valve gear): each its own place and turn
+  property var posePlaces: []
+  property var poseTurns: []
   //  The camera (the scene's: cm, y up), its near cut, cm; the sun's
   //  and the sky light's turns (each shining along its own -z)
   property vector3d cameraPlace: Qt.vector3d(0, 0, 0)
@@ -398,10 +401,18 @@ Item {
           property Texture picture: Texture {
             source: bodyModel.modelData.picture || ""
           }
+          property int pose: modelData.pose === undefined ? -1
+                             : modelData.pose
           geometry: modelData.geometry
-          position: modelData.body < root.places.length
+          position: pose >= 0 ? (pose < root.posePlaces.length
+                                 ? root.posePlaces[pose]
+                                 : Qt.vector3d(0, 0, 0))
+                    : modelData.body < root.places.length
                     ? root.places[modelData.body] : Qt.vector3d(0, 0, 0)
-          rotation: modelData.body < root.turns.length
+          rotation: pose >= 0 ? (pose < root.poseTurns.length
+                                 ? root.poseTurns[pose]
+                                 : Qt.quaternion(1, 0, 0, 0))
+                    : modelData.body < root.turns.length
                     ? root.turns[modelData.body] : Qt.quaternion(1, 0, 0, 0)
           materials: PrincipledMaterial {
             baseColor: modelData.body === root.heldBody ? root.heldTint
