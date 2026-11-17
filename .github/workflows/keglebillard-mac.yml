@@ -65,9 +65,91 @@ jobs:
             smoke.png
           if-no-files-found: ignore
 
+      #  The app carries Qt Quick 3D (under the GNU GPL version 3 alone),
+      #  so the disk image takes every licence along and says where the
+      #  source is. PySide6's wheels bring no licence texts: the two GNU
+      #  ones are fetched, and the build stops without them.
+      - name: Gather the licences
+        id: licences
+        run: |
+          mkdir -p dmg/Licenses
+          curl -fsSL --retry 3 https://www.gnu.org/licenses/gpl-3.0.txt \
+            -o dmg/Licenses/GPL-3.0.txt
+          curl -fsSL --retry 3 https://www.gnu.org/licenses/lgpl-3.0.txt \
+            -o dmg/Licenses/LGPL-3.0.txt
+          python - "keglebillard-${{ github.run_number }}" <<'EOF'
+          from __future__ import annotations
+
+          import os
+          import shutil
+          import sys
+          import sysconfig
+          from importlib import metadata
+          from pathlib import Path
+
+          OUT: Path = Path('dmg/Licenses')
+          TAG: str = sys.argv[1]
+          CARRIED: tuple[str, ...] = ('pyside6', 'shiboken6', 'numpy',
+                                      'warp-lang', 'worktoy')
+          NAMED: tuple[str, ...] = ('licen', 'copying', 'notice')
+
+
+          def kept(target: Path, source: Path) -> None:
+            """Copy 'source' to 'target', making its folder first"""
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(source, target)
+
+
+          def gathered(name: str) -> str:
+            """Copy a distribution's licence files, return its version"""
+            for file in metadata.distribution(name).files or ():
+              parts = file.parts
+              if len(parts) < 2 or not parts[0].endswith('.dist-info'):
+                continue
+              low = file.name.lower()
+              if 'licenses' in parts or any(w in low for w in NAMED):
+                kept(OUT / name / Path(*parts[1:]), Path(file.locate()))
+            return metadata.version(name)
+
+
+          for text in ('GPL-3.0.txt', 'LGPL-3.0.txt'):
+            head = (OUT / text).read_text()[:2000]
+            if 'GENERAL PUBLIC LICENSE' not in head:
+              raise SystemExit('%s is not the licence text' % text)
+          kept(OUT / 'worQt' / 'LICENSE', Path('LICENSE'))
+          python = Path(sysconfig.get_path('stdlib')) / 'LICENSE.txt'
+          if python.is_file():
+            kept(OUT / 'Python' / 'LICENSE.txt', python)
+          versions = {'Python': '%d.%d.%d' % sys.version_info[:3]}
+          versions.update((name, gathered(name)) for name in CARRIED)
+          note = """Keglebillard
+
+          Keglebillard's own code (worQt) is under the Apache License
+          2.0 (worQt/LICENSE). Its source is at
+          https://github.com/AsgerJon/worQt/tree/%s
+
+          The app carries Qt and Qt for Python (PySide6 %s), among
+          them Qt Quick 3D, which is under the GNU General Public
+          License version 3 alone. The app as a whole is therefore
+          handed out under the GNU General Public License version 3
+          (GPL-3.0.txt). The rest of Qt and PySide6 is under the GNU
+          Lesser General Public License version 3 (LGPL-3.0.txt).
+          Their source is at https://code.qt.io (qt/qt5.git and
+          pyside/pyside-setup.git).
+
+          Carried, each under its own licence (in the folder of its
+          name where it brought a licence file along):
+          %s
+          """ % (TAG, versions['pyside6'], '\n'.join(
+            '  %s %s' % item for item in versions.items()))
+          (OUT / 'README.txt').write_text(note)
+          print(note)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('pyside=%s\n' % versions['pyside6'])
+          EOF
+
       - name: Make the disk image
         run: |
-          mkdir dmg
           cp -R dist/Keglebillard.app dmg/
           ln -s /Applications dmg/Applications
           hdiutil create -volname Keglebillard -srcfolder dmg -ov \
@@ -100,3 +182,14 @@ jobs:
             the mouse, walk over to the kegler table and press E.
             The first shot takes a few seconds longer: the physics is
             readied once.
+
+            Licences: Keglebillard's own code is under the Apache
+            License 2.0, and its source is this repository at this
+            release's tag. The app carries Qt and Qt for Python
+            (PySide6 ${{ steps.licences.outputs.pyside }}), among them
+            Qt Quick 3D, which is under the GNU General Public License
+            version 3 alone, so the app as a whole is handed out under
+            the GNU General Public License version 3. Every licence is
+            in the Licenses folder of the disk image. The source of Qt
+            and PySide6 is at https://code.qt.io (qt/qt5.git and
+            pyside/pyside-setup.git).
