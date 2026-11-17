@@ -16,7 +16,7 @@ import numpy
 
 from ._cabin import capsuleShell
 from ._looks import RING_INNER, RING_OUTER
-from ._vessel import CAPSULE, CENTRE, LEGS, PLUG, RADIUS, SIZE, TANK
+from ._vessel import CENTRE, LEGS, PLUG, RADIUS, SIZE, TANK
 
 TAU = 2.0 * math.pi
 #  The ground's cap: how far round it reaches (rad: ~1900 km on Terra),

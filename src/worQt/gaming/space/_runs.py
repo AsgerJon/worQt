@@ -33,6 +33,9 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_accelerometer',
                'tests.test_space.test_cabinworld',
                'tests.test_space.test_vitals',
+               'tests.test_space.test_bolts',
+               'tests.test_space.test_station',
+               'tests.test_space.test_docking',
                'tests.test_sandbox.test_peepkinds')
 
 
@@ -49,10 +52,10 @@ def spaceShow() -> int:
   (the mouse kept in the window): the creative rocket on Terra's pad,
   the solar system as it stands today. Shift opens the throttle, Z at
   once; T holds the turn; A D, W S, Q E steer; M the map; , and . warp
-  (above the air, the engine shut); K and L the cabin's gravity; Y and U
-  the engine's limit (g); B gets Asger up (W A S D, Space) and sits him
-  again (dead: wakes him); he eats at the rations' crate by the kitchen
-  (look, click). Returns the window's exit code once it closes."""
+  (above the air, the engine shut); Y and U the engine's limit (g); B
+  gets Asger up (W A S D, Space) and sits him again (dead: wakes him);
+  he eats at the rations' crate by the kitchen (look, click). Returns
+  the window's exit code once it closes."""
   return scopedModule('worQt.gaming.space')
 
 

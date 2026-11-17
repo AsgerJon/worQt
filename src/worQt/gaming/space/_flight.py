@@ -160,6 +160,8 @@ class Flight:
       row[k.HEIGHT] = norm(vessel.place) - system.bodies[
         vessel.anchor].radius
       row[k.PUSH] = vessel.engine.push
+      row[k.RCS:k.RCS + 3] = vessel.rcs
+      row[k.MATCH_SPIN:k.MATCH_SPIN + 3] = vessel.autopilot.spin
       row[k.STEER:k.STEER + 3] = vessel.steer
       row[k.MODE] = vessel.autopilot.index
       pilot = vessel.autopilot

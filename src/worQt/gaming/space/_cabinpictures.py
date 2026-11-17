@@ -4,8 +4,7 @@ cache (user, 2026-11-16: "Have the rest of it have the contents of a
 camping cabin. Not a fire place, but the same ... 'hygge'"): the walls'
 pine planks, the floor's oak boards, a braided rag rug, a knitted
 blanket; and the warp knob's enchantment glint ("give it a sort of
-enchantment glint, as it is kinda... magic") and the gravity knob's,
-more of it (2026-11-17: "And has lots o glint"). Each tiles: its right
+enchantment glint, as it is kinda... magic"). Each tiles: its right
 edge meets its left, its top its foot. And the rations' print (2026-11-17:
 "an endless supply of RCIR from the French armed forces"): their sand
 card stencilled in black, no mark of anyone's.
@@ -20,7 +19,7 @@ import random
 from ._looks import cacheFolder
 
 #  The pictures' version (a change paints them anew) and sizes, pixels.
-VERSION = 6
+VERSION = 7
 SIZE = 512
 #  How many m one picture of each covers (its tile).
 PINE_TILE = 1.2
@@ -29,15 +28,13 @@ BOARD_TILE = 1.6
 
 def cabinPicturesReady() -> dict:
   """Returns the cabin's pictures' files by name ('pine', 'boards',
-  'rug', 'blanket', 'glint', 'sparkle', 'rcir'), painted if not kept
-  yet."""
+  'rug', 'blanket', 'glint', 'rcir'), painted if not kept yet."""
   folder = cacheFolder()
   folder.mkdir(parents=True, exist_ok=True)
   out = {}
   for name, painter in (('pine', pinePainted), ('boards', boardsPainted),
                         ('rug', rugPainted), ('blanket', blanketPainted),
                         ('glint', glintPainted),
-                        ('sparkle', sparklePainted),
                         ('rcir', rcirPainted)):
     target = folder / ('cabin-%s-%d.png' % (name, VERSION))
     if not target.exists() and not painter().save(str(target)):
@@ -182,55 +179,6 @@ def glintPainted() -> object:
       gradient.setColorAt(1.0, QColor(0, 0, 0))
       painter.setBrush(gradient)
       painter.drawRect(QRectF(x0, -SIZE, wide * SIZE, 2.0 * SIZE))
-  painter.end()
-  return image
-
-
-def sparklePainted() -> object:
-  """Returns the gravity knob's glint, "lots o glint": violet and pale
-  gold streaks slanting both ways across black, twice as many, and
-  sparks of light among them (each tiles)."""
-  from PySide6.QtCore import QPointF, QRectF
-  from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter
-  from PySide6.QtGui import QRadialGradient
-  image = QImage(SIZE, SIZE, QImage.Format.Format_RGB32)
-  image.fill(QColor(0, 0, 0))
-  painter = QPainter(image)
-  painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-  painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-  painter.setPen(QColor(0, 0, 0, 0))
-  for slant, streaks, tint in ((25.0, ((0.02, 0.2, 1.0), (0.3, 0.08, 0.8),
-                                       (0.48, 0.14, 0.95),
-                                       (0.74, 0.1, 0.7)), (205, 120, 255)),
-                               (-35.0, ((0.12, 0.12, 0.7),
-                                        (0.6, 0.16, 0.8)),
-                                (255, 214, 140))):
-    painter.save()
-    painter.translate(0.5 * SIZE, 0.5 * SIZE)
-    painter.rotate(slant)
-    for start, wide, bright in streaks:
-      for shift in (-2.0, -1.0, 0.0, 1.0):
-        x0 = (start + shift) * SIZE
-        gradient = QLinearGradient(QPointF(x0, 0),
-                                   QPointF(x0 + wide * SIZE, 0))
-        gradient.setColorAt(0.0, QColor(0, 0, 0))
-        gradient.setColorAt(0.5, QColor(*(int(c * bright) for c in tint)))
-        gradient.setColorAt(1.0, QColor(0, 0, 0))
-        painter.setBrush(gradient)
-        painter.drawRect(QRectF(x0, -SIZE, wide * SIZE, 2.0 * SIZE))
-    painter.restore()
-  sparks = random.Random(1981)
-  for _ in range(70):
-    x, y = sparks.uniform(0, SIZE), sparks.uniform(0, SIZE)
-    radius = sparks.uniform(3.0, 9.0)
-    for dx in (-SIZE, 0.0, SIZE):
-      for dy in (-SIZE, 0.0, SIZE):
-        glow = QRadialGradient(QPointF(x + dx, y + dy), radius)
-        glow.setColorAt(0.0, QColor(255, 250, 255))
-        glow.setColorAt(0.35, QColor(220, 170, 255))
-        glow.setColorAt(1.0, QColor(0, 0, 0))
-        painter.setBrush(glow)
-        painter.drawEllipse(QPointF(x + dx, y + dy), radius, radius)
   painter.end()
   return image
 

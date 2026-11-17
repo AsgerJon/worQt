@@ -23,7 +23,7 @@ from ._dashboard import DIAL_SCALES, LEGENDS, dialAngle, dialShare
 from ._looks import cacheFolder
 
 #  The pictures' versions (a change paints them anew) and sizes, pixels.
-VERSION = 9
+VERSION = 11
 FACE = (2048, 1280)
 DIAL = 512
 CELL = (256, 128)
@@ -33,22 +33,19 @@ WARP_MARKS = ('1', '5', '10', '50', '100', '1K', '10K', '100K')
 #  The orbit knob's notches, as printed round it: the guidance's targets,
 #  km.
 ORBIT_MARKS = tuple('%d' % (target / 1e3) for target in TARGETS)
-#  The gravity knob's notches, g (user, 2026-11-17: "going from 0 - 1 and
-#  measures in g's").
-GRAVITY_MARKS = ('0',) + tuple('.%d' % k for k in range(1, 10)) + ('1',)
 #  The engine's limiter's notches, g (user, 2026-11-17: "restricts the
 #  engine output to a particular g, for example 1").
 LIMIT_MARKS = ('\u00bc', '\u00bd', '\u00be', '1', '1\u00bd', '2', '3',
                '4')
 #  Each knob's marks and its unit, by its action.
 KNOB_MARKS = {'warp': (WARP_MARKS, ''), 'orbit': (ORBIT_MARKS, '  KM'),
-              'gravity': (GRAVITY_MARKS, '  G'),
               'limit': (LIMIT_MARKS, '  G')}
 #  The keys' faces' names (the panel's and the consoles').
 KEY_NAMES = tuple(name for name, _, _, _ in KEYS + CONSOLE_KEYS
                   + DECK_KEYS)
 #  The keys' symbols (the deck's).
-SYMBOLS = {'PLAY': '▶', 'STOP': '■', 'EJECT': '⏏'}
+SYMBOLS = {'PLAY': '▶', 'STOP': '■', 'EJECT': '⏏', 'UP': '▲',
+           'DOWN': '▼', 'LEFT': '◀', 'RIGHT': '▶'}
 
 
 def picturesReady() -> dict:

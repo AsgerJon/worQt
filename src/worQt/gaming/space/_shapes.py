@@ -153,7 +153,8 @@ def frustumRows(base: tuple, axis: tuple, low: float, high: float,
   for k in range(sides):
     a, b = 2 * k, 2 * k + 2
     faces.extend((a, b, b + 1, a, b + 1, a + 1))
-  for centre, radius, normal in ((base, low, -axis), (top, high, axis)):
+  for centre, radius, normal, turning in ((base, low, -axis, -1),
+                                          (top, high, axis, 1)):
     middle = len(rows)
     rows.append(tuple(centre) + tuple(normal) + _NO_PICTURE)
     for k in range(sides + 1):
@@ -162,7 +163,9 @@ def frustumRows(base: tuple, axis: tuple, low: float, high: float,
       rows.append(tuple(centre + radius * way) + tuple(normal)
                   + _NO_PICTURE)
     for k in range(sides):
-      faces.extend((middle, middle + 1 + k, middle + 2 + k))
+      one, two = middle + 1 + k, middle + 2 + k
+      faces.extend((middle, one, two) if turning > 0 else (middle, two,
+                                                           one))
   return numpy.array(rows), numpy.array(faces, numpy.uint32)
 
 

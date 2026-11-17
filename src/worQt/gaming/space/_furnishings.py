@@ -107,15 +107,18 @@ def looseThings() -> tuple:
   return tuple(thing[:5] for thing in _built()[2])
 
 
+@functools.lru_cache(maxsize=1)
 def looseParts() -> tuple:
-  """Returns the loose things' meshes, one a look of each: the thing's
-  index, the look, its rows about the thing's middle (the vessel's own
-  axes, as it rests) and triangles."""
+  """Returns the loose things' meshes, one a look of each (worked out
+  once: the scenery asks for them every frame): the thing's index, the
+  look, its rows about the thing's middle (the vessel's own axes, as it
+  rests; read-only) and triangles."""
   out = []
   for k, thing in enumerate(_built()[2]):
     for look, (rows, faces) in thing[5]:
       about = numpy.array(rows, numpy.float64)
       about[:, :3] -= numpy.array(thing[1])
+      about.flags.writeable = False
       out.append((k, look, about, faces))
   return tuple(out)
 
@@ -177,8 +180,8 @@ def _upright(middle: tuple, half: tuple, look: str, mesh: tuple) -> tuple:
 
 def _sofa(room: tuple) -> None:
   """A three seat sofa against the wall: its base, back, arms, seat and
-  back cushions, the knitted blanket over its arm; two throw pillows,
-  loose on its seat against its back."""
+  back cushions, the knitted blanket over its arm (solid: a pillow rests
+  on it); two throw pillows, loose on its seat against its back."""
   put, solid, block, loose = room
   s = SOFA
   block('sofa', s, 0.0, 0.0, 0.21, (1.1, 0.42, 0.21))
@@ -189,9 +192,9 @@ def _sofa(room: tuple) -> None:
     block('cream', s, k * 0.62, 0.05, 0.49, (0.3, 0.34, 0.07))
     block('cream', s, k * 0.62, -0.2, 0.68, (0.29, 0.08, 0.18))
   block('blanket', s, 0.82, 0.08, 0.57, (0.26, 0.36, 0.012),
-        (0.0, 0.0, 1.0, 1.0), False)
+        (0.0, 0.0, 1.0, 1.0))
   block('blanket', s, 0.82, 0.43, 0.38, (0.26, 0.012, 0.2),
-        (0.0, 0.0, 1.0, 1.0), False)
+        (0.0, 0.0, 1.0, 1.0))
   for along, high, half in ((-0.72, 0.722, (0.16, 0.06, 0.16)),
                             (0.75, 0.734, (0.15, 0.06, 0.15))):
     toward = -0.12 + half[1] + 0.002

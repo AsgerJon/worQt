@@ -92,7 +92,8 @@ class TestInstruments(SpaceTest):
     kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
     lit = {name: on for (name, _), on in zip(LAMPS, kit.lamps)}
     self.assertEqual(lit, {'ENGINE': False, 'AIR': True, 'GROUND': True,
-                           'WARP': False, 'GUIDE': False, 'ORBIT': False})
+                           'WARP': False, 'GUIDE': False, 'ORBIT': False,
+                           'DOCK': False})
     self.assertEqual(kit.relays, 2)
     vessel = self.orbiting(system, 300e3, 300e3)
     kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')

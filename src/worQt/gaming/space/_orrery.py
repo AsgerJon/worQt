@@ -34,6 +34,10 @@ CROWDED = 14.0
 #  A mark's colours.
 BODY_COLOUR = '#cfd8e6'
 VESSEL_COLOUR = '#7dff9a'
+#  A satellite's mark (the space station's), and what marks it (no body:
+#  not looked at by a click).
+SATELLITE_COLOUR = '#ff8be0'
+SATELLITE_MARK = -3
 APSIS_COLOUR = '#ffd36b'
 #  The vessel's path: points along it; a hyperbola drawn out this many
 #  times its periapsis.
@@ -128,8 +132,9 @@ class Orrery:
               wide: float, high: float) -> list:
     """The 'marksOf' method returns the marks over the map, each a dict:
     where on the view (x, y pixels), its 'text', 'colour' and what it
-    marks ('index': a body's, -1 the vessel, -2 an apsis); a moon's
-    left out when it crowds its planet's."""
+    marks ('index': a body's, -1 the vessel, -2 an apsis, -3 a
+    satellite: the space station); a moon's left out when it crowds its
+    planet's."""
     eye, forward, up = self.eyeOf(vessel, system, t)
     seen = {}
     out = []
@@ -144,6 +149,14 @@ class Orrery:
       seen[index] = at
       out.append({'x': at[0], 'y': at[1], 'text': body.name,
                   'colour': BODY_COLOUR, 'index': index})
+    for satellite in system.satellites:
+      parent = system.bodies.index(satellite.parent)
+      place = tuple(a + b for a, b in zip(system.relative(
+        parent, vessel.anchor, t)[0], satellite.stateAt(t)[0]))
+      at = self.screenOf(place, eye, forward, up, wide, high)
+      if at is not None:
+        out.append({'x': at[0], 'y': at[1], 'text': satellite.name,
+                    'colour': SATELLITE_COLOUR, 'index': SATELLITE_MARK})
     at = self.screenOf(vessel.place, eye, forward, up, wide, high)
     if at is not None:
       out.append({'x': at[0], 'y': at[1], 'text': 'You',

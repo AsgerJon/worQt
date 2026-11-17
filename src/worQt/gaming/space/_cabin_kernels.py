@@ -2,8 +2,7 @@
 The Warp kernels that step the cabin's loose bodies (user, 2026-11-17:
 Asger getting up and floating round in micro-gravity, "FAFO rules"; the
 loose things too): in the vessel's own axes, which move and turn, so
-each body feels what is felt there (the vessel's push, its turning)
-and the gravity enchantment's pull toward the floor.
+each body feels what is felt there (the vessel's push, its turning).
 
 Two launches a small step: 'pressed' (a thread a point) finds where
 each body's points meet the cabin (its floor, its cone of a wall, its
@@ -75,6 +74,15 @@ AIR_ASGER = _single(0.01)
 #  way in), s, and at most how hard, m/s².
 LEGS_TIME = _single(0.1)
 LEGS_MOST = _single(40.0)
+#  The gravity gun pulling him to a magic bolt (user, 2026-11-17: "The
+#  gravity gun can pull Asger towards them"): no faster than 'TOW_SPEED'
+#  m/s, slowing at 'TOW_BRAKE' m/s² to stop where it holds him, brought
+#  to the speed it wants most of the way in 'TOW_TIME' s, at most
+#  'TOW_MOST' m/s² (past four g: it holds him under the engine).
+TOW_SPEED = _single(6.0)
+TOW_BRAKE = _single(6.0)
+TOW_TIME = _single(0.15)
+TOW_MOST = _single(60.0)
 
 
 @wp.func
@@ -141,13 +149,17 @@ def boxDepth(point: wp.vec3, radius: float, middle: wp.vec3,
 
 @wp.func
 def thudOf(depth: float, closing: float, before: int, heft: float,
-           thuds: wp.array(dtype=wp.float32)) -> int:
+           thuds: wp.array(dtype=wp.float32), body: int,
+           landing: wp.array(dtype=wp.float32)) -> int:
   """Counts a thud on a meeting begun closing fast ('before': the point
   touched nothing the step before), its loudness by its speed and heft;
-  returns one (it touches)."""
+  Asger's (body nought) meetings begun keep the fastest in 'landing' (it
+  hurts him); returns one (it touches)."""
   if before == 0 and -closing > THUD:
     wp.atomic_add(thuds, 0, 1.0)
     wp.atomic_max(thuds, 1, -closing * wp.min(1.0, wp.sqrt(heft / 20.0)))
+  if before == 0 and body == 0:
+    wp.atomic_max(landing, 0, -closing)
   return 1
 
 
@@ -169,13 +181,14 @@ def pressed(places: wp.array(dtype=wp.vec3),
             twists: wp.array(dtype=wp.vec3),
             asger: wp.array(dtype=wp.vec3),
             thuds: wp.array(dtype=wp.float32),
+            landing: wp.array(dtype=wp.float32),
             up: wp.vec3, present: int, legs: int):
   """Pushes each point (a thread a point) out of what it is in: the
   floor, the ceiling, the wall, the solids, the other bodies' boxes
   (their share pushed back); counts Asger's meetings ('asger' 0: their
   count in x, 1: their normals summed: he touches what is within 'NEAR'
-  of him; his legs at work ('legs'), they hold him, not the rubbing)
-  and the thuds."""
+  of him; his legs or the gun at work ('legs'), they hold him, not the
+  rubbing), the fastest he met anything ('landing') and the thuds."""
   i = wp.tid()
   body = owners[i]
   middle = places[body]
@@ -204,14 +217,16 @@ def pressed(places: wp.array(dtype=wp.vec3),
   depth = radius - (point[2] - CABIN_FLOOR)
   if depth > 0.0:
     normal = wp.vec3(0.0, 0.0, 1.0)
-    touching = thudOf(depth, wp.dot(moving, normal), before, heft, thuds)
+    touching = thudOf(depth, wp.dot(moving, normal), before, heft,
+                       thuds, body, landing)
     normals = normals + normal
     if depth > margin:
       push = push + meetingPush(depth - margin, normal, moving, heft, grip)
   depth = radius - (CABIN_TOP - point[2])
   if depth > 0.0:
     normal = wp.vec3(0.0, 0.0, -1.0)
-    touching = thudOf(depth, wp.dot(moving, normal), before, heft, thuds)
+    touching = thudOf(depth, wp.dot(moving, normal), before, heft,
+                       thuds, body, landing)
     normals = normals + normal
     if depth > margin:
       push = push + meetingPush(depth - margin, normal, moving, heft, grip)
@@ -223,7 +238,8 @@ def pressed(places: wp.array(dtype=wp.vec3),
     normal = wp.vec3(-point[0] / across * CABIN_LEAN,
                      -point[1] / across * CABIN_LEAN,
                      CABIN_SLOPE * CABIN_LEAN)
-    touching = thudOf(depth, wp.dot(moving, normal), before, heft, thuds)
+    touching = thudOf(depth, wp.dot(moving, normal), before, heft,
+                       thuds, body, landing)
     normals = normals + normal
     if depth > margin:
       push = push + meetingPush(depth - margin, normal, moving, heft, grip)
@@ -234,7 +250,7 @@ def pressed(places: wp.array(dtype=wp.vec3),
       if met[3] > 0.0:
         normal = wp.vec3(met[0], met[1], met[2])
         touching = thudOf(met[3], wp.dot(moving, normal), before, heft,
-                          thuds)
+                          thuds, body, landing)
         normals = normals + normal
         if met[3] > margin:
           push = push + meetingPush(met[3] - margin, normal, moving, heft,
@@ -252,7 +268,7 @@ def pressed(places: wp.array(dtype=wp.vec3),
                                                 meeting - there)
           shared = heft * masses[other] / (heft + masses[other])
           touching = thudOf(met[3], wp.dot(moving - theirs, normal),
-                            before, shared, thuds)
+                            before, shared, thuds, body, landing)
           normals = normals + normal
           if met[3] > margin:
             metPush = meetingPush(met[3] - margin, normal, moving - theirs,
@@ -284,17 +300,18 @@ def moved(places: wp.array(dtype=wp.vec3),
           asger: wp.array(dtype=wp.vec3),
           met: wp.array(dtype=wp.vec3),
           felt: wp.vec3, turning: wp.vec3, speeding: wp.vec3,
-          enchanted: wp.vec3, wanted: wp.vec3, leap: wp.vec3,
+          wanted: wp.vec3, leap: wp.vec3,
           up: wp.vec3, walking: int, wanting: int, present: int,
-          step: float):
+          towTo: wp.vec3, towing: int, sure: int, step: float):
   """Moves each body (a thread a body) a 'step' on: pushed, and feeling
   the vessel's push 'felt' (its own axes: what it feels, thrust, drag
   and the ground; gravity it does not), its turning ('turning', rad/s)
-  and its turning faster ('speeding', rad/s²) and the enchantment's
-  pull ('enchanted'); Asger also by his legs ('wanted', 'walking',
-  'wanting', a 'leap' once) while he touches something (his meetings
-  kept in 'met' for the host). Its pushes are spent (made nought for
-  the next step)."""
+  and its turning faster ('speeding', rad/s²); Asger also by his
+  legs ('wanted', 'walking', 'wanting', a 'leap' once) while he touches
+  something ('sure': the leap whether or not: a push off a magic bolt),
+  or by the gravity gun pulling him to 'towTo' ('towing') instead (his
+  meetings kept in 'met' for the host). Its pushes are spent (made
+  nought for the next step)."""
   b = wp.tid()
   push = pushes[b]
   twist = twists[b]
@@ -308,16 +325,28 @@ def moved(places: wp.array(dtype=wp.vec3),
   place = places[b]
   velocity = velocities[b]
   feel = (push / heft - felt - wp.cross(turning, wp.cross(turning, place))
-          - 2.0 * wp.cross(turning, velocity) - wp.cross(speeding, place)
-          + enchanted)
+          - 2.0 * wp.cross(turning, velocity) - wp.cross(speeding, place))
   if b == 0:
     touching = asger[0][0] > 0.0
     met[0] = asger[0]
     met[1] = asger[1]
     asger[0] = wp.vec3(0.0, 0.0, 0.0)
     asger[1] = wp.vec3(0.0, 0.0, 0.0)
-    if touching:
+    if touching or sure == 1:
       velocity = velocity + leap
+    if towing == 1:
+      off = towTo - place
+      far = wp.length(off)
+      wish = wp.vec3(0.0, 0.0, 0.0)
+      if far > 1.0e-4:
+        wish = off * (wp.min(TOW_SPEED, wp.sqrt(2.0 * TOW_BRAKE * far))
+                      / far)
+      gun = (wish - velocity) / TOW_TIME
+      size = wp.length(gun)
+      if size > TOW_MOST:
+        gun = gun * (TOW_MOST / size)
+      feel = feel + gun
+    elif touching:
       legs = (wanted - velocity) / LEGS_TIME
       if walking == 1:
         along = velocity - wp.dot(velocity, up) * up

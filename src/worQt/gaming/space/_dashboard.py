@@ -25,7 +25,8 @@ from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 
 from ._cockpit import BAT_LONG, BALL_RADIUS, CONSOLE_AXES
 from ._cockpit import CONSOLE_KEY_HALF, CONSOLE_SWITCHES, DIAL_RADIUS
-from ._cockpit import DIALS, FLOOR, FRAME, GLASS, GLOBE_AT, GLOBE_AXES
+from ._cockpit import DIALS, EYE, FLOOR, FRAME, GLASS, GLOBE_AT
+from ._cockpit import GLOBE_AXES
 from ._cockpit import GUARD_KNOB, GUARD_SWITCH, KEY_HALF, LAMP_RADIUS
 from ._cockpit import LAMPS, LEGEND_HALF, LEGEND_UP, MONITOR_OUT
 from ._cockpit import PANEL_AXES, PANEL_HALF, PANEL_THICK, PAPER_AT
@@ -33,6 +34,7 @@ from ._cockpit import PAPER_HIGH, PAPER_WIDE, SCREEN_AT, SCREEN_HALF
 from ._cockpit import SIDEBOARD, SLIDER_FROM, SLIDER_LONG, SWITCHES, TOP
 from ._cockpit import panelPoint
 from ._deckmodel import movingParts
+from ._gunmodel import gunParts
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
@@ -63,7 +65,8 @@ ALTIMETER = [name for name, _ in DIALS].index('HEIGHT')
 #  the ground's red.
 LAMP_COLOURS = {'ENGINE': (255, 160, 40), 'AIR': (255, 160, 40),
                 'GROUND': (255, 60, 40), 'WARP': (255, 160, 40),
-                'GUIDE': (255, 160, 40), 'ORBIT': (90, 255, 110)}
+                'GUIDE': (255, 160, 40), 'ORBIT': (90, 255, 110),
+                'DOCK': (90, 255, 110)}
 #  The legends lit over the switches (the panel's and the view's).
 LEGENDS = tuple(name for name, _, _, _ in SWITCHES) + tuple(
   name for name, _, _, _ in CONSOLE_SWITCHES)
@@ -81,9 +84,9 @@ FIXED_RING = (0.016, 0.02)
 LIGHTS = {'flames': flamesRows, 'flames round': roundFlamesRows,
           'shade': shadeRows, 'bulbs': bulbsRows}
 #  The knobs that glint, enchanted (user, 2026-11-16 of the warp: "give
-#  it a sort of enchantment glint, as it is kinda... magic"; 2026-11-17
-#  of the gravity: "And has lots o glint"), by their actions.
-ENCHANTED = ('warp', 'gravity')
+#  it a sort of enchantment glint, as it is kinda... magic"), by their
+#  actions.
+ENCHANTED = ('warp',)
 #  The guards' walls' thickness, m.
 GUARD_WALL = 0.0022
 #  The closed circuit monitor's curves (user, 2026-11-17: "it is too
@@ -124,7 +127,9 @@ def pieces(controls: tuple) -> tuple:
   Control: 'ENCHANTED'), the cabin's lights: the candles' flames (and
   weightless, round), the lamp's shade, the fairy lights ('flames',
   'flames round', 'shade', 'bulbs'), each loose thing's mesh of a look
-  ('loose', its index in '_furnishings.looseParts')."""
+  ('loose', its index in '_furnishings.looseParts'), each part of the
+  gravity gun in his hands ('gun', its index in '_gunmodel.gunParts':
+  about his eyes, in their frame)."""
   out = [('control', control) for control in controls]
   out += [('needle', k) for k in range(len(DIALS))]
   out += [('lamp', k) for k in range(len(LAMPS))]
@@ -137,6 +142,7 @@ def pieces(controls: tuple) -> tuple:
                                                        'glint lid')]
   out += [('flames', 0), ('flames round', 0), ('shade', 0), ('bulbs', 0)]
   out += [('loose', k) for k in range(len(looseParts()))]
+  out += [('gun', k) for k in range(len(gunParts()))]
   return tuple(out)
 
 
@@ -450,6 +456,9 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'loose':
     part = looseParts()[what]
     return part[2], part[3]
+  if kind == 'gun':
+    part = gunParts()[what]
+    return part[2], part[3]
   if kind == 'bug':
     right, up, out = PANEL_AXES
     centre = dialCentre(ALTIMETER)
@@ -482,6 +491,8 @@ def pivotOf(piece: tuple) -> tuple:
     return headPlace(0.0)
   if kind == 'loose':
     return looseThings()[looseParts()[what][0]][1]
+  if kind == 'gun':
+    return EYE
   return 0.0, 0.0, 0.0
 
 

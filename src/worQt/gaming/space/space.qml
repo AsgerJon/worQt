@@ -57,6 +57,15 @@ Item {
   //  twenty (ten hearts, ten drumsticks; our own pixels); how red he
   //  sees being hurt; how much of a ration he has eaten; dead, what
   //  killed him.
+  //  Near a body: how much of the sun's light reaches the eye (nought in
+  //  the body's shadow), the body's light thrown back up (its turn, its
+  //  share of the sun's); far satellites' lights drawn as points (each
+  //  its place in the scene and its rainbow's share, below nought warm).
+  property real sunShine: 1.0
+  property quaternion earthTurn: Qt.quaternion(1, 0, 0, 0)
+  property real earthShine: 0.0
+  property var lightPoints: []
+  property var lightHues: []
   property real health: 20
   property real food: 20
   property real hurtShown: 0
@@ -123,6 +132,13 @@ Item {
   property vector3d cctvPlace: Qt.vector3d(0, 0, 0)
   property quaternion cctvTurn: Qt.quaternion(1, 0, 0, 0)
   property string cctvStamp: ""
+  //  The monitor's feed (user, 2026-11-17: "The CCTV shall have two
+  //  possible feeds: The one it has now, AND one that aims the
+  //  docking"): its label, whether it is the nose's docking camera (a
+  //  cross in its middle) and the docking's numbers over it.
+  property string cctvLabel: "CAM 1  AFT"
+  property bool cctvNose: false
+  property string dockText: ""
   //  The ground under the eye: its mesh (a cap, the body's own axes), its
   //  body's picture, its place and turn, whether it shows
   property var capGeometry: null
@@ -176,8 +192,11 @@ Item {
   property string boardPhase: ""
   property string boardTarget: ""
   property bool boardMap: false
-  property string boardGravity: "0 g"
   property string boardLimit: "4 g"
+  property bool boardMatch: false
+  property string boardDocking: "off"
+  property bool boardNose: false
+  property bool boardThrusting: false
   property bool boardUp: false
   property string boardHeld: "|"
   signal boardPicked(string action)
@@ -502,7 +521,12 @@ Item {
     }
     DirectionalLight {
       rotation: root.sunTurn
-      brightness: 1.4
+      brightness: 1.4 * root.sunShine
+    }
+    DirectionalLight {
+      rotation: root.earthTurn
+      brightness: 1.4 * root.earthShine
+      color: "#a8bfe6"
     }
     //  The closed circuit monitor's screen, outside 'nearWorld' (the
     //  camera's own views import it: the screen must not show itself).
@@ -584,7 +608,12 @@ Item {
                   }
                   DirectionalLight {
                     rotation: root.sunTurn
-                    brightness: 1.4
+                    brightness: 1.4 * root.sunShine
+                  }
+                  DirectionalLight {
+                    rotation: root.earthTurn
+                    brightness: 1.4 * root.earthShine
+                    color: "#a8bfe6"
                   }
                 }
               }
@@ -623,7 +652,7 @@ Item {
               Text {
                 x: 34
                 y: 20
-                text: "CAM 1  AFT"
+                text: root.cctvLabel
                 color: "#f2f2f2"
                 style: Text.Outline
                 styleColor: "#000000"
@@ -656,6 +685,49 @@ Item {
                   font.pixelSize: 20
                   font.bold: true
                 }
+              }
+              Item {
+                visible: root.cctvNose
+                anchors.fill: parent
+                Rectangle {
+                  x: parent.width / 2 - 60
+                  y: parent.height / 2 - 1
+                  width: 120
+                  height: 2
+                  color: "#d0ffd0"
+                  opacity: 0.8
+                }
+                Rectangle {
+                  x: parent.width / 2 - 1
+                  y: parent.height / 2 - 60
+                  width: 2
+                  height: 120
+                  color: "#d0ffd0"
+                  opacity: 0.8
+                }
+                Rectangle {
+                  anchors.centerIn: parent
+                  width: 36
+                  height: 36
+                  radius: 18
+                  color: "transparent"
+                  border.color: "#d0ffd0"
+                  border.width: 2
+                  opacity: 0.8
+                }
+              }
+              Text {
+                visible: root.dockText !== ""
+                x: 34
+                y: parent.height - height - 48
+                text: root.dockText
+                color: "#d0ffd0"
+                style: Text.Outline
+                styleColor: "#000000"
+                font.family: "monospace"
+                font.pixelSize: 16
+                font.bold: true
+                lineHeight: 1.1
               }
               Text {
                 x: parent.width - width - 34
@@ -987,16 +1059,30 @@ Item {
                     || root.boardHeld.indexOf("|E|") >= 0 }
       }
       Group {
-        title: "TIME AND GRAVITY"
+        title: "TIME"
         Lamp { label: "Warp: " + root.boardWarp + "x"; keys: [",", "."]
                action: "faster"; tint: "#8fd3ff"; lit: root.boardWarp > 1 }
         Lamp { label: "Real time"; keys: ["/"]; action: "stop"
                tint: "#8fd3ff"; lit: root.boardWarp === 1 }
         Lamp { label: "To Ap: " + (lit ? "on" : "off"); keys: ["G"]
                action: "toAp"; tint: "#8fd3ff"; lit: root.boardToAp }
-        Lamp { label: "Gravity: " + root.boardGravity; keys: ["K", "L"]
-               action: "heavier"; tint: "#d9a8ff"
-               lit: root.boardGravity !== "0 g" }
+      }
+      Group {
+        title: "DOCKING"
+        Lamp { label: "Match: " + (lit ? "on" : "off"); keys: ["L"]
+               action: "match"; tint: "#7dff9a"; lit: root.boardMatch }
+        Lamp { label: "Auto: " + root.boardDocking; keys: ["C"]
+               action: "autodock"; tint: "#7dff9a"
+               lit: root.boardDocking !== "off" }
+        Lamp { label: "Thrusters"
+               keys: ["\u2191", "\u2193", "\u2190", "\u2192", "PgUp",
+                      "PgDn"]
+               action: ""; tint: "#8fd3ff"; lit: root.boardThrusting }
+        Lamp { label: root.boardNose ? "Cam: nose" : "Cam: aft"
+               keys: ["K"]; action: "camera"; tint: "#e8ecf0"
+               lit: root.boardNose }
+        Lamp { label: "Undock"; keys: ["Del"]; action: "undock"
+               tint: "#e8ecf0"; lit: false }
       }
       Group {
         title: "ASCENT GUIDANCE"
@@ -1095,6 +1181,35 @@ Item {
     font.pixelSize: 14
     style: Text.Outline
     styleColor: "#000000"
+  }
+
+  Repeater {
+    model: root.lightPoints.length
+    Item {
+      property vector3d at: nearView.mapFrom3DScene(root.lightPoints[index])
+      property real hue: root.lightHues[index]
+      property color shade: hue < 0 ? "#ffd9a0"
+                                    : Qt.hsva((hue + root.glintPhase) % 1.0,
+                                              1.0, 1.0, 1.0)
+      visible: !root.mapOpen && at.z > 0
+      x: at.x
+      y: at.y
+      Rectangle {
+        anchors.centerIn: parent
+        width: 12
+        height: 12
+        radius: 6
+        color: parent.shade
+        opacity: 0.3
+      }
+      Rectangle {
+        anchors.centerIn: parent
+        width: 4
+        height: 4
+        radius: 2
+        color: parent.shade
+      }
+    }
   }
 
   Rectangle {

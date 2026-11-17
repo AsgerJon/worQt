@@ -89,21 +89,18 @@ class Accelerometer:
     somewhere new: its change of velocity then is no push)."""
     self._last = None
 
-  def pullAt(self, place: tuple, velocity: tuple,
-             enchanted: float) -> tuple:
+  def pullAt(self, place: tuple, velocity: tuple) -> tuple:
     """The 'pullAt' method returns the pull on something loose at
     'place' moving 'velocity' (the vessel's own axes, from its middle),
     m/s²: the vessel's push the other way, its turning's (out from the
     axis it turns about, across the way it moves, and as it turns
-    faster) and the enchantment's 'enchanted' g toward the floor."""
+    faster)."""
     turning, speeding = self.turning, self.speeding
     out = cross(turning, cross(turning, place))
     sideways = cross(turning, velocity)
     faster = cross(speeding, place)
-    pull = [-f - o - 2.0 * s - a for f, o, s, a in zip(
-      self.felt, out, sideways, faster)]
-    pull[2] -= enchanted * G0
-    return tuple(pull)
+    return tuple(-f - o - 2.0 * s - a for f, o, s, a in zip(
+      self.felt, out, sideways, faster))
 
 
 def _eased(now: tuple, want: tuple, share: float) -> tuple:

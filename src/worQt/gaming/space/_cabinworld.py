@@ -3,9 +3,9 @@ CabinWorld is what moves in the cabin (user, 2026-11-17: "when can Asger
 get up and float around in micro-gravity?"; the loose things: "FAFO
 rules"): Asger out of his chair and the loose things, stepped on a
 device of Warp's by '_cabin_kernels', in the vessel's own axes, feeling
-what the vessel feels there ('Accelerometer') and the gravity
-enchantment's pull. Always at real time: a warp of the flight's time is
-not the cabin's (it would be a hundred thousand of its steps a frame).
+what the vessel feels there ('Accelerometer'). Always at real time: a
+warp of the flight's time is not the cabin's (it would be a hundred
+thousand of its steps a frame).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 import numpy
 
-from ._aerospike import G0
 from ._cabinsolids import solids
 from ._crewman import BALLS, HEFT
 from ._furnishings import looseThings
@@ -53,7 +52,8 @@ class CabinWorld:
   passed, in steps of 'STEP'. 'shown' says where each loose thing is and
   how it is turned from how it rests; 'thuds' counts the meetings begun
   hard and 'loudest' says how hard the loudest of the last frame was
-  (m/s, by its heft).
+  (m/s, by its heft); 'landed' how fast Asger met anything the last
+  frame (m/s: it may hurt him).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -65,6 +65,7 @@ class CabinWorld:
   pointCount: int
   thuds: int
   loudest: float
+  landed: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -76,7 +77,7 @@ class CabinWorld:
     from . import _cabin_kernels
     preloadedCabin(device)
     self.wp, self.kernels, self.device = wp, _cabin_kernels, device
-    self.thuds, self.loudest, self._present = 0, 0.0, 0
+    self.thuds, self.loudest, self.landed, self._present = 0, 0.0, 0.0, 0
     things = looseThings()
     rest = [_turnOf(axes) for _, _, _, axes, _ in things]
     self._rest = numpy.array(rest, numpy.float64)
@@ -126,47 +127,53 @@ class CabinWorld:
     self.asger = self._sent(numpy.zeros((2, 3)), vec3)
     self.met = self._sent(numpy.zeros((2, 3)), vec3)
     self.thudding = self._sent([0.0, 0.0], wp.float32)
+    self.landing = self._sent([0.0], wp.float32)
+    self._pressed, self._moved = self._recorded()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def stepped(self, seconds: float, accelerometer: Accelerometer,
-              crewman: Crewman, enchanted: float, want: tuple) -> None:
+              crewman: Crewman, want: tuple) -> None:
     """The 'stepped' method moves the cabin's bodies 'seconds' s on (real
-    time), feeling what 'accelerometer' read and the enchantment's
-    'enchanted' g toward the floor; Asger ('crewman') too, unless he
-    sits, his legs as 'want' asks ('Crewman.wantOf' and a leap: the
-    velocity wanted, walking, wanting, the leap's velocity)."""
+    time), feeling what 'accelerometer' read; Asger ('crewman') too,
+    unless he sits, his legs as 'want' asks ('Crewman.wantOf' and a leap:
+    the velocity wanted, walking, wanting, the leap's velocity, whether
+    it leaps touching nothing: off a magic bolt), or the gravity gun
+    pulling him to 'Crewman.towTo'."""
     if seconds <= 0.0:
       return
-    wp, kernels, device = self.wp, self.kernels, self.device
+    wp = self.wp
     present = 0 if crewman.buckled else 1
     if present and not self._present:
       self._asgerSent(crewman)
     self._present = present
-    wanted, walking, wanting, leap = want
+    wanted, walking, wanting, leap, sure = want
     steps = max(1, min(MOST_STEPS, math.ceil(seconds / STEP)))
     step = seconds / steps
     vec3 = wp.vec3
+    towing = 0 if crewman.towTo is None else 1
+    towTo = vec3(*(crewman.towTo or (0.0, 0.0, 0.0)))
+    legs = 1 if (walking or wanting or towing) else 0
     up = vec3(*crewman.up)
-    felt, turning = vec3(*accelerometer.felt), vec3(*accelerometer.turning)
-    speeding = vec3(*accelerometer.speeding)
-    pull = vec3(0.0, 0.0, -enchanted * G0)
-    still = vec3(0.0, 0.0, 0.0)
+    pressed, moved = self._pressed, self._moved
+    for name, value in (('up', up), ('present', present), ('legs', legs)):
+      pressed.set_param_by_name(name, value)
+    for name, value in (
+        ('felt', vec3(*accelerometer.felt)),
+        ('turning', vec3(*accelerometer.turning)),
+        ('speeding', vec3(*accelerometer.speeding)),
+        ('wanted', vec3(*wanted)), ('leap', vec3(*leap)), ('up', up),
+        ('walking', int(walking)), ('wanting', int(wanting)),
+        ('present', present), ('towTo', towTo), ('towing', towing),
+        ('sure', int(sure)), ('step', float(step))):
+      moved.set_param_by_name(name, value)
     for k in range(steps):
-      wp.launch(kernels.pressed, self.pointCount, [
-        self.places, self.turns, self.velocities, self.spins, self.masses,
-        self.halves, self.owners, self.locals, self.radii,
-        self.solidMiddles, self.solidTurns, self.solidHalves, self.touched,
-        self.pushes, self.twists, self.asger, self.thudding, up, present,
-        1 if (walking or wanting) else 0], [], [], [], device)
-      wp.launch(kernels.moved, len(self._places), [
-        self.places, self.turns, self.velocities, self.spins, self.masses,
-        self.inertias, self.pushes, self.twists, self.asger, self.met,
-        felt, turning, speeding, pull, vec3(*wanted),
-        vec3(*leap) if k == 0 else still, up, int(walking), int(wanting),
-        present, float(step)], [], [], [], device)
+      if k == 1:
+        moved.set_param_by_name('leap', vec3(0.0, 0.0, 0.0))
+      pressed.launch()
+      moved.launch()
     self._taken(crewman, present)
 
   def shown(self, ) -> tuple:
@@ -179,6 +186,25 @@ class CabinWorld:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _recorded(self, ) -> tuple:
+    """Returns the two kernels' launches recorded once on the arrays
+    (each step replays them, only the frame's numbers set anew: a
+    launch packed afresh costs some 0.3 ms of Python)."""
+    wp, kernels, device = self.wp, self.kernels, self.device
+    zero = wp.vec3(0.0, 0.0, 0.0)
+    pressed = wp.launch(kernels.pressed, self.pointCount, [
+      self.places, self.turns, self.velocities, self.spins, self.masses,
+      self.halves, self.owners, self.locals, self.radii,
+      self.solidMiddles, self.solidTurns, self.solidHalves, self.touched,
+      self.pushes, self.twists, self.asger, self.thudding, self.landing,
+      zero, 0, 0], [], [], [], device, None, False, False, True)
+    moved = wp.launch(kernels.moved, len(self._places), [
+      self.places, self.turns, self.velocities, self.spins, self.masses,
+      self.inertias, self.pushes, self.twists, self.asger, self.met,
+      zero, zero, zero, zero, zero, zero, 0, 0, 0, zero, 0, 0, 0.0], [],
+                      [], [], device, None, False, False, True)
+    return pressed, moved
 
   def _asgerSent(self, crewman: Crewman) -> None:
     """Puts Asger's body where he got up: its middle, its velocity."""
@@ -202,6 +228,8 @@ class CabinWorld:
     self.thuds += int(round(count))
     self.loudest = float(loudest)
     self.thudding.zero_()
+    self.landed = float(self.landing.numpy()[0]) if present else 0.0
+    self.landing.zero_()
 
   def _sent(self, values: object, kind: object) -> object:
     """Returns 'values' as a Warp array of 'kind' on the device."""

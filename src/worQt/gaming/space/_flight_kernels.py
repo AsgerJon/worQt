@@ -77,13 +77,17 @@ SLOTS = 5
 #  ground where the call begins, push (N), the keys on the wheels, its
 #  autopilot's mode and held turn, its anchor, its aim (pitch over the
 #  horizon, turn off the path, compass heading, rad; whether it is from
-#  the path); out, its legs touching and the steps taken.
+#  the path); out, its legs touching and the steps taken; in again, its
+#  docking thrusters' push (N, its own axes: user, 2026-11-17, docking)
+#  and the spin its held turn turns at (rad/s, the ecliptic's axes:
+#  matching the station's, 'MATCH').
 PLACE_HI, PLACE_LO, SPEED_HI, SPEED_LO = 0, 3, 6, 9
 TURN, SPIN, HEIGHT, PUSH, STEER = 12, 16, 19, 20, 21
 MODE, HELD, ANCHOR = 24, 25, 29
 AIM_PITCH, AIM_TURN, AIM_HEADING, AIM_TRAVEL = 30, 31, 32, 33
 TOUCHING, STEPS = 34, 35
-STATE = 36
+RCS, MATCH_SPIN = 36, 39
+STATE = 42
 #  The shortest step, s, and the most a launch takes (a guard).
 LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
@@ -104,6 +108,7 @@ HOLD = wp.constant(1)
 PROGRADE = wp.constant(2)
 RETROGRADE = wp.constant(3)
 AIM = wp.constant(4)
+MATCH = wp.constant(5)
 
 
 @wp.struct
@@ -536,6 +541,8 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   inertia = fleet.inertias[i]
   drag = fleet.drags[i]
   push = states[i, PUSH]
+  rcs = vecAt(states, i, RCS)
+  matchSpin = vecAt(states, i, MATCH_SPIN)
   wheels = fleet.wheels[i]
   steer = vecAt(states, i, STEER)
   mode = int(states[i, MODE])
@@ -619,7 +626,7 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
         area = drag[0] * wp.abs(along) + drag[1] * wp.sqrt(
           wp.max(0.0, 1.0 - along * along))
         force = force - ground * (0.5 * rho * speed * area)
-    force = force + nose * push
+    force = force + nose * push + wp.quat_rotate(q, rcs)
     # the legs stand on the turning ground
     touching = int(0)
     if height < GROUND_NEAR:
@@ -654,7 +661,7 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
       wanted = wp.vec3(0.0, 0.0, 0.0)
       if mode > 0:
         error = wp.vec3(0.0, 0.0, 0.0)
-        if mode == HOLD:
+        if mode == HOLD or mode == MATCH:
           error = rotationOf(wp.mul(wp.quat_inverse(q), held))
         elif aiming:
           error = pointing(q, aim)
@@ -662,7 +669,9 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
         size = wp.length(want)
         if size > RATE_MOST:
           want = want * (RATE_MOST / size)
-        if mode != HOLD:
+        if mode == MATCH:
+          want = want + wp.quat_rotate_inv(q, matchSpin)
+        if mode != HOLD and mode != MATCH:
           want = wp.vec3(want[0], want[1], 0.0)
         wanted = wp.cw_mul(inertia, want - w) * TORQUE_GAIN
       for k in range(3):
@@ -675,7 +684,9 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
     vhi = pair[0]
     vlo = pair[1]
     if railed:
-      if mode > 0:
+      if mode == MATCH:
+        w = wp.quat_rotate_inv(held, matchSpin)
+      elif mode > 0:
         w = wp.vec3(0.0, 0.0, 0.0)
     else:
       gyro = wp.cross(w, wp.cw_mul(inertia, w))
@@ -693,7 +704,7 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
     vhi = pair[0]
     vlo = pair[1]
     # on rails the autopilot's aim is had at the step's end
-    if railed and mode == HOLD:
+    if railed and (mode == HOLD or mode == MATCH):
       q = held
     elif railed and mode > 0:
       p = hi + lo

@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import math
 
+from ._aerospike import G0
+from ._cockpit import SCALE
+
 #  His health and his food when full, points (ten hearts, ten drumsticks,
 #  each two points: as a game's bars).
 HEALTH = 20.0
@@ -39,6 +42,15 @@ RATION = 10.0
 EATING = 2.0
 #  How fast the red of being hurt fades (most of the way in), s.
 HURT_FADES = 0.4
+#  Falling (user, 2026-11-17: "Up to 1.5 Asger heights, Asger takes no
+#  fall dmg. Falling 12 Asger heights and it's over for old Asger"): his
+#  height, m (his skin's 32 pixels); a meeting as fast as a fall from
+#  'SAFE_FALL' of his heights (at one g) hurts him not, as fast as from
+#  'DEADLY_FALL' takes all his health, between as the height (any pull:
+#  a wall met weightless hurts as the floor does).
+TALL = 32.0 * SCALE
+SAFE_FALL = 1.5
+DEADLY_FALL = 12.0
 
 
 class Vitals:
@@ -49,8 +61,8 @@ class Vitals:
   point lost, fading), how much of
   a ration he has still to eat ('eating', s) and the counts the sound
   plays one of as they grow ('hurts': each point lost to harm; 'meals':
-  each ration begun). 'lived' lives 'seconds' pulled 'gees'; 'ate'
-  begins a ration; 'revived' wakes him whole.
+  each ration begun). 'lived' lives 'seconds' pulled 'gees'; 'fell'
+  meets something; 'ate' begins a ration; 'revived' wakes him whole.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -103,6 +115,24 @@ class Vitals:
     if self.health <= 0.0:
       self.cause = ('crushed by %.1f g' % gees if crushing >= starving
                     else 'starved')
+
+  def fell(self, speed: float) -> None:
+    """The 'fell' method meets something at 'speed' m/s: hurt as by a
+    fall from as high (at one g), past 'SAFE_FALL' of his heights, all
+    his health at 'DEADLY_FALL'; dead, what killed him in 'cause'."""
+    if self.cause is not None:
+      return
+    high = speed * speed / (2.0 * G0)
+    past = high / TALL - SAFE_FALL
+    if past <= 0.0:
+      return
+    before = self.health
+    self.health = max(0.0, self.health - HEALTH * past / (
+      DEADLY_FALL - SAFE_FALL))
+    self.hurts += max(1, math.ceil(before) - math.ceil(self.health))
+    self.hurt = 1.0
+    if self.health <= 0.0:
+      self.cause = 'hit something at %.0f m/s' % speed
 
   def ate(self, ) -> str:
     """The 'ate' method begins a ration if he may eat one; returns why

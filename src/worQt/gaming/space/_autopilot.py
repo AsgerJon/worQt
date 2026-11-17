@@ -18,8 +18,10 @@ import math
 #  against the path (retrograde); point it where it is aimed (the aim:
 #  a pitch over the horizon, along the path's heading and a turn off it,
 #  or along a compass heading before there is a path; the vessel's roll
-#  plays no part).
-MODES = ('off', 'hold', 'prograde', 'retrograde', 'aim')
+#  plays no part); hold a turn that turns ('match': the space station's
+#  docking, user, 2026-11-17: its held turn set anew each frame, its
+#  'spin' fed forward so it keeps up).
+MODES = ('off', 'hold', 'prograde', 'retrograde', 'aim', 'match')
 
 
 class Autopilot:
@@ -42,6 +44,7 @@ class Autopilot:
   #  Public Variables
   mode: str
   held: tuple
+  spin: tuple
   pitch: float
   turn: float
   heading: float
@@ -53,6 +56,7 @@ class Autopilot:
 
   def __init__(self, ) -> None:
     self.mode, self.held = 'off', (1.0, 0.0, 0.0, 0.0)
+    self.spin = (0.0, 0.0, 0.0)
     self.pitch, self.turn = 0.5 * math.pi, 0.0
     self.heading, self.travel = 0.5 * math.pi, False
 
@@ -78,6 +82,13 @@ class Autopilot:
     self.mode = mode
     if mode == 'hold':
       self.held = tuple(float(x) for x in turn)
+
+  def matched(self, turn: tuple, spin: tuple) -> None:
+    """The 'matched' method holds the vessel at 'turn' (w x y z) turning
+    at 'spin' (rad/s, the ecliptic's axes): matching a turning thing."""
+    self.mode = 'match'
+    self.held = tuple(float(x) for x in turn)
+    self.spin = tuple(float(x) for x in spin)
 
   def aimedAt(self, pitch: float, turn: float, heading: float,
               travel: bool) -> None:

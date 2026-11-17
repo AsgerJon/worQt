@@ -26,7 +26,11 @@ from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 
 from . import _cabin, _dashboard, _deckmodel
 from ._cabinpictures import cabinPicturesReady
+from ._bolts import boltGlintRows, boltRingRows, boltRows
 from ._furnishings import furnishings, looseParts
+from ._gunmodel import gunParts
+from ._stationmeshes import stationMeshes
+from ._stationpictures import stationPicturesReady
 from ._cockpit import BALL_RADIUS, LAMPS, SCALE
 from ._meshes import capRows, padRows, ringRows, rocketParts, sphereRows
 from ._navball import mirroredRows
@@ -93,10 +97,9 @@ SEE_THROUGH = 0.99
 BUG_COLOUR = (255, 90, 200)
 #  The enchanted knobs' glint: its picture (the cabin's pictures') and
 #  how many times its streaks slide across the knob in the glint's loop
-#  ('space.qml'), by the knob's action (the gravity's "lots o glint",
-#  faster); see-through (Qt blends a screen only so), black adding
-#  nothing.
-GLINT_LOOKS = {'warp': ('glint', 1.0), 'gravity': ('sparkle', 2.0)}
+#  ('space.qml'), by the knob's action; see-through (Qt blends a screen
+#  only so), black adding nothing.
+GLINT_LOOKS = {'warp': ('glint', 1.0)}
 #  The cabin's furnishings' looks (user, 2026-11-16: "the contents of a
 #  camping cabin ... the same 'hygge'"): warm woods, wool, cream and rust
 #  cushions, wax, ceramics, green leaves, books; the rug and the blanket
@@ -128,6 +131,21 @@ LIGHT_LOOKS = {'flames': (((255, 186, 84), 0.0, 1.0), True),
                'flames round': (((132, 170, 255), 0.0, 1.0), True),
                'shade': (((246, 224, 182), 0.0, 0.9), False),
                'bulbs': (((255, 196, 112), 0.0, 1.0), True)}
+#  The space station's looks by mesh ('_stationmeshes'): white hull, its
+#  windows lit warm, its port's collar green, its antennas and beacons
+#  in the rainbow sliding along them (user, 2026-11-17: "RGB lighting");
+#  all but the hull shine of their own; how fast the rainbow slides.
+STATION_LOOKS = {'hull': (((232, 234, 238), 0.1, 0.45), False),
+                 'windows': (((255, 214, 150), 0.0, 1.0), True),
+                 'collar': (((96, 255, 150), 0.0, 1.0), True),
+                 'antennas': (((255, 255, 255), 0.0, 1.0), True),
+                 'beacons': (((255, 255, 255), 0.0, 1.0), True)}
+RAINBOW_SLIDES = 1.0
+#  The magic bolts (user, 2026-11-17: "clearly marked 'magic' bolts"):
+#  their steel, their rings' violet glow (unlit: they shine of their
+#  own), the glint over them.
+BOLT_LOOK = ((150, 152, 160), 0.3, 0.35)
+BOLT_RING = (186, 112, 255)
 #  The inputs' guards: red plastic, a little see-through.
 GUARD_LOOK = ((226, 44, 32), 0.0, 0.25)
 GUARD_SEEN = 0.38
@@ -249,6 +267,8 @@ class SpaceViewport(QWidget):
                           ROCKET_LOOKS[name], ROCKET_SLOT, False))
     near.extend(self._cabinParts(navball, pictures, pieces))
     self._slots = CABIN_SLOT + len(pieces) + AFTER_PIECES
+    near.extend(self._satelliteParts(self._slots, len(system.satellites)))
+    self._slots += len(system.satellites)
     for slot, points in enumerate(orbits[1:]):
       lines.append({'geometry': self._kept1(Line(points)),
                     'colour': QColor(ORBIT_COLOUR), 'slot': slot})
@@ -288,6 +308,13 @@ class SpaceViewport(QWidget):
     root.setProperty('sunTurn', sceneTurnOf(frame['sun'], _across(
       frame['sun'])))
     root.setProperty('skyColour', QColor(*(int(x) for x in frame['sky'])))
+    root.setProperty('sunShine', float(frame['shine']))
+    way, shine = frame['earth']
+    root.setProperty('earthTurn', sceneTurnOf(way, _across(way)))
+    root.setProperty('earthShine', float(shine))
+    root.setProperty('lightPoints', [QVector3D(p[0], p[2], -p[1])
+                                     for p, _ in frame['lights']])
+    root.setProperty('lightHues', [float(h) for _, h in frame['lights']])
     far = frame['far']
     root.setProperty('farPlaces', [QVector3D(*p) for p, _, _ in far])
     root.setProperty('farTurns', [QQuaternion(*q) for _, q, _ in far])
@@ -299,6 +326,9 @@ class SpaceViewport(QWidget):
               (ROCKET_SLOT, frame['rocket'] + (0.0,))]
     moving += [(CABIN_SLOT + k, part) for k, part in enumerate(
       cabin['parts'])]
+    first = self._slots - len(frame['satellites'])
+    moving += [(first + k, satellite + (0.0,)) for k, satellite in
+               enumerate(frame['satellites'])]
     for slot, (place, turn, seen, glow) in moving:
       places[slot], turns[slot] = QVector3D(*place), QQuaternion(*turn)
       shown[slot], glows[slot] = bool(seen), float(glow)
@@ -369,8 +399,11 @@ class SpaceViewport(QWidget):
   def boardShown(self, board: dict) -> None:
     """The 'boardShown' method shows the control board: its 'throttle',
     'mode', 'warp', 'toAp', 'ascent', 'phase', 'target', 'map', the
-    cabin's 'gravity' and the engine's 'limit' (their words), whether
-    Asger is 'up' out of his chair, and the keys 'held' (their names)."""
+    engine's 'limit' (its words), whether Asger is 'up' out of his
+    chair, the docking's: 'match' (turning with the station), 'docking'
+    (the automatic docking's phase, or 'docked'), 'nose' (the monitor
+    on the nose's camera), 'thrusting' (the docking thrusters fire),
+    and the keys 'held' (their names)."""
     root = self._root()
     if root is None:
       return
@@ -378,8 +411,10 @@ class SpaceViewport(QWidget):
                       ('warp', 'boardWarp'), ('toAp', 'boardToAp'),
                       ('ascent', 'boardAscent'), ('phase', 'boardPhase'),
                       ('target', 'boardTarget'), ('map', 'boardMap'),
-                      ('gravity', 'boardGravity'), ('up', 'boardUp'),
-                      ('limit', 'boardLimit')):
+                      ('up', 'boardUp'),
+                      ('limit', 'boardLimit'), ('match', 'boardMatch'),
+                      ('docking', 'boardDocking'), ('nose', 'boardNose'),
+                      ('thrusting', 'boardThrusting')):
       root.setProperty(key, board[name])
     root.setProperty('boardHeld', '|' + '|'.join(board['held']) + '|')
 
@@ -419,6 +454,17 @@ class SpaceViewport(QWidget):
       self._paper = lines, typing
       root.setProperty('paperLines', lines)
       root.setProperty('paperTyping', typing)
+
+  def monitorShown(self, nose: bool, docking: str) -> None:
+    """The 'monitorShown' method shows the monitor's feed: the nose's
+    docking camera ('nose', a cross over it) or the hull's looking aft,
+    and the docking's numbers over it ('docking', '' none)."""
+    root = self._root()
+    if root is None:
+      return
+    root.setProperty('cctvLabel', 'CAM 2  NOSE' if nose else 'CAM 1  AFT')
+    root.setProperty('cctvNose', nose)
+    root.setProperty('dockText', docking)
 
   def takesClick(self, at: QPointF) -> bool:
     """The 'takesClick' method says whether the scene takes a click at
@@ -476,6 +522,14 @@ class SpaceViewport(QWidget):
     for name, rows in furnishings().items():
       out.append(_partOf(kept(Mesh(*rows)), HYGGE_LOOKS[name], ROCKET_SLOT,
                          False, cabin[name] if name in cabin else ''))
+    out.append(_partOf(kept(Mesh(*boltRows())), BOLT_LOOK, ROCKET_SLOT,
+                       False))
+    out.append(_partOf(kept(Mesh(*boltRingRows())), (BOLT_RING, 0.0, 1.0),
+                       ROCKET_SLOT, False, '', True))
+    out.append(_partOf(kept(Mesh(*boltGlintRows())),
+                       ((255, 255, 255), 0.0, 1.0), ROCKET_SLOT, False,
+                       cabin['glint'], True, SEE_THROUGH, False, None,
+                       True, GLINT_LOOKS['warp'][1]))
     for material, rows in _deckmodel.stillParts():
       look, picture, opacity = self._deckLook(material)
       out.append(_partOf(kept(Mesh(*rows)), look, ROCKET_SLOT, False,
@@ -524,6 +578,21 @@ class SpaceViewport(QWidget):
                            ASGERJON, False, 1.0, outer))
     return out
 
+  def _satelliteParts(self, first: int, count: int) -> list:
+    """Returns the satellites' parts (each the space station's meshes,
+    '_stationmeshes'), each satellite on its slot from 'first'."""
+    rainbow = stationPicturesReady()['rainbow']
+    out = []
+    for k in range(count):
+      for name, rows in stationMeshes().items():
+        look, unlit = STATION_LOOKS[name]
+        coloured = name in ('antennas', 'beacons')
+        out.append(_partOf(self._kept1(Mesh(*rows)), look, first + k,
+                           False, rainbow if coloured else '', unlit, 1.0,
+                           False, None, False,
+                           RAINBOW_SLIDES if coloured else 0.0))
+    return out
+
   def _pieceLook(self, piece: tuple, labels: object) -> tuple:
     """Returns a moving piece's look, picture ('' none), whether light
     plays on it not (backlit), the colour it glows lit (None: its own)
@@ -559,6 +628,9 @@ class SpaceViewport(QWidget):
       return (BUG_COLOUR, 0.0, 1.0), '', True, None, 1.0
     if kind == 'loose':
       return HYGGE_LOOKS[looseParts()[what][1]], '', False, None, 1.0
+    if kind == 'gun':
+      look, picture, _, _ = gunParts()[what]
+      return look, picture, False, None, 1.0
     return looks['black'], '', False, None, 1.0
 
   def _deckLook(self, material: int | None) -> tuple:

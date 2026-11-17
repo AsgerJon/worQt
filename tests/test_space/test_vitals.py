@@ -5,8 +5,9 @@ kill Asger but will increase his need of food by 4x"; "To eat, Asger
 goes to the kitchen where an endless supply of RCIR"), and the engine's
 limiter ("another engine control that restricts the engine output to a
 particular g"): the deaths on time, two g's hunger, a ration, starving,
-mending, waking; the limiter caps the push; the rations' crate within
-his reach only near it.
+mending, waking; falls (user: "Up to 1.5 Asger heights, Asger takes no
+fall dmg. Falling 12 Asger heights and it's over"); the limiter caps
+the push; the rations' crate within his reach only near it.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -19,7 +20,7 @@ from worQt.gaming.space._cockpit import LIMITS, Cockpit
 from worQt.gaming.space._instruments import limitNotch
 from worQt.gaming.space._vessel import MASS, Vessel
 from worQt.gaming.space._vitals import EATING, FED, FOOD, FOOD_LASTS
-from worQt.gaming.space._vitals import HEALTH, RATION, Vitals
+from worQt.gaming.space._vitals import HEALTH, RATION, TALL, Vitals
 
 from . import FRAME, SpaceTest
 
@@ -92,6 +93,17 @@ class TestVitals(SpaceTest):
     vitals.health, vitals.food = 10.0, FED + 1.0
     vitals.lived(4.0, 1.0)
     self.assertGreater(vitals.health, 10.0)
+
+  def test_falls(self) -> None:
+    """Meeting something as fast as a fall of 1.5 of his heights hurts
+    him not; of 12, kills him; between, as the height."""
+    for heights, left in ((1.4, HEALTH), (6.75, HEALTH / 2.0),
+                          (12.0, 0.0)):
+      vitals = Vitals()
+      vitals.fell(math.sqrt(2.0 * G0 * heights * TALL))
+      self.assertAlmostEqual(vitals.health, left, 6, heights)
+    self.assertIsNotNone(vitals.cause)
+    self.assertGreater(vitals.hurts, 0)
 
   def test_limiter(self) -> None:
     """The limiter caps the push at its g whatever the throttle; at its

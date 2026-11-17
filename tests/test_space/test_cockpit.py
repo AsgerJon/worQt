@@ -26,7 +26,7 @@ from worQt.gaming.space._cockpit import BACKREST, BALL_RADIUS, BAT_ON
 from worQt.gaming.space._cockpit import CUSHION, EYE, GLASS, GLOBE_AT
 from worQt.gaming.space._cockpit import GLOBE_AXES
 from worQt.gaming.space._cockpit import FIGURE, FLOOR, KEY_TRAVEL
-from worQt.gaming.space._cockpit import LEFT_CONSOLE, PANEL_AXES
+from worQt.gaming.space._cockpit import LAMPS, LEFT_CONSOLE, PANEL_AXES
 from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE, SLIDER_LONG
 from worQt.gaming.space._cockpit import WALL, Cockpit, capsuleRadius
 from worQt.gaming.space._cabinworld import restingLoose
@@ -60,8 +60,10 @@ def _inside(point: tuple) -> bool:
 
 def _resting() -> dict:
   """Returns what a cabin's frame takes of the cabin world at rest: the
-  loose things where they rest, one g at the candles."""
-  return {'loose': restingLoose(), 'weight': 1.0}
+  loose things where they rest, one g at the candles, the gun put
+  away."""
+  return {'loose': restingLoose(), 'weight': 1.0,
+          'gun': (False, EYE, (1.0, 0.0, 0.0, 0.0)), 'nose': False}
 
 
 def _corners(middle: tuple, half: tuple) -> list:
@@ -85,12 +87,13 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 20 inputs, each its own action and key: six
-    switches and the view's, four knobs (warp, orbit, gravity, the
-    engine's limit), eight keys, the slide; the switches plain
-    FourthPeeps, the rest their kinds."""
+    """The dashboard has its 29 inputs, each its own action and key:
+    seven switches and the view's and the map's, three knobs (warp,
+    orbit, the engine's limit), sixteen keys (with the docking's: six
+    thrusters, the monitor's feed, undock), the slide; the switches
+    plain FourthPeeps, the rest their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 20)
+    self.assertEqual(len(controls), 29)
     actions = [control.action for control in controls]
     keys = [control.key for control in controls]
     self.assertEqual(len(set(actions)), len(actions))
@@ -99,7 +102,7 @@ class TestCockpit(SpaceTest):
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 7, 'Knob': 4, 'Pushbutton': 8,
+    self.assertEqual(kinds, {'FourthPeep': 9, 'Knob': 3, 'Pushbutton': 16,
                              'Slider': 1})
     switch = Cockpit().controlOf('hold').peep
     self.assertIs(type(switch), FourthPeep)
@@ -163,24 +166,6 @@ class TestCockpit(SpaceTest):
       self.assertIs(cockpit.lookedAt(), control, control.name)
     cockpit.glanced('hold')
     cockpit.turned(10.0, 0.0)
-    self.assertIsNone(cockpit.glancing)
-
-  def test_gravity(self) -> None:
-    """The gravity enchantment starts off (user, 2026-11-17: "It starts
-    off"), a tenth of a g a notch up to one g, its knob by the warp's."""
-    cockpit = Cockpit()
-    self.assertEqual(cockpit.weight(), 0.0)
-    self.assertFalse(cockpit.heavier(-1))
-    for _ in range(20):
-      cockpit.heavier(1)
-    self.assertAlmostEqual(cockpit.weight(), 1.0, 9)
-    self.assertFalse(cockpit.heavier(1))
-    cockpit.heavier(-7)
-    self.assertAlmostEqual(cockpit.weight(), 0.3, 9)
-    knob, warp = cockpit.controlOf('gravity'), cockpit.controlOf('warp')
-    self.assertIsInstance(knob.peep, Knob)
-    self.assertLess(math.dist(knob.centre, warp.centre), 0.15)
-    cockpit.glanced('nothing')
     self.assertIsNone(cockpit.glancing)
 
   def test_inside(self) -> None:
@@ -382,8 +367,9 @@ class TestCockpit(SpaceTest):
     system = self.systemOf()
     cockpit, scenery = Cockpit(), Scenery()
     every = pieces(cockpit.controls)
-    dash = {'needles': [0.0] * 4, 'lamps': [False] * 6,
-            'legends': [False] * 7, 'reels': (0.0, 0.0), 'column': 0.0,
+    dash = {'needles': [0.0] * 4, 'lamps': [False] * len(LAMPS),
+            'legends': [False] * len(LEGENDS), 'reels': (0.0, 0.0),
+            'column': 0.0,
             'knob': 0.0, 'bug': 0.5, 'guards': {}, 'flicker': 1.0}
     dash.update(_resting())
     held, marked = [], 0

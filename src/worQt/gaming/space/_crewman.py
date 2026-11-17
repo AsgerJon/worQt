@@ -62,7 +62,9 @@ class Crewman:
   moves) or out of it, its 'middle' and 'velocity' (the kernel's), its
   'up' and 'ahead' (unit, across each other: his head turns from them),
   whether it 'touches' anything and the way out of what it touches
-  ('ground', summed normals' unit, None: nothing), his 'gait'.
+  ('ground', summed normals' unit, None: nothing), his 'gait', where the
+  gravity gun pulls him ('towTo': before a magic bolt, None: nowhere;
+  'towing', that bolt's index).
   'unbuckled' gets him up, 'satDown' sits him if near enough; 'righted'
   stands him against the pull; 'wantOf' is how his legs want to move for
   the keys held; 'eyeOf' and 'figureOf' where his eyes and limbs are.
@@ -81,6 +83,8 @@ class Crewman:
   touches: bool
   ground: tuple | None
   gait: Gait
+  towTo: tuple | None
+  towing: int | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -109,6 +113,15 @@ class Crewman:
     self.buckled = True
     self._stood()
     return True
+
+  def towed(self, index: int, hold: tuple) -> None:
+    """The 'towed' method has the gravity gun pull him to bolt 'index',
+    his middle to 'hold' (and hold him there)."""
+    self.towing, self.towTo = index, tuple(hold)
+
+  def letGo(self, ) -> None:
+    """The 'letGo' method has the gravity gun let him go."""
+    self.towing, self.towTo = None, None
 
   def strappedIn(self, ) -> None:
     """The 'strappedIn' method puts him in his chair wherever he is."""
@@ -250,3 +263,4 @@ class Crewman:
     self.middle = tuple(s + MIDDLE * u for s, u in zip(STAND, self.up))
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)
+    self.towing, self.towTo = None, None

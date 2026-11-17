@@ -2,11 +2,11 @@
 TestFurnishings covers the cabin round Asger's corner (user, 2026-11-16:
 "Have the rest of it have the contents of a camping cabin. Not a fire
 place, but the same ... 'hygge'"; the warp knob "kinda... magic"; the
-gravity knob's "lots o glint", the loose things "FAFO rules"): every
+the loose things "FAFO rules"): every
 piece, still or loose, inside the capsule's wall and over its floor,
 clear of his corner (his chair, desk, globe and sideboard), its warm
 lights in the room; the loose things resting free of what is solid;
-the glint on the warp and gravity knobs alone.
+the glint on the warp knob alone.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -77,15 +77,13 @@ class TestFurnishings(SpaceTest):
         light[2]) - WALL)
 
   def test_glint(self) -> None:
-    """The warp and gravity knobs alone glint, on themselves and on
-    their guards' lids; the cabin's lights are pieces of their own (they
-    glow; the flames round as well)."""
+    """The warp knob alone glints, on itself and on its guard's lid;
+    the cabin's lights are pieces of their own (they glow; the flames
+    round as well)."""
     every = pieces(Cockpit().controls)
     glints = [(kind, what.action) for kind, what in every
               if kind.startswith('glint')]
-    self.assertEqual(glints, [('glint', 'warp'), ('glint lid', 'warp'),
-                              ('glint', 'gravity'),
-                              ('glint lid', 'gravity')])
+    self.assertEqual(glints, [('glint', 'warp'), ('glint lid', 'warp')])
     for kind in ('flames', 'flames round', 'shade', 'bulbs'):
       self.assertIn((kind, 0), every)
 

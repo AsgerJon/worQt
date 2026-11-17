@@ -101,9 +101,8 @@ FRAME = 0.025
 #  title, left, bottom, right, top (right, up from its middle, m).
 SECTIONS = (('AUTOPILOT', -0.39, -0.055, -0.112, 0.095),
             ('ASCENT GUIDANCE', 0.112, -0.055, 0.39, 0.112),
-            ('TIME AND GRAVITY', -0.39, -0.235, -0.09, -0.085),
-            ('ENGINE', 0.1, -0.235, 0.262, -0.085),
-            ('VIEW', 0.272, -0.235, 0.39, -0.085))
+            ('TIME AND ENGINE', -0.39, -0.235, -0.09, -0.085),
+            ('DOCKING', 0.085, -0.235, 0.39, -0.085))
 #  On the panel (right, up from its middle, m), its outputs: the dials
 #  (each its name and middle; their radius): the altimeter by the orbit
 #  knob, its pink mark at the guidance's target ("The orbit knob is
@@ -121,7 +120,8 @@ DIALS = (('HEIGHT', (0.175, 0.025)), ('SPEED', (-0.205, 0.17)),
 DIAL_RADIUS = 0.04
 LAMPS = (('ENGINE', (-0.1, 0.205)), ('AIR', (-0.06, 0.205)),
          ('GROUND', (-0.02, 0.205)), ('WARP', (0.02, 0.205)),
-         ('GUIDE', (0.06, 0.205)), ('ORBIT', (0.1, 0.205)))
+         ('GUIDE', (0.06, 0.205)), ('ORBIT', (0.1, 0.205)),
+         ('DOCK', (0.14, 0.205)))
 LAMP_RADIUS = 0.008
 BALL_RADIUS = 0.15
 GLASS = BALL_RADIUS + 0.02
@@ -137,11 +137,18 @@ SCREEN_AT, SCREEN_HALF, MONITOR_OUT = (0.0, -0.165), (0.052, 0.039), 0.03
 #  section. Each switch and knob has a guard flipped up while it is
 #  worked ("it should have a safety gaurd that is lifted up when
 #  adjusted. same for all toggle switch"): half its size, how far it
-#  flips up (rad), how long it stays up after, s. The gravity knob by the
-#  warp (user, 2026-11-17: "Next to the warp enchantment? Let's have a
-#  gravity one as well going from 0 - 1 and measures in g's. And has
-#  lots o glint. It starts off"): the cabin's pull to its floor, a notch
-#  a tenth of a g. The engine's limiter right of the monitor (user,
+#  flips up (rad), how long it stays up after, s. Docking (user,
+#  2026-11-17: "we include buttons so that a try-hard *could* manually do
+#  the thing ... But where we also provide an automated system ... put
+#  ins some whater the fuck necessary buttons for the tryhards, next to
+#  the CCTV, but also put an auto system"): right of the monitor, the
+#  docking thrusters' keys, the monitor's feed (CAM: aft or the nose's
+#  docking camera), UNDOCK, the MATCH and AUTO switches; the limiter
+#  joined the warp, the map's switch went to the left console. (The
+#  gravity knob, the
+#  magic gravity, is gone: user, 2026-11-17, "Remove the fake gravity
+#  magic switch"; a station's spin is to give gravity.) The engine's
+#  limiter right of the monitor (user,
 #  2026-11-17: "for deep space missinos... We need to have another engine
 #  control that restricts the engine output to a particular g, for
 #  example 1. Then no need for magic gravity"): the most the engine may
@@ -151,24 +158,35 @@ SWITCHES = (('HOLD', 'T', 'hold', (-0.35, 0.0)),
             ('RETRO', 'R', 'retrograde', (-0.22, 0.0)),
             ('AIM', 'W', 'aim', (-0.155, 0.0)),
             ('ASCENT', 'J', 'ascent', (0.352, 0.01)),
-            ('MAP', 'M', 'map', (0.331, -0.175)))
+            ('MATCH', 'L', 'match', (0.31, -0.19)),
+            ('AUTO', 'C', 'autodock', (0.365, -0.19)))
 BAT_LONG = 0.03
 BAT_OFF, BAT_ON = 0.5, -0.5
 LEGEND_UP = 0.042
 LEGEND_HALF = (0.026, 0.009)
 KNOBS = (('WARP', '. ,', 'warp', (-0.335, -0.165), 8, math.radians(105),
           -math.radians(30)),
-         ('GRAV', 'K L', 'gravity', (-0.225, -0.165), 11,
-          math.radians(150), -math.radians(30)),
-         ('LIMIT', 'Y U', 'limit', (0.181, -0.165), 8, math.radians(105),
+         ('LIMIT', 'Y U', 'limit', (-0.225, -0.165), 8, math.radians(105),
           -math.radians(30)),
          ('ORBIT', '[ ]', 'orbit', (0.27, 0.025), len(TARGETS),
           math.radians(150), -math.radians(30)))
 KNOB_RADIUS = 0.022
 KEYS = (('REAL', '/', 'stop', (-0.13, -0.125)),
-        ('TO AP', 'G', 'toAp', (-0.13, -0.19)))
-GRAVITY_NOTCHES = 11
-GRAVITY_STEP = 0.1
+        ('TO AP', 'G', 'toAp', (-0.13, -0.19)),
+        ('UP', '\u2191', 'rcs up', (0.155, -0.125)),
+        ('DOWN', '\u2193', 'rcs down', (0.155, -0.211)),
+        ('LEFT', '\u2190', 'rcs left', (0.11, -0.168)),
+        ('RIGHT', '\u2192', 'rcs right', (0.2, -0.168)),
+        ('FWD', 'PgUp', 'rcs ahead', (0.25, -0.13)),
+        ('BACK', 'PgDn', 'rcs back', (0.25, -0.2)),
+        ('CAM', 'K', 'camera', (0.3, -0.108)),
+        ('UNDOCK', 'Del', 'undock', (0.36, -0.108)))
+#  The docking thrusters' keys' ways, the rocket's own axes (the nose
+#  camera looks along its z, its picture's up its x: up, down, left,
+#  right as it shows them; ahead and back along the nose).
+THRUSTS = {'rcs up': (1.0, 0.0, 0.0), 'rcs down': (-1.0, 0.0, 0.0),
+           'rcs left': (0.0, -1.0, 0.0), 'rcs right': (0.0, 1.0, 0.0),
+           'rcs ahead': (0.0, 0.0, 1.0), 'rcs back': (0.0, 0.0, -1.0)}
 LIMITS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
 KEY_HALF, KEY_TRAVEL = (0.02, 0.014), 0.006
 GUARD_SWITCH = (0.017, 0.025, 0.022)
@@ -194,7 +212,8 @@ SLIDER_LONG = 0.28
 CONSOLE_KEYS = (('FULL', 'Z', 'full', seated(0.12, -0.45, 0.0)[:2]),
                 ('CUT', 'X', 'cut', seated(-0.04, -0.45, 0.0)[:2]),
                 ('PAD', '\u232b', 'pad', seated(0.24, 0.43, 0.0)[:2]))
-CONSOLE_SWITCHES = (('VIEW', 'V', 'view', seated(0.24, 0.6, 0.0)[:2]),)
+CONSOLE_SWITCHES = (('VIEW', 'V', 'view', seated(0.24, 0.6, 0.0)[:2]),
+                    ('MAP', 'M', 'map', seated(0.08, 0.6, 0.0)[:2]))
 CONSOLE_KEY_HALF = (0.03, 0.03)
 PAPER_AT = (0.0, 0.05)
 PAPER_WIDE, PAPER_HIGH = 0.19, 0.24
@@ -249,8 +268,13 @@ TAPE_MODEL = 'Stereo Reel to Reel Tape Deck.glb'
 TAPE_SCALE = 0.6
 TAPE_ORIGIN = (SIDEBOARD[0][0], SIDEBOARD[0][1] - 0.05, TOP + 0.014)
 TAPE_AXES = ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0))
-#  A ray from his eyes looks this far at most, m.
+#  A ray from his eyes looks this far at most, m. The gravity gun reaches
+#  a magic bolt this far, m, pointed at within 'AIM' rad (or its ring
+#  seen from there, 'BOLT_SEEN' m round).
 REACH = 1.6
+GUN_REACH = 25.0
+AIM = math.radians(3.0)
+BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
 #  A console's top, its axes as he reads it: right (his right, -y), up
 #  along it (away from him, +x), out (+z).
@@ -352,9 +376,8 @@ class Cockpit:
   is his own eyes we see through. Out of his chair ('crewman': user,
   2026-11-17: "when can Asger get up and float around in
   micro-gravity?") his head turns from his body's up and ahead, his eyes
-  and figure are his body's, and he reaches what is near his eyes. The
-  cabin's gravity enchantment is set at 'gravity' (its knob's notch: a
-  tenth of a g each; 'heavier', 'weight'). What he may work away from
+  and figure are his body's, and he reaches what is near his eyes. What
+  he may work away from
   the dashboard is the 'galley' (the rations' crate: user, 2026-11-17:
   "To eat, Asger goes to the kitchen"), looked at as the inputs are.
   """
@@ -369,7 +392,6 @@ class Cockpit:
   glancing: tuple | None
   controls: tuple
   crewman: Crewman
-  gravity: int
   galley: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -380,7 +402,7 @@ class Cockpit:
     from ._crewman import Crewman
     self.yaw, self.pitch, self.glancing = 0.0, -0.12, None
     self.controls, self.galley = _controls(), _galley()
-    self.crewman, self.gravity = Crewman(), 0
+    self.crewman = Crewman()
     self._shaker = random.Random(2026)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -399,18 +421,6 @@ class Cockpit:
     self.pitch = max(-PITCH_MOST, min(PITCH_MOST, self.pitch
                                       - TURN * down))
 
-  def heavier(self, notches: int) -> bool:
-    """The 'heavier' method turns the gravity enchantment 'notches' on
-    (back: below nought), kept on its scale; returns whether it moved."""
-    was = self.gravity
-    self.gravity = max(0, min(GRAVITY_NOTCHES - 1, was + notches))
-    return self.gravity != was
-
-  def weight(self, ) -> float:
-    """The 'weight' method returns the gravity enchantment's pull toward
-    the floor, g."""
-    return GRAVITY_STEP * self.gravity
-
   def gotUp(self, ) -> None:
     """The 'gotUp' method gets him out of his chair, still looking where
     he looked."""
@@ -428,6 +438,28 @@ class Cockpit:
     self.pitch = max(-PITCH_MOST, min(PITCH_MOST, math.asin(max(
       -1.0, min(1.0, look[2])))))
     return True
+
+  def boltAimed(self, bolts: tuple) -> int | None:
+    """The 'boltAimed' method returns the magic bolt (its index in
+    'bolts': each its place and the way it faces) the gravity gun points
+    at out of his chair: within 'GUN_REACH' of his eyes, facing him,
+    nearest to his eyes' middle within 'AIM' or its ring; None if
+    none (or he sits)."""
+    if self.crewman.buckled:
+      return None
+    eye, look = self.eye(), self.looking()[0]
+    best, least = None, math.inf
+    for k, (place, way) in enumerate(bolts):
+      off = tuple(p - e for p, e in zip(place, eye))
+      far = math.sqrt(sum(x * x for x in off))
+      if far > GUN_REACH or far < 1e-6 or sum(
+          w * o for w, o in zip(way, off)) >= 0.0:
+        continue
+      along = sum(o * l for o, l in zip(off, look)) / far
+      angle = math.acos(max(-1.0, min(1.0, along)))
+      if angle <= max(AIM, math.atan(BOLT_SEEN / far)) and angle < least:
+        best, least = k, angle
+    return best
 
   def strappedIn(self, ) -> None:
     """The 'strappedIn' method puts him in his chair wherever he is (he

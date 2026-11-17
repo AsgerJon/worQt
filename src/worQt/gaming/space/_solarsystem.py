@@ -31,7 +31,10 @@ class SolarSystem:
   is from another is summed along the tree from their nearest common
   forebear ('relative'): nothing is ever taken from Sol and back, so the
   numbers stay as small as the bodies are near. 'version' counts the
-  leaps folded in ('fold').
+  leaps folded in ('fold'). Its 'satellites' are made things on rails
+  round a body (a space station: user, 2026-11-17, "We are going to
+  have a space station in orbit"): each a 'HeavenlyBody' that pulls
+  nothing and holds nothing near it, folded with the bodies.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -42,6 +45,7 @@ class SolarSystem:
   bodies: tuple
   parents: tuple
   version: int
+  satellites: list
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -62,6 +66,7 @@ class SolarSystem:
         raise ValueError('%s comes before its parent' % body.name)
       parents.append(bodies.index(body.parent))
     self.bodies, self.parents, self.version = bodies, tuple(parents), 0
+    self.satellites = []
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -135,10 +140,12 @@ class SolarSystem:
     return anchor
 
   def fold(self, seconds: float) -> None:
-    """The 'fold' method carries 'seconds' s into every body (a leap):
-    what was at time 'seconds' is at time nought."""
+    """The 'fold' method carries 'seconds' s into every body and
+    satellite (a leap): what was at time 'seconds' is at time nought."""
     for body in self.bodies:
       body.fold(seconds)
+    for satellite in self.satellites:
+      satellite.fold(seconds)
     self.version += 1
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -2,7 +2,7 @@
 TestAccelerometer covers what the vessel feels (user, 2026-11-17: Asger
 floating round, "FAFO rules"): on the pad one g up; coasting nothing;
 the pull on what is loose in the cabin: the vessel's push the other
-way, the enchantment's toward the floor, its turning's outward.
+way, its turning's outward.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -47,12 +47,12 @@ class TestAccelerometer(SpaceTest):
     self.assertLess(norm(meter.felt), 0.01)
 
   def test_pull(self) -> None:
-    """The pull on what is loose: the push the other way and the
-    enchantment toward the floor; turning, outward from its axis."""
+    """The pull on what is loose: the push the other way; turning,
+    outward from its axis."""
     meter = Accelerometer()
     meter.felt = (0.0, 0.0, 2.0 * G0)
-    self.assertClose(meter.pullAt((0.0, 1.0, 0.0), (0.0, 0.0, 0.0), 1.0),
-                     (0.0, 0.0, -3.0 * G0), 1e-9)
+    self.assertClose(meter.pullAt((0.0, 1.0, 0.0), (0.0, 0.0, 0.0)),
+                     (0.0, 0.0, -2.0 * G0), 1e-9)
     meter.felt, meter.turning = (0.0, 0.0, 0.0), (0.0, 0.0, 0.5)
-    self.assertClose(meter.pullAt((0.0, 2.0, 0.0), (0.0, 0.0, 0.0), 0.0),
+    self.assertClose(meter.pullAt((0.0, 2.0, 0.0), (0.0, 0.0, 0.0)),
                      (0.0, 0.5, 0.0), 1e-9)

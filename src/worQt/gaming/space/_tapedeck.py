@@ -7,7 +7,7 @@ of Asger. Then when it starts playing, have it make a bunch of clicky
 sounds to get Asger's attention. just until the music starts", "The
 tape clickies are only when the tape gets ready to play music to draw
 your attention to it. The music should start only upon clearing the
-atmosphere"; the tape: 'tmp/celebration.*', the user's own, kept out of
+atmosphere"; the tape: 'tmp/celebration02.*', the user's own, kept out of
 git): announced 'LEAD_IN' s before the vessel leaves the air (the
 deck's solenoids, relays and motor clicking: the cabin's sound plays
 them), the music from the tape's beginning as it leaves, once; played,
@@ -20,9 +20,10 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-#  The tape: the repository's 'tmp' folder, a file named so.
+#  The tape: the repository's 'tmp' folder, a file named so (user,
+#  2026-11-17: "let's try celebration_02 next ok?": 'celebration02').
 TAPE_FOLDER = Path(__file__).resolve().parents[4] / 'tmp'
-TAPE_NAME = 'celebration'
+TAPE_NAME = 'celebration02'
 #  How fast the reels turn playing, rad/s (the take-up reel the faster
 #  at first: it starts empty).
 REEL_TURN = 2.0 * math.pi * 0.6
@@ -33,7 +34,7 @@ LEAD_IN = 2.0
 
 
 def tapeFile() -> Path | None:
-  """Returns the tape's file ('tmp/celebration.*'), None if there is
+  """Returns the tape's file ('tmp/<TAPE_NAME>.*'), None if there is
   none."""
   if not TAPE_FOLDER.is_dir():
     return None

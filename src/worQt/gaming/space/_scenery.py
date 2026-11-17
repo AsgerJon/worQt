@@ -24,10 +24,12 @@ from ._cockpit import panelPoint
 from ._dashboard import ALTIMETER, ballCentre, dialAngle, dialCentre
 from ._dashboard import guardHinge, headPlace, pieces
 from ._deckmodel import AXIS, movingParts
+from ._dockingport import NOSE_PORT
 from ._furnishings import candleLight, lampLight, looseParts
 from ._meshes import CAP_REACH
 from ._orrery import SPAN
 from ._planets import PAD
+from ._stationmeshes import beaconTips
 from ._turns import aboutAxis, cross, dot, matrixBack, matrixTimes, norm
 from ._turns import product, quaternionOf, rotated, unit
 
@@ -39,8 +41,23 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 
 #  Past this from the eye a body is drawn nearer, by the logarithm of how
 #  much further it is, 'FAR_LOG' m an e-fold: Pluto lands within 2 FAR.
+#  A satellite (the space station) shows within 'SATELLITE_SEEN' of the
+#  eye (the near layer's reach), drawn as it is.
 FAR = 1e6
 FAR_LOG = FAR / 16.0
+SATELLITE_SEEN = 2.9e6
+#  Farther than this a satellite's lights (the station's beacons and its
+#  windows) are drawn as points of light too (a bright light far off is
+#  seen as a point however small it is; drawn as it is it would fall
+#  between the pixels), m.
+LIGHTS_FROM = 2e4
+#  The light near a body (user, 2026-11-17: the station "visible from
+#  the gorund"): the body's shadow (the sun's light gone within it,
+#  fading over 'PENUMBRA' m at its edge) and its day side's light
+#  thrown back up ('ALBEDO' of the sun's, as much as its lit share of
+#  the face seen and as near as it is).
+PENUMBRA = 2e4
+ALBEDO = 0.3
 #  The pad shows within this of the eye, m; the ground's cap below this
 #  height, m, made anew once the eye is a quarter of its reach off its
 #  middle.
@@ -83,18 +100,21 @@ BALL_GLOW = 0.07
 #  takeoff"): over the closed circuit camera, along its look.
 FLOOD_AT = (CAMERA_AT[0], CAMERA_AT[1], CAMERA_AT[2] + 0.15)
 #  How much the dials' needles glow (their dials backlit); the enchanted
-#  knobs' glint (laid as a screen: its streaks add light; the gravity's
-#  "lots o glint"); the cabin's lights (the candles' flames by their
-#  flicker), the candles' flames going round below 'ROUND_BELOW' g
-#  (nothing carries their hot air up).
+#  knobs' glint (laid as a screen: its streaks add light); the cabin's
+#  lights (the candles' flames by their flicker), the candles' flames
+#  going round below 'ROUND_BELOW' g (nothing carries their hot air
+#  up).
 NEEDLE_GLOW = 0.45
-GLINT_GLOWS = {'warp': 1.3, 'gravity': 2.6}
+GLINT_GLOWS = {'warp': 1.3}
 GLOWS = {'flames': 2.4, 'flames round': 2.0, 'shade': 0.55, 'bulbs': 1.8}
 ROUND_BELOW = 0.2
 #  How far the tape deck's stop and play knob turns from stop to play
 #  (clockwise as one faces it), rad.
 KNOB_TURN = 0.7
 AFTER_PIECES = 1 + len(MECHANISM) + len(MARK_KINDS) + len(PARTS)
+#  The nose's docking camera (user, 2026-11-17: "one that aims the
+#  docking"): just past the tip of the nose (the vessel's own axes).
+NOSE_CAMERA = (0.0, 0.0, NOSE_PORT[2] + 0.3)
 #  His parts left out seen from his own eyes: his head, and his arms
 #  (blocks a hand's breadth from his eyes: they hid both consoles).
 UNSEEN = ('head', 'right arm', 'left arm')
@@ -135,7 +155,13 @@ class Scenery:
     way it looks and its up: the chase camera's, or Asger's eyes): the
     eye's 'forward' and 'up', 'far' (each body's place from the eye,
     turn and drawn radius), 'rocket' and 'pad' (each its place, turn,
-    shown), 'cap' (its place, turn, shown, and its middle and radius
+    shown), 'satellites' (each of the system's: its place, turn, shown),
+    'lights' (far satellites' lights as points: each its place from the
+    eye and its rainbow's share, or below nought warm), 'shine' (how much
+    of the sun's light reaches the eye: nought in the anchor's shadow),
+    'earth' (the anchor's light thrown back: the way it goes and how
+    strong, a share of the sun's), 'cap' (its place, turn, shown, and its
+    middle and radius
     when it is to be made anew, else None), 'sun' (the way its light
     goes) and 'sky' (its colour)."""
     offset, forward, up = seen
@@ -155,7 +181,26 @@ class Scenery:
     rocket = (tuple(-x for x in offset), vessel.turn, True)
     sol = system.relative(0, anchor, t)[0]
     sun = unit(tuple(a - b for a, b in zip(eye, sol)))
+    satellites, lights = [], []
+    for satellite in system.satellites:
+      parent = system.bodies.index(satellite.parent)
+      there = tuple(a + b - c for a, b, c in zip(
+        system.relative(parent, anchor, t)[0],
+        satellite.stateAt(t)[0], eye))
+      rows = satellite.turnAt(t)
+      apart = norm(there)
+      satellites.append((there, quaternionOf(rows),
+                         apart < SATELLITE_SEEN))
+      if LIGHTS_FROM < apart < SATELLITE_SEEN and not _hidden(
+          eye, there, body.radius):
+        lights.append((there, -1.0))
+        tips = beaconTips()
+        lights += [(tuple(a + b for a, b in zip(there, matrixTimes(
+          rows, tip))), k / len(tips)) for k, tip in enumerate(tips)]
+    shine, earth = self._litOf(body, eye, sun)
     return {'forward': forward, 'up': up, 'far': far, 'rocket': rocket,
+            'satellites': satellites, 'lights': lights, 'shine': shine,
+            'earth': earth,
             'pad': self._padOf(system, anchor, turn, eye),
             'cap': self._capOf(body, anchor, turn, eye),
             'sun': sun, 'sky': self._skyOf(body, eye, sun)}
@@ -174,11 +219,14 @@ class Scenery:
     'Navball.frameOf' as 'ball'), its marks, Asger's limbs (his head and
     arms left out 'inside' his eyes; 'Cockpit.figureOf'), the loose
     things where 'dash''s 'loose' has them, the candles' flames tall or
-    round by its 'weight' (g at the candles); 'light' (the cabin's lamp's
+    round by its 'weight' (g at the candles), the gravity gun as its
+    'gun' says (shown, his eyes' place and their frame's turn); 'light'
+    (the cabin's lamp's
     place), 'lamp' (the panel's flood lamp's), 'flood' (the hull's
     floodlight: its place, the way it shines, its up), 'hygge' (the
     floor lamp's light's place, the candles', their flicker) and
-    'camera' (the hull's closed circuit camera: its place, the way it
+    'camera' (the closed circuit camera feeding the monitor, the
+    nose's if 'dash''s 'nose' else the hull's: its place, the way it
     looks and its picture's up, from the eye)."""
     place, turn = rocket[0], vessel.turn
 
@@ -219,8 +267,18 @@ class Scenery:
                       rotated(turn, CAMERA_UP)),
             'hygge': (there(lampLight()), there(candleLight()),
                       dash['flicker']),
-            'camera': (there(CAMERA_AT), rotated(turn, unit(CAMERA_LOOK)),
-                       rotated(turn, CAMERA_UP))}
+            'camera': self._cameraOf(there, turn, dash['nose'])}
+
+  def _cameraOf(self, there: object, turn: tuple, nose: bool) -> tuple:
+    """Returns the closed circuit camera feeding the monitor ('nose':
+    the nose's docking camera, looking ahead along the nose, its
+    picture's up the rocket's x; else the hull's, looking aft): its
+    place from the eye, the way it looks and its picture's up."""
+    if nose:
+      return (there(NOSE_CAMERA), rotated(turn, (0.0, 0.0, 1.0)),
+              rotated(turn, (1.0, 0.0, 0.0)))
+    return (there(CAMERA_AT), rotated(turn, unit(CAMERA_LOOK)),
+            rotated(turn, CAMERA_UP))
 
   def mechanismOf(self, ball: tuple) -> tuple:
     """The 'mechanismOf' method returns how the horizon's mechanism
@@ -277,6 +335,9 @@ class Scenery:
     if kind == 'loose':
       place, held = dash['loose'][looseParts()[what][0]]
       return there(place), product(turn, held), True, 0.0
+    if kind == 'gun':
+      shown, eye, held = dash['gun']
+      return there(eye), product(turn, held), shown, 0.0
     if kind in ('guard', 'glint lid'):
       share = dash['guards'].get(what.action, 0.0)
       return (there(guardHinge(what)), product(turn, aboutAxis(
@@ -304,7 +365,8 @@ class Scenery:
     """The 'mapOf' method returns a frame of the map at time 't' on a
     view 'wide' by 'high' pixels: the eye's 'forward' and 'up'; 'bodies'
     (each body's place, turn, radius, scaled to the map); 'lines' (each
-    body's path's middle, its parent, and scale; Sol's none); the
+    body's path's middle, its parent, and scale; Sol's none; then each
+    satellite's); the
     vessel's 'path' (its points from its anchor), its middle and scale
     ('pathAt'); the 'marks'."""
     eye, forward, up = orrery.eyeOf(vessel, system, t)
@@ -320,6 +382,10 @@ class Scenery:
       if parent >= 0:
         lines.append((tuple(scale * (a - b) for a, b in zip(
           places[parent], eye)), scale))
+    for satellite in system.satellites:
+      parent = system.bodies.index(satellite.parent)
+      lines.append((tuple(scale * (a - b) for a, b in zip(
+        places[parent], eye)), scale))
     return {'forward': forward, 'up': up, 'bodies': bodies, 'lines': lines,
             'path': orrery.pathOf(vessel, system),
             'pathAt': (tuple(-scale * x for x in eye), scale),
@@ -327,9 +393,10 @@ class Scenery:
 
   def orbitsOf(self, system: SolarSystem) -> list:
     """The 'orbitsOf' method returns each body's path round its parent
-    (Sol's None): points from the parent, m, the first again last."""
+    (Sol's None), then each satellite's: points from the parent, m, the
+    first again last."""
     out = [None]
-    for body in system.bodies[1:]:
+    for body in system.bodies[1:] + tuple(system.satellites):
       points = body.conic.pathPoints(ORBIT_POINTS, 0.0)
       out.append(points + points[:1])
     return out
@@ -337,6 +404,22 @@ class Scenery:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _litOf(self, body: object, eye: tuple, sun: tuple) -> tuple:
+    """Returns how much of the sun's light reaches 'eye' (from 'body''s
+    middle; the light going 'sun'): nought in the body's shadow, fading
+    over 'PENUMBRA' at its edge; and the body's light thrown back up:
+    the way it goes (out of the body) and how strong."""
+    far = norm(eye)
+    if far <= 0.0:
+      return 1.0, ((0.0, 0.0, 1.0), 0.0)
+    behind = dot(eye, sun)
+    across = norm(tuple(e - behind * s for e, s in zip(eye, sun)))
+    shine = 1.0 if behind <= 0.0 else min(1.0, max(0.0, 0.5 + (
+      across - body.radius) / PENUMBRA))
+    up = tuple(e / far for e in eye)
+    lit = 0.5 * (1.0 - dot(up, sun))
+    return shine, (up, ALBEDO * lit * min(1.0, (body.radius / far) ** 2))
 
   def _padOf(self, system: SolarSystem, anchor: int, turn: tuple,
              eye: tuple) -> tuple:
@@ -399,3 +482,15 @@ def decalTurnOf(normal: tuple) -> tuple:
   up = (0.0, 1.0, 0.0) if size < 1e-9 else tuple(x / size for x in up)
   right = cross(up, normal)
   return quaternionOf(tuple((right[k], up[k], normal[k]) for k in range(3)))
+
+
+def _hidden(eye: tuple, there: tuple, radius: float) -> bool:
+  """Returns whether a body 'radius' round (its middle 'eye' back from
+  the eye) stands between the eye and what is 'there' from it."""
+  reach = sum(x * x for x in there)
+  if reach <= 0.0:
+    return False
+  share = min(1.0, max(0.0, -sum(e * t for e, t in zip(eye, there))
+                       / reach))
+  nearest = tuple(e + share * t for e, t in zip(eye, there))
+  return sum(x * x for x in nearest) < radius * radius

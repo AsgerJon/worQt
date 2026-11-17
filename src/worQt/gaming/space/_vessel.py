@@ -76,7 +76,10 @@ class Vessel:
   body's middle (m, m/s, the ecliptic's axes, which turn with nothing),
   its 'turn' (w x y z, its own axes to the ecliptic's) and 'spin' (rad/s,
   its own axes); how many of its legs stand on the ground ('touching').
-  The flight's kernel moves it ('Flight').
+  Its docking thrusters push it 'rcs' (N, its own axes: user,
+  2026-11-17, docking); 'docked' to the space station it rides with it
+  (moved by it, not by the flight). The flight's kernel moves it
+  ('Flight').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -93,6 +96,8 @@ class Vessel:
   turn: tuple
   spin: tuple
   touching: int
+  rcs: tuple
+  docked: bool
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -104,6 +109,7 @@ class Vessel:
     self.steer, self.anchor, self.touching = (0.0, 0.0, 0.0), 0, 0
     self.place, self.velocity = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.turn, self.spin = (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    self.rcs, self.docked = (0.0, 0.0, 0.0), False
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

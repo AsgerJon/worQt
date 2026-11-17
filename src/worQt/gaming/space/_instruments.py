@@ -52,7 +52,7 @@ GUARD_EASE = 0.07
 #  in), s.
 KNOB = 0.15
 #  The switches' modes: the autopilot's (by the switch's action).
-MODES = ('hold', 'prograde', 'retrograde', 'aim')
+MODES = ('hold', 'prograde', 'retrograde', 'aim', 'match')
 
 
 class Instruments:
@@ -63,7 +63,10 @@ class Instruments:
   dials' 'needles' (each a share of its scale, eased), the 'lamps' and
   the 'legends' (lit or not); and the counts the sound
   plays one of as they grow: the keys' 'clicks', the switches' 'snaps',
-  the knobs' 'ticks', the lamps' 'relays'; how fast the slide moves.
+  the knobs' 'ticks', the lamps' 'relays'; how fast the slide moves;
+  'switched', what the window keeps that a switch or a latched key shows
+  ('autodock': the automatic docking flies, 'camera': the monitor shows
+  the nose's docking camera).
   'pressed' presses an input's key; 'acted' keeps everything to the
   flight a frame on; 'dash' and 'told' hand the view and the sound what
   they show and play.
@@ -84,6 +87,7 @@ class Instruments:
     self.slide, self.knob, self.target = 0.0, 0.0, TARGET
     self.guards, self._held = {}, {}
     self.flicker, self._flame = 1.0, random.Random(1980)
+    self.switched = {'autodock': False, 'camera': False}
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -115,6 +119,9 @@ class Instruments:
     states = {mode: vessel.autopilot.mode == mode for mode in MODES}
     states.update({'ascent': guidance.on, 'map': mapOpen,
                    'view': inside})
+    states.update(self.switched)
+    latched = {'play': self.deck.playing, 'camera': self.switched[
+      'camera']}
     slid = 0.0
     for control in self.cockpit.controls:
       peep = control.peep
@@ -126,7 +133,6 @@ class Instruments:
           self._held[control.action] = GUARD_HOLD
       elif isinstance(peep, Knob):
         notch = {'warp': WARPS.index(keeper.factor),
-                 'gravity': self.cockpit.gravity,
                  'limit': limitNotch(vessel.engine)}.get(control.action)
         if notch is None:
           notch = guidance.notch()
@@ -138,8 +144,9 @@ class Instruments:
         before = peep.value
         peep.slid(vessel.engine.throttle)
         slid = before
-      elif control.action == 'play' and peep.latched != self.deck.playing:
-        peep.held(self.deck.playing)
+      elif control.action in latched and (
+          peep.latched != latched[control.action]):
+        peep.held(latched[control.action])
         self.clicks += 1
     self.cockpit.acted(real)
     slider = self.cockpit.controlOf('throttle').peep
@@ -258,7 +265,7 @@ class Instruments:
       conic.periapsis - body.radius) > top
     lit = {'ENGINE': vessel.engine.push > 0.0, 'AIR': inAir,
            'GROUND': vessel.touching > 0, 'WARP': keeper.factor > 1,
-           'GUIDE': guidance.on, 'ORBIT': orbit}
+           'GUIDE': guidance.on, 'ORBIT': orbit, 'DOCK': vessel.docked}
     now = [lit[name] for name, _ in LAMPS]
     self.relays += sum(1 for a, b in zip(now, self.lamps) if a != b)
     self.lamps = now
