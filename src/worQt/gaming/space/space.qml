@@ -1187,7 +1187,8 @@ Item {
     model: root.lightPoints.length
     Item {
       property vector3d at: nearView.mapFrom3DScene(root.lightPoints[index])
-      property real hue: root.lightHues[index]
+      property real hue: index < root.lightHues.length
+                         ? root.lightHues[index] : -1
       property color shade: hue < 0 ? "#ffd9a0"
                                     : Qt.hsva((hue + root.glintPhase) % 1.0,
                                               1.0, 1.0, 1.0)
@@ -1223,7 +1224,7 @@ Item {
     visible: !root.mapOpen
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
-    anchors.bottomMargin: 40
+    anchors.bottomMargin: board.visible ? board.height + 40 : 40
     spacing: 3
     Row {
       spacing: 36

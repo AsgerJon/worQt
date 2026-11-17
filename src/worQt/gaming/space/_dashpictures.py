@@ -23,11 +23,11 @@ from ._dashboard import DIAL_SCALES, LEGENDS, dialAngle, dialShare
 from ._looks import cacheFolder
 
 #  The pictures' versions (a change paints them anew) and sizes, pixels.
-VERSION = 11
+VERSION = 12
 FACE = (2048, 1280)
 DIAL = 512
 CELL = (256, 128)
-CELLS = 4
+CELLS = 6
 #  The warp knob's notches, as printed round it.
 WARP_MARKS = ('1', '5', '10', '50', '100', '1K', '10K', '100K')
 #  The orbit knob's notches, as printed round it: the guidance's targets,
@@ -70,9 +70,14 @@ def picturesReady() -> dict:
 
 
 def labelCells() -> dict:
-  """Returns where each label lies on the labels' picture, by name."""
+  """Returns where each label lies on the labels' picture, by name (a
+  cell each: more than its 'CELLS' rows of 'CELLS' raise)."""
+  names = LEGENDS + KEY_NAMES
+  if len(names) > CELLS * CELLS:
+    raise ValueError('%d labels, the picture holds %d' % (
+      len(names), CELLS * CELLS))
   out = {}
-  for k, name in enumerate(LEGENDS + KEY_NAMES):
+  for k, name in enumerate(names):
     column, row = k % CELLS, k // CELLS
     out[name] = (column / CELLS, 1.0 - (row + 1) / CELLS,
                  (column + 1) / CELLS, 1.0 - row / CELLS)

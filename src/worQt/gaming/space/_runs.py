@@ -36,6 +36,7 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_bolts',
                'tests.test_space.test_station',
                'tests.test_space.test_docking',
+               'tests.test_space.test_rendezvous',
                'tests.test_sandbox.test_peepkinds')
 
 
@@ -54,8 +55,11 @@ def spaceShow() -> int:
   once; T holds the turn; A D, W S, Q E steer; M the map; , and . warp
   (above the air, the engine shut); Y and U the engine's limit (g); B
   gets Asger up (W A S D, Space) and sits him again (dead: wakes him);
-  he eats at the rations' crate by the kitchen (look, click). Returns
-  the window's exit code once it closes."""
+  he eats at the rations' crate by the kitchen (look, click); C (AUTO)
+  docks to the station, from any orbit round Terra (the rendezvous
+  first), L matches its turning, the arrows and PgUp PgDn fire the
+  docking thrusters, K the nose's camera, Delete undocks. Returns the
+  window's exit code once it closes."""
   return scopedModule('worQt.gaming.space')
 
 

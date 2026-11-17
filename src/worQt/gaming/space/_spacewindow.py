@@ -30,7 +30,7 @@ from ._cabinmixer import DOCKS, EATS, HURTS, THRUSTING, THUD, THUDS
 from ._cabinmixer import TOLD, TOWING, TOWS
 from ._chasecamera import ChaseCamera
 from ._cockpit import EYE, LIMITS, THRUSTS, Cockpit
-from ._dockingguidance import RCS_ACCEL, DockingGuidance
+from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
 from ._crewman import PUSH, SIT
 from ._dashpictures import picturesReady
@@ -38,6 +38,7 @@ from ._furnishings import candleLight
 from ._instruments import Instruments, limitNotch
 from ._navball import Navball
 from ._orrery import Orrery, lengthText, timeText
+from ._rendezvousguidance import RendezvousGuidance
 from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
 from ._spaceviewport import SpaceViewport
@@ -134,6 +135,10 @@ DOCK_SHOWN = 5e3
 MATCH_REACH = 5e4
 #  The readout says how far the station is within this, m.
 STATION_SAID = 2e6
+#  The rendezvous's phases as the board and the readout say them.
+RENDEZVOUS_SAID = {'plane': 'to its plane', 'wait': 'waiting',
+                   'burn': 'burning', 'coast': 'coasting',
+                   'match': 'matching'}
 #  The cabin's input each action is worked by (Asger glances at it: user,
 #  2026-11-16: "When I press a keyboard key my view will turn to center
 #  on that key"), where it differs from the action's own.
@@ -195,6 +200,7 @@ class SpaceWindow(QMainWindow):
     self.vitals, self.bolts, self._tows = Vitals(), rocketBolts(), 0
     self.docking = DockingPort(self.station)
     self.autodock, self._docks = DockingGuidance(), 0
+    self.rendezvous = RendezvousGuidance(self.station)
     self._noseCamera, self._pulses, self._reading = False, {}, None
     self._padded()
     self.chase, self.orrery, self.scenery = (ChaseCamera(), Orrery(),
@@ -318,7 +324,8 @@ class SpaceWindow(QMainWindow):
     self.accelerometer.measured(vessel, system, seconds, keeper.factor > 1)
     self._cabinMoved(real)
     self._lived(real)
-    self.instruments.switched = {'autodock': self.autodock.on,
+    self.instruments.switched = {'autodock': (self.autodock.on
+                                              or self.rendezvous.on),
                                  'camera': self._noseCamera}
     self.instruments.acted(real, vessel, system, keeper, self.guidance,
                            self.mapOpen, self.inside, self._header())
@@ -376,7 +383,9 @@ class SpaceWindow(QMainWindow):
       device = gpuDevice() or 'cpu'
       self._said('the flight computer on %s (the first time ~10 s)'
                  % device)
+      from ._transfers import Transfers
       took = preloadedFlight(device)
+      self.rendezvous.transfers = Transfers(device)
       self._said('flight computer ready in %.1f s; painting the planets'
                  % took)
       began = time.perf_counter()
@@ -499,10 +508,18 @@ class SpaceWindow(QMainWindow):
       self.cockpit.glanced(WORKED_BY.get(action, action))
 
   def _taken(self, action: str) -> None:
-    """Lets the ascent guidance go if 'action' takes the controls."""
-    if action in TAKING and self.guidance.on:
+    """Lets the ascent guidance, the rendezvous and the automatic
+    docking go if 'action' takes the controls (said)."""
+    if action not in TAKING:
+      return
+    if self.guidance.on:
       self.guidance.stopped(self.vessel)
       self._noteOf('Ascent guidance off: you took the controls')
+    if self.rendezvous.on or self.autodock.on:
+      self.rendezvous.stopped(self.vessel)
+      self.autodock.stopped(self.vessel)
+      self.keeper.realtime()
+      self._noteOf('Auto docking off: you took the controls')
 
   def _acted(self, action: str, back: bool = False) -> None:
     """Does what 'action' asks (a key, a click on the cabin's input or on
@@ -750,7 +767,7 @@ class SpaceWindow(QMainWindow):
     now = time.perf_counter()
     if not self.cockpit.crewman.buckled or self.vitals.cause is not None:
       vessel.steered(0.0, 0.0, 0.0)
-      if not self.autodock.on:
+      if not (self.autodock.on or self.rendezvous.on):
         vessel.rcs = (0.0, 0.0, 0.0)
       return
     self._thrusted(now)
@@ -778,13 +795,15 @@ class SpaceWindow(QMainWindow):
     ways += [THRUSTS[action] for action, until in self._pulses.items()
              if until > now]
     if not ways:
-      if not self.autodock.on:
+      if not (self.autodock.on or self.rendezvous.on):
         self.vessel.rcs = (0.0, 0.0, 0.0)
       return
     if self.vessel.docked:
       return
-    if self.autodock.on:
+    if self.autodock.on or self.rendezvous.on:
       self.autodock.stopped(self.vessel)
+      self.rendezvous.stopped(self.vessel)
+      self.keeper.realtime()
       self._noteOf('Auto docking off: you took the thrusters')
     total = tuple(sum(way[k] for way in ways) for k in range(3))
     size = norm(total)
@@ -818,16 +837,32 @@ class SpaceWindow(QMainWindow):
         self.docking.aligned(vessel, now)
         pilot.matched(self.docking.turnAt(now), tuple(
           SPIN * a for a in reading['axis']))
-    elif self.autodock.on:
+    elif self.autodock.on or self.rendezvous.on:
       self.autodock.stopped(vessel)
+      self.rendezvous.stopped(vessel)
+      self.keeper.realtime()
       self._noteOf('Auto docking off')
-    else:
-      why = self.autodock.started(vessel, self.docking, reading, now)
+    elif reading['distance'] > REACH and not vessel.docked:
+      why = self.rendezvous.started(vessel, self.system, self.keeper)
       if why:
         self._noteOf('No auto docking: %s' % why)
       else:
-        self._noseCamera = True
-        self._noteOf('Auto docking: closing in on the station')
+        self._noteOf('Auto docking: to the station, the burn in %s' % (
+          timeText(self.rendezvous.depart - self.keeper.elapsed)))
+    else:
+      self._autodocked(reading)
+
+  def _autodocked(self, reading: dict) -> None:
+    """Starts the automatic docking from where the rocket is ('reading':
+    its nose to the port), the nose's camera on the monitor; or says why
+    not."""
+    why = self.autodock.started(self.vessel, self.docking, reading,
+                                self.keeper.now)
+    if why:
+      self._noteOf('No auto docking: %s' % why)
+    else:
+      self._noseCamera = True
+      self._noteOf('Auto docking: closing in on the station')
 
   def _docking(self, ) -> None:
     """Before the frame's flight: the automatic docking flies (or MATCH
@@ -838,9 +873,16 @@ class SpaceWindow(QMainWindow):
         vessel.engine.throttled(0.0)
         self._noteOf('Docked: undock first (Del)')
       return
+    if self.rendezvous.on:
+      self.rendezvous.acted(vessel, self.system, self.keeper)
     reading = self.docking.readingOf(vessel, self.system, now)
+    if self.rendezvous.phase == 'done':
+      self.rendezvous.phase = 'off'
+      self._autodocked(reading)
     if self.autodock.on:
       self.autodock.acted(vessel, self.docking, reading, now)
+      if self.keeper.aimed is None:
+        self.keeper.factor = self.autodock.hurried(reading)
     elif vessel.autopilot.mode == 'match':
       vessel.autopilot.matched(self.docking.turnAt(now), tuple(
         SPIN * a for a in reading['axis']))
@@ -863,6 +905,17 @@ class SpaceWindow(QMainWindow):
       self._docks += 1
       self._noteOf('Docked to the station')
 
+  def _rendezvousText(self, ) -> str:
+    """Returns the readout's line of the rendezvous: its phase, and how
+    long to the burn (waiting) or to the station's point (on the way)."""
+    guide, keeper = self.rendezvous, self.keeper
+    said = RENDEZVOUS_SAID[guide.phase]
+    if guide.phase in ('plane', 'wait'):
+      return 'Rendezvous %s, the burn in %s' % (said, timeText(
+        guide.depart - keeper.elapsed))
+    return 'Rendezvous %s, there in %s' % (said, timeText(max(
+      0.0, guide.arrival - keeper.elapsed)))
+
   def _dockText(self, ) -> str:
     """Returns the docking's numbers for the monitor (the nose's feed,
     within 'DOCK_SHOWN' of the station's port; '' none): how far, out
@@ -874,7 +927,8 @@ class SpaceWindow(QMainWindow):
       return ''
     vessel = self.vessel
     state = ('DOCKED' if vessel.docked else 'AUTO %s' % self.autodock.phase
-             if self.autodock.on else 'MATCH' if vessel.autopilot.mode
+             if self.autodock.on else 'AUTO %s' % self.rendezvous.phase
+             if self.rendezvous.on else 'MATCH' if vessel.autopilot.mode
              == 'match' else 'BY HAND')
     return ('PORT %7.1f m  OUT %7.1f  OFF %5.1f\n'
             'CLOSE %+6.2f m/s  TILT %4.1f\u00b0  SPIN %+.3f\n%s' % (
@@ -899,7 +953,11 @@ class SpaceWindow(QMainWindow):
     return ''
 
   def _warpKept(self, ) -> None:
-    """Ends the warp the moment it may not go on, saying why."""
+    """Ends the warp the moment it may not go on, saying why (the
+    automatic docking and rendezvous keep the warp they ask for: the
+    docking hurries time while its thrusters fire)."""
+    if self.autodock.on or self.rendezvous.on:
+      return
     if self.keeper.factor > 1:
       why = self._noWarp()
       if why:
@@ -943,7 +1001,8 @@ class SpaceWindow(QMainWindow):
             'limit': '%g g' % LIMITS[limitNotch(self.vessel.engine)],
             'match': self.vessel.autopilot.mode == 'match',
             'docking': ('docked' if self.vessel.docked else
-                        self.autodock.phase),
+                        RENDEZVOUS_SAID[self.rendezvous.phase]
+                        if self.rendezvous.on else self.autodock.phase),
             'nose': self._noseCamera,
             'thrusting': any(self.vessel.rcs),
             'up': not self.cockpit.crewman.buckled}
@@ -1020,7 +1079,7 @@ class SpaceWindow(QMainWindow):
     if reading is not None and reading['distance'] < STATION_SAID:
       lines.append('Station    %-12s %s' % (lengthText(
         reading['distance']), 'docked' if vessel.docked else
-        'closing %s/s' % lengthText(reading['closing'])))
+        'drifting %s/s' % lengthText(norm(reading['drift']))))
     pilot = vessel.autopilot
     if pilot.mode == 'aim':
       off = ('off the path %+.0f°' % math.degrees(pilot.turn)
@@ -1028,6 +1087,8 @@ class SpaceWindow(QMainWindow):
                                   % math.degrees(pilot.heading))
       lines.append('Aim        %+.0f° over the horizon, %s' % (
         math.degrees(pilot.pitch), off))
+    if self.rendezvous.on:
+      lines.append(self._rendezvousText())
     if self.guidance.on:
       lines.append('Ascent     to %s: %s' % (lengthText(
         self.guidance.target), self.guidance.phase))

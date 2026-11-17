@@ -202,6 +202,18 @@ class TestCockpit(SpaceTest):
         point = tuple(a + b for a, b in zip(row[:3], pivot))
         self.assertTrue(_inside(point), (piece[0], point))
 
+  def test_labels(self) -> None:
+    """Every legend and key cap has a cell of its own on the labels'
+    picture, inside it (one past its edge would wrap round to another's
+    words: the CAM key read PRO)."""
+    cells = list(labelCells().values())
+    for u0, v0, u1, v1 in cells:
+      self.assertTrue(0.0 <= u0 < u1 <= 1.0 and 0.0 <= v0 < v1 <= 1.0)
+    for a, b in itertools.combinations(cells, 2):
+      apart = (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1]
+               or b[3] <= a[1])
+      self.assertTrue(apart, (a, b))
+
   def test_window(self) -> None:
     """To his left he sees out through the window by him (user,
     2026-11-16: "To his left is a window"), ahead of him and to his
