@@ -19,10 +19,11 @@ import random
 from ._looks import cacheFolder
 
 #  The pictures' version (a change paints them anew) and sizes, pixels.
-VERSION = 9
+VERSION = 11
 #  The gravity gun's 3's picture's size, pixels.
 THREE_SIZE = 256
 MANUAL_SIZE = (1024, 1448)
+EXIT_SIZE = (1024, 298)
 SIZE = 512
 #  How many m one picture of each covers (its tile).
 PINE_TILE = 1.2
@@ -32,8 +33,8 @@ BOARD_TILE = 1.6
 def cabinPicturesReady() -> dict:
   """Returns the cabin's pictures' files by name ('pine', 'boards',
   'rug', 'blanket', 'glint', 'rcir', 'three': the gravity gun's 3,
-  'manual': the warning placard by the door), painted if not kept
-  yet."""
+  'manual': the warning placard by the door, 'exit': the launch tower's
+  EXIT sign), painted if not kept yet."""
   folder = cacheFolder()
   folder.mkdir(parents=True, exist_ok=True)
   out = {}
@@ -41,7 +42,8 @@ def cabinPicturesReady() -> dict:
                         ('rug', rugPainted), ('blanket', blanketPainted),
                         ('glint', glintPainted),
                         ('rcir', rcirPainted), ('three', threePainted),
-                        ('manual', manualPainted)):
+                        ('manual', manualPainted),
+                        ('exit', exitPainted)):
     target = folder / ('cabin-%s-%d.png' % (name, VERSION))
     if not target.exists() and not painter().save(str(target)):
       raise OSError('the picture %s could not be kept in %s' % (name,
@@ -331,5 +333,51 @@ def manualPainted() -> object:
   painter.drawText(QRectF(margin, high - 0.06 * high, wide - 2 * margin,
                           0.03 * high), Qt.AlignmentFlag.AlignCenter,
                    SMALL_PRINT)
+  painter.end()
+  return image
+
+
+def exitPainted() -> object:
+  """Returns the launch tower's EXIT sign (user, 2026-11-17: "An EXIT
+  sign should point us to a stair case and to an elevator that can take
+  us to the ground"): white on green, a running figure, EXIT, the stairs
+  to the left and the lift to the right."""
+  from PySide6.QtCore import QPointF, QRectF, Qt
+  from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+  wide, high = EXIT_SIZE
+  image = QImage(wide, high, QImage.Format.Format_RGB32)
+  image.fill(QColor(0, 150, 70))
+  painter = QPainter(image)
+  painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+  white = QColor(250, 252, 250)
+  pen = QPen(white, 0.045 * high)
+  pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+  painter.setPen(pen)
+  x, y = 0.5 * wide, 0.36 * high
+  head = 0.07 * high
+  painter.setBrush(white)
+  painter.drawEllipse(QPointF(x - 0.2 * wide + 0.02 * wide, y - 0.18 * high),
+                      head, head)
+  run = x - 0.2 * wide
+  for a, b in (((0.0, -0.1), (-0.02, 0.12)), ((-0.02, 0.12), (-0.08, 0.3)),
+               ((-0.02, 0.12), (0.05, 0.22)), ((0.05, 0.22), (0.03, 0.32)),
+               ((0.0, -0.05), (-0.06, 0.05)), ((0.0, -0.05), (0.06, 0.02))):
+    painter.drawLine(QPointF(run + a[0] * wide, y + a[1] * high),
+                     QPointF(run + b[0] * wide, y + b[1] * high))
+  font = QFont('Sans')
+  font.setBold(True)
+  font.setPixelSize(int(0.42 * high))
+  painter.setFont(font)
+  painter.drawText(QRectF(0.38 * wide, 0.04 * high, 0.5 * wide, 0.56 * high),
+                   Qt.AlignmentFlag.AlignVCenter
+                   | Qt.AlignmentFlag.AlignLeft, 'EXIT')
+  font.setPixelSize(int(0.2 * high))
+  painter.setFont(font)
+  painter.drawText(QRectF(0.03 * wide, 0.64 * high, 0.45 * wide, 0.3 * high),
+                   Qt.AlignmentFlag.AlignVCenter
+                   | Qt.AlignmentFlag.AlignLeft, '\u25c0 STAIRS')
+  painter.drawText(QRectF(0.52 * wide, 0.64 * high, 0.45 * wide, 0.3 * high),
+                   Qt.AlignmentFlag.AlignVCenter
+                   | Qt.AlignmentFlag.AlignRight, 'LIFT \u25b6')
   painter.end()
   return image

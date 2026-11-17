@@ -27,6 +27,11 @@ from ._vessel import SIZE
 #  span past 180).
 STEP = 2.0
 STOREY = 0.2
+#  The pilot's seat: its bolsters' half sizes (along, across, up), its
+#  headrest's, its pedestal's (along, across), m.
+BOLSTER = (0.25, 0.04, 0.07)
+HEADREST = (0.04, 0.12, 0.1)
+PEDESTAL = (0.12, 0.16)
 OPENINGS = WINDOWS + (DOOR,)
 
 
@@ -106,32 +111,67 @@ def innerWall() -> tuple:
 
 
 def seatRows() -> tuple:
-  """Returns the office chair's seat and back (user, 2026-11-16: "Asger
-  sits in what is more like an office chair"), upholstered."""
-  return _joined([_box(middle, half) for middle, half in (CUSHION,
-                                                          BACKREST)])
+  """Returns the pilot's seat's upholstery (user, 2026-11-16: "Asger
+  sits in what is more like an office chair"; 2026-11-17: "Less office
+  chair, more pilot seat"): the seat and the back ('CUSHION',
+  'BACKREST'), the bolsters either side of the seat, the headrest."""
+  (x, y, z), half = CUSHION
+  (bx, by, bz), back = BACKREST
+  top = z + half[2]
+  parts = [_box(middle, size) for middle, size in (CUSHION, BACKREST)]
+  for side in (-1.0, 1.0):
+    parts.append(_box((x, y + side * (half[1] + BOLSTER[1]), top),
+                      (half[0], BOLSTER[1], BOLSTER[2])))
+  parts.append(_box((bx + 0.01, by, bz + back[2] + HEADREST[2] + 0.04),
+                    HEADREST))
+  return _joined(parts)
+
+
+def seatShell() -> tuple:
+  """Returns the pilot's seat's dark shell: the bucket under the seat,
+  the high back behind the backrest and its wings either side."""
+  (x, y, z), half = CUSHION
+  (bx, by, bz), back = BACKREST
+  under = z - half[2]
+  high = back[2] + 2.0 * HEADREST[2] + 0.06
+  parts = [_box((x, y, under - 0.05), (half[0] + 0.02, half[1] + 0.06,
+                                       0.05)),
+           _box((bx - back[0] - 0.03, by, bz - back[2] + high), (
+             0.03, half[1] + 0.06, high))]
+  for side in (-1.0, 1.0):
+    parts.append(_box((bx + 0.03, by + side * (back[1] + 0.03), bz), (
+      0.07, 0.03, back[2])))
+  return _joined(parts)
+
+
+def harnessRows() -> tuple:
+  """Returns the four point harness: the shoulder straps down the
+  backrest, the lap straps along the seat, the buckle's plate."""
+  (x, y, z), half = CUSHION
+  (bx, by, bz), back = BACKREST
+  top = z + half[2]
+  parts = []
+  for side in (-1.0, 1.0):
+    parts.append(_box((bx + back[0] + 0.004, by + side * 0.09, bz),
+                      (0.004, 0.024, back[2])))
+    parts.append(_box((x, y + side * 0.2, top + 0.004), (half[0] - 0.02,
+                                                         0.024, 0.004)))
+  parts.append(_box((x + half[0] - 0.06, y, top + 0.006), (0.03, 0.04,
+                                                           0.006)))
+  return _joined(parts)
 
 
 def chairFrame() -> tuple:
-  """Returns the office chair's frame: five legs out from its foot on
-  castors, its gas column up to the seat, the stem up the back."""
+  """Returns the pilot's seat's mount: a pedestal under the bucket,
+  bolted to two rails along the floor."""
   (x, y, z), half = CUSHION
-  under = z - half[2]
-  parts = []
-  for k in range(5):
-    a = 2.0 * math.pi * k / 5.0
-    c, s = math.cos(a), math.sin(a)
-    axes = ((c, s, 0.0), (-s, c, 0.0), (0.0, 0.0, 1.0))
-    parts.append(_box((x + 0.17 * c, y + 0.17 * s, FLOOR + 0.07),
-                      (0.17, 0.022, 0.015), axes))
-    parts.append(_box((x + 0.33 * c, y + 0.33 * s, FLOOR + 0.025),
-                      (0.025, 0.02, 0.025), axes))
-  column = 0.5 * (under - FLOOR - 0.07)
-  parts.append(_box((x, y, FLOOR + 0.07 + column), (0.025, 0.025,
-                                                    column)))
-  (bx, by, bz), back = BACKREST
-  stem = 0.5 * (bz - back[2] - under)
-  parts.append(_box((bx - 0.02, by, under + stem), (0.015, 0.03, stem)))
+  under = z - half[2] - 0.1
+  stand = 0.5 * (under - FLOOR)
+  parts = [_box((x, y, FLOOR + stand), (PEDESTAL[0], PEDESTAL[1],
+                                        stand))]
+  for side in (-1.0, 1.0):
+    parts.append(_box((x, y + side * 0.18, FLOOR + 0.012), (0.38, 0.025,
+                                                            0.012)))
   return _joined(parts)
 
 

@@ -40,6 +40,15 @@ STARVING = 0.25
 #  'EATING' s.
 RATION = 10.0
 EATING = 2.0
+#  Pork scratchings under the dashboard, always there (user, 2026-11-17:
+#  "Asger needs to be able to grab some snacks whilst sitting in his
+#  chair so as to not starve himself"): a handful feeds 'SNACK' points
+#  in 'SNACKING' s; at 'PECKISH' points or less (three drumsticks) he is
+#  reminded of them, again once he has been fed past 'REMINDED'.
+SNACK = 4.0
+SNACKING = 1.0
+PECKISH = 6.0
+REMINDED = 8.0
 #  How fast the red of being hurt fades (most of the way in), s.
 HURT_FADES = 0.4
 #  Falling (user, 2026-11-17: "Up to 1.5 Asger heights, Asger takes no
@@ -77,13 +86,15 @@ class Vitals:
   eating: float
   hurts: int
   meals: int
+  snacks: int
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.hurts = self.meals = 0
+    self.hurts = self.meals = self.snacks = 0
+    self.bite, self.took, self.reminded = RATION, EATING, False
     self.revived()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -105,7 +116,7 @@ class Vitals:
     if self.eating > 0.0:
       self.eating -= seconds
       if self.eating <= 0.0:
-        self.eating, self.food = 0.0, min(FOOD, self.food + RATION)
+        self.eating, self.food = 0.0, min(FOOD, self.food + self.bite)
     crushing = 0.0 if seated else CRUSHING * max(
       0.0, gees - CRUSHING_FROM) ** 2
     starving = STARVING if self.food <= 0.0 else 0.0
@@ -148,7 +159,38 @@ class Vitals:
     if self.food >= FOOD - 0.5:
       return 'Asger is full'
     self.eating, self.meals = EATING, self.meals + 1
+    self.bite, self.took = RATION, EATING
     return ''
+
+  def snacked(self, ) -> str:
+    """The 'snacked' method begins a handful of pork scratchings if he
+    may eat; returns why not ('' he eats): dead, already eating,
+    full."""
+    if self.cause is not None:
+      return 'Asger is dead'
+    if self.eating > 0.0:
+      return 'Asger is eating'
+    if self.food >= FOOD - 0.5:
+      return 'Asger is full'
+    self.eating, self.snacks = SNACKING, self.snacks + 1
+    self.bite, self.took = SNACK, SNACKING
+    return ''
+
+  def reminder(self, ) -> bool:
+    """The 'reminder' method says whether he is to be reminded of the
+    snacks now: once each time his food falls to 'PECKISH'."""
+    if self.food > REMINDED:
+      self.reminded = False
+    if self.food <= PECKISH and not self.reminded and self.cause is None:
+      self.reminded = True
+      return True
+    return False
+
+  @property
+  def eaten(self, ) -> float:
+    """The 'eaten' property is how much of what he eats he has eaten
+    (nought to one; nought: nothing)."""
+    return 1.0 - self.eating / self.took if self.eating > 0.0 else 0.0
 
   def revived(self, ) -> None:
     """The 'revived' method wakes him whole: full health and food, alive,

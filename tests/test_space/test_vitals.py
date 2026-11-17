@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 
 from worQt.gaming.space._aerospike import G0
-from worQt.gaming.space._cockpit import LIMITS, Cockpit
+from worQt.gaming.space._cockpit import EYE, LIMITS, REACH, Cockpit
 from worQt.gaming.space._instruments import limitNotch
 from worQt.gaming.space._vessel import MASS, Vessel
 from worQt.gaming.space._vitals import EATING, FED, FOOD, FOOD_LASTS
@@ -158,3 +158,34 @@ class TestVitals(SpaceTest):
     self.assertIs(cockpit.lookedAt(), crate)
     cockpit.strappedIn()
     self.assertIsNot(cockpit.lookedAt(), crate)
+
+  def test_snacks(self) -> None:
+    """The pork scratchings under the dashboard (user, 2026-11-17: "Asger
+    needs to be able to grab some snacks whilst sitting in his chair so
+    as to not starve himself"): in reach of his chair; a handful feeds
+    'SNACK' in 'SNACKING' s; at three drumsticks he is reminded, once,
+    again only once fed past 'REMINDED'."""
+    from worQt.gaming.space._vitals import PECKISH, REMINDED, SNACK
+    from worQt.gaming.space._vitals import SNACKING
+    cockpit = Cockpit()
+    bag = [c for c in cockpit.household if c.action == 'snack'][0]
+    way = tuple(m - e for m, e in zip(bag.centre, EYE))
+    far = math.sqrt(sum(x * x for x in way))
+    self.assertLess(far, REACH)
+    self.assertIsNotNone(bag.hitBy(EYE, tuple(x / far for x in way)))
+    vitals = Vitals()
+    self.assertEqual(vitals.snacked(), 'Asger is full')
+    vitals.food = PECKISH + 0.5
+    self.assertFalse(vitals.reminder())
+    vitals.food = PECKISH
+    self.assertTrue(vitals.reminder())
+    self.assertFalse(vitals.reminder())
+    self.assertEqual(vitals.snacked(), '')
+    self.assertEqual(vitals.snacks, 1)
+    self.assertEqual(vitals.meals, 0)
+    vitals.lived(SNACKING + 0.01, 1.0)
+    self.assertAlmostEqual(vitals.food, PECKISH + SNACK, 1)
+    vitals.food = REMINDED + 1.0
+    self.assertFalse(vitals.reminder())
+    vitals.food = PECKISH
+    self.assertTrue(vitals.reminder())

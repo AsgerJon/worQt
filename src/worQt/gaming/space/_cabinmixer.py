@@ -43,12 +43,15 @@ from ._tapedeck import LEAD_IN
 #  and how often it has fired at a magic bolt, how hard the docking
 #  thrusters push (nought to one), how often the docking latch has
 #  caught, how often the rocket has hit the space station and how hard
-#  the last hit was (m/s into it), how often Asger has been laughed at.
+#  the last hit was (m/s into it), how often Asger has been laughed at,
+#  how near the food he is (one: by it, nought: out of earshot), how many
+#  handfuls of pork scratchings he has begun (no music).
 VOLUME, ENGINE, INSIDE, AIR, CLICKS, SNAPS, TICKS = range(7)
 SLIDE, TYPED, BELLS, RETURNS, DECK, REWINDS, RELAYS = range(7, 14)
 ANNOUNCED, THUDS, THUD, HURTS, EATS, TOWING, TOWS = range(14, 21)
-THRUSTING, DOCKS, CRASHES, CRASH, LAUGHS = 21, 22, 23, 24, 25
-TOLD = 26
+THRUSTING, DOCKS, CRASHES, CRASH, LAUGHS, FOOD_NEAR = range(21, 27)
+SNACKS = 27
+TOLD = 28
 #  How fast the gravity gun's hum swells and fades, s.
 HUM_FADE = 0.12
 #  A thud this hard (m/s, by its heft) is as loud as a thud gets; a hit
@@ -62,10 +65,13 @@ TAPE_GAIN, TAPE_FADE = 0.55, 0.08
 #  The kitchen's music (user, 2026-11-17: "when Asger gets food at the
 #  kitchen thing, play @previews/le_food.mp3"; the user's file, kept out
 #  of git as the tape is): played through from its start each time he
-#  begins a ration, unless it plays already; how loud.
+#  begins a ration, unless it plays already; how loud; as loud as he is
+#  near the food (user, 2026-11-17: "when walking away from the food area
+#  fade out the audible France"), eased over 'NEAR_EASE' s.
 MEAL_MUSIC = Path(__file__).resolve().parents[4] / 'previews' / (
   'le_food.mp3')
 MEAL_GAIN = 0.5
+NEAR_EASE = 0.3
 #  Risitas laughing at Asger (user, 2026-11-17, of launching with the
 #  walkway still on: "have risitas laugh at Asger"; "Just play the
 #  laughing bit lol, just a few seconds": 4.6 s cut from the user's
@@ -346,7 +352,8 @@ class CabinMixer:
                   'ticks': tickOf(rate), 'relays': relayOf(rate),
                   'returns': returnOf(rate), 'bells': bellOf(rate),
                   'thuds': thudOf(rate), 'hurts': oofOf(rate),
-                  'eats': eatOf(rate), 'tows': 0.6 * yeetOf(rate),
+                  'eats': eatOf(rate), 'snacks': eatOf(rate),
+                  'tows': 0.6 * yeetOf(rate),
                   'docks': latchOf(rate), 'crashes': crashOf(rate)}
     self.humming = 0.0
     self.clacks = [clackOf(rate, k) for k in range(4)]
@@ -354,6 +361,7 @@ class CabinMixer:
     self.tape, self.tapeAt, self.tapeGain, self.rewound = None, 0, 0.0, None
     self.records = {EATS: [None, None, None, MEAL_GAIN, False],
                     LAUGHS: [None, None, None, LAUGH_GAIN, True]}
+    self.near = 0.0
     self.leadIn, self.leads = leadInOf(rate), []
     self.announced, self.decked = None, None
     self._decoding = threading.Thread(target=self._decoded, daemon=True)
@@ -377,8 +385,10 @@ class CabinMixer:
     sound += self._swish(told[SLIDE], count)
     sound += self._announcedOf(told, count)
     sound += self._taped(told[DECK] > 0.5, told[REWINDS], count)
-    for slot in self.records:
-      sound += self._recordPlayed(slot, told[slot], count)
+    self.near += (1.0 - math.exp(-count / (self.rate * NEAR_EASE))) * (
+      told[FOOD_NEAR] - self.near)
+    sound += self.near * self._recordPlayed(EATS, told[EATS], count)
+    sound += self._recordPlayed(LAUGHS, told[LAUGHS], count)
     sound += self._gunHum(told[TOWING] > 0.5, count, t)
     sound += self._hissed(told[THRUSTING], count)
     self.time += count / self.rate
@@ -459,6 +469,7 @@ class CabinMixer:
               'typed': told[TYPED], 'returns': told[RETURNS],
               'bells': told[BELLS], 'thuds': told[THUDS],
               'hurts': told[HURTS], 'eats': told[EATS],
+              'snacks': told[SNACKS],
               'tows': told[TOWS], 'docks': told[DOCKS],
               'crashes': told[CRASHES]}
     hard = min(1.0, told[THUD] / LOUDEST)

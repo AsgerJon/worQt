@@ -29,14 +29,14 @@ from ._ascentguidance import AscentGuidance
 from ._bolts import holdOf, rocketBolts, stationBolts
 from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
 from ._cabinmixer import THUD, THUDS
-from ._cabinmixer import LAUGHS, TOLD, TOWING, TOWS
+from ._cabinmixer import FOOD_NEAR, LAUGHS, SNACKS, TOLD, TOWING, TOWS
 from ._chasecamera import ChaseCamera
 from ._cockpit import CUSHION, EYE, LIMITS, THRUSTS, Cockpit
 from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
 from ._crewman import MIDDLE, PUSH, SIT
 from ._dashpictures import picturesReady
-from ._furnishings import candleLight, sofaSeat
+from ._furnishings import candleLight, rationCrate, sofaSeat
 from ._instruments import Instruments, limitNotch
 from ._navball import Navball
 from ._orrery import Orrery, lengthText, timeText
@@ -58,12 +58,20 @@ from ._teleprinter import ICONS
 from ._timekeeper import Timekeeper
 from ._turns import cross, dot, norm, quaternionOf, rotated, unit
 from ._vessel import MASS, Vessel
-from ._vitals import EATING, Vitals
-from ._walkway import PLATFORM_FAR, Walkway, doorwayInside
+from ._vitals import Vitals
+from ._walkway import Walkway, doorwayInside
+from ._launchtower import LIFT_FOOT, LIFT_TOP, START, towerSolids
+from ._towerlift import FOOT, TOP, TowerLift
 from ._cockpit import FLOOR, inCabin
 
-#  A frame, ms; the longest step a frame takes, s.
-TICK = 16
+#  The window ticks once a frame drawn (user, 2026-11-17: "it feels like
+#  it polls every t0, whilst somethign else renders at t1. If t0 != t1,
+#  then gcd(t0, t1) == 1": a 16 ms timer beat against the screen's
+#  refresh, the mouse's turn shown unevenly; now t0 = t1); a timer every
+#  'TICK' ms ticks only when no frame has for 'IDLE' s (readying, the
+#  window hidden); the longest step a frame takes, s.
+TICK = 50
+IDLE = 0.04
 LONGEST_REAL = 0.1
 #  Loading that cannot be told from failing is failing (user, 2026-11-16:
 #  "If correct loading cannot be distinguished from failed loading, it
@@ -77,7 +85,7 @@ FROZEN = 10.0
 #  ground"): at night on the pad (now if it is dark with 'NIGHT_LEFT' s
 #  of it left, else 'INTO_NIGHT' s after the next dusk), Terra Prime
 #  'RISEN' rad of its path short of overhead (over him a minute on),
-#  Asger on the tower's platform facing the walkway. False (the render
+#  Asger in the tower's hall facing the walkway. False (the render
 #  and window scripts): in his chair, now, the walkway away.
 START_OUTSIDE = True
 NIGHT_LEFT = 3600.0
@@ -90,6 +98,11 @@ SUPPERLESS = 12.0
 #  2026-11-17: "have risitas laugh at Asger and then restate the quest
 #  info"), no more often than every 'LAUGH_EVERY' real s.
 LAUGH_EVERY = 5.0
+#  The kitchen's music heard whole this near the rations' crate, gone
+#  this far from it, m.
+FOOD_HEARD = (2.0, 6.0)
+#  The launch tower's lift is called from this near its door, m.
+LIFT_CALL = 2.5
 #  Something this near the doorway (m from it) keeps the door open.
 DOORWAY_CLEAR = 0.35
 STUCK = 60.0
@@ -258,6 +271,7 @@ class SpaceWindow(QMainWindow):
     self.station = (Station(self.system, -RISEN) if START_OUTSIDE else
                     Station(self.system))
     self.walkway, self.quest = Walkway(START_OUTSIDE), Quest()
+    self.towerLift, self._towered = TowerLift(), False
     self._manualOpen, self._laughedAt = False, -LAUGH_EVERY
     self.vessel = Vessel()
     self.guidance = AscentGuidance()
@@ -295,7 +309,8 @@ class SpaceWindow(QMainWindow):
     self.viewport.boardPicked.connect(self._acted)
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
-    self.timer.timeout.connect(self.tick)
+    self.timer.timeout.connect(self._idled)
+    self.viewport.quick.frameSwapped.connect(self._framed)
     self._started()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -345,7 +360,13 @@ class SpaceWindow(QMainWindow):
       self.pointer.take()
       return True
     if kind == QEvent.Type.MouseButtonPress and self.inside:
-      self._used(event.button() == Qt.MouseButton.RightButton)
+      right = event.button() == Qt.MouseButton.RightButton
+      if not (right and self._gunPressed()):
+        self._used(right)
+      return True
+    if kind == QEvent.Type.MouseButtonRelease and self.inside:
+      if event.button() == Qt.MouseButton.RightButton:
+        self._gunReleased()
       return True
     if kind == QEvent.Type.MouseMove:
       self.pointer.movedTo(event.globalPosition(), event.position())
@@ -364,6 +385,16 @@ class SpaceWindow(QMainWindow):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _framed(self, ) -> None:
+    """A frame drawn: the next tick (it draws the next frame)."""
+    if self.timer.isActive():
+      self.tick()
+
+  def _idled(self, ) -> None:
+    """The timer: a tick if no frame has ticked for 'IDLE' s."""
+    if time.perf_counter() - self._ticked >= IDLE:
+      self.tick()
 
   def tick(self, ) -> None:
     """The 'tick' method takes the keys, lets the ascent guidance fly,
@@ -418,6 +449,8 @@ class SpaceWindow(QMainWindow):
     told[DOCKS] = self._docks
     told[CRASHES], told[CRASH] = self._crashes, self._crash
     told[LAUGHS] = self._laughs
+    told[FOOD_NEAR] = self._foodNear()
+    told[SNACKS] = self.vitals.snacks
     self.speaker.heard(tuple(told))
     right, down = self.pointer.moved()
     if right or down:
@@ -446,8 +479,10 @@ class SpaceWindow(QMainWindow):
     viewport.monitorShown(self._noseCamera, self._dockText())
     vitals = self.vitals
     viewport.vitalsShown(vitals.health, vitals.food, vitals.hurt,
-                         1.0 - vitals.eating / EATING if vitals.eating
-                         else 0.0, vitals.cause or '')
+                         vitals.eaten, vitals.cause or '')
+    if vitals.reminder():
+      self._noteOf('Peckish? There are pork scratchings under the '
+                   'dashboard, by your right knee (E)')
     viewport.sleepShown(self.sleep.shade(now))
     self._questKept()
     viewport.questShown(self.quest.rows())
@@ -692,6 +727,9 @@ class SpaceWindow(QMainWindow):
       self._noteOf(why or 'Asger eats a ration (RCIR)')
       if not why:
         self._questTicked('ate')
+    elif action == 'snack':
+      why = self.vitals.snacked()
+      self._noteOf(why or 'Asger crunches a handful of pork scratchings')
     elif action in ('door', 'door outside'):
       self._doorWorked()
     elif action == 'lock':
@@ -759,7 +797,7 @@ class SpaceWindow(QMainWindow):
   def _started(self, ) -> None:
     """Starts the game: outside (user, 2026-11-17: "Asger must start
     outside in the night where we can reasonably spot Terra Prime from
-    the ground"), Asger up on the tower's platform facing the walkway,
+    the ground"), Asger up in the tower's hall facing the walkway,
     looking up a little, told the first step; else in his chair, the
     walkway's steps done."""
     if not START_OUTSIDE:
@@ -769,13 +807,24 @@ class SpaceWindow(QMainWindow):
     cockpit = self.cockpit
     cockpit.gotUp()
     crewman = cockpit.crewman
-    crewman.placed((PLATFORM_FAR + 1.2, 0.0, FLOOR + 0.002 + MIDDLE),
-                   (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
-    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)
-    cockpit.yaw, cockpit.pitch = 0.0, 0.35
+    soles, facing = START
+    crewman.placed((soles[0], soles[1], soles[2] + MIDDLE), (0.0, 0.0, 0.0),
+                   0, (0.0, 0.0, 0.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), facing
+    cockpit.yaw, cockpit.pitch = 0.0, 0.0
     self.vitals.food = SUPPERLESS
-    self._noteOf('Night on the pad, Terra Prime passing over: look up. '
-                 'Then: %s' % self.quest.textOf(self.quest.current))
+    self._noteOf('Night at the launch tower. Ahead the walkway to the '
+                 'rocket; behind you the EXIT, stairs or a lift down to '
+                 'the ground (Terra Prime passes over: look up). Quest: %s'
+                 % self.quest.textOf(self.quest.current))
+
+  def _foodNear(self, ) -> float:
+    """Returns how near the food Asger's ears are: one within the first
+    of 'FOOD_HEARD' m of the rations' crate, nought past the second (the
+    kitchen's music fades between)."""
+    near, far = FOOD_HEARD
+    away = math.dist(self.cockpit.eye(), rationCrate()[0])
+    return min(1.0, max(0.0, (far - away) / (far - near)))
 
   def _promptOf(self, control: object) -> str:
     """Returns what working 'control' does now (the door's keys as the
@@ -938,7 +987,8 @@ class SpaceWindow(QMainWindow):
     """Gets Asger up out of his chair (user, 2026-11-17: Shift), said."""
     self.cockpit.gotUp()
     self._noteOf('Asger is up: W A S D, Space; E at the chair sits him;'
-                 ' click a glowing bolt: the gun pulls him there')
+                 ' hold the right button at a glowing bolt: the gun pulls'
+                 ' him there')
 
   def _chairAimed(self, ) -> bool:
     """Returns whether Asger, up, looks at his chair within 'SIT' of it
@@ -1002,9 +1052,14 @@ class SpaceWindow(QMainWindow):
         leap = crewman.leapOf(pull)
       want = (wanted, walking, wanting, leap, sure)
     self._leaping = False
+    self._towerKept(real)
+    if crewman.picked():
+      self._noteOf('Asger holds on to the bolt (Space: push off, right '
+                   'click: let go)')
     self._aboard(real)
     self.walkway.moved(real)
-    self.world.walked(self.walkway.outside)
+    self.world.walked(self.walkway.outside | (
+      self.towerLift.doors if self.walkway.attached else 0))
     self.world.stepped(real, accelerometer, crewman, want)
 
   def _aboard(self, real: float) -> None:
@@ -1034,13 +1089,53 @@ class SpaceWindow(QMainWindow):
         self.cockpit.crewman.letGo()
     self._stationed = docked
 
+  def _towerKept(self, real: float) -> None:
+    """On the pad with the walkway out, the launch tower's solids (its
+    stairs, its legs, the rocket's legs) and its lift's car (moved on
+    'real' s) are in the cabin's world; else, docked or not, the
+    station's ('_aboard')."""
+    if self.vessel.docked:
+      return
+    if self.walkway.attached:
+      self.towerLift.moved(real)
+      self.world.stationed(False, (), towerSolids()
+                           + self.towerLift.boxesOf())
+      self._towered = True
+    elif self._towered:
+      self.world.stationed(False, (), ())
+      self._towered = False
+
+  def _towerLiftOf(self, ) -> tuple | None:
+    """Returns what E does with the launch tower's lift (the walkway out,
+    Asger up): in its car, ride it to the other stop; at a door with the
+    car away, call it there; None: nothing."""
+    lift, crewman = self.towerLift, self.cockpit.crewman
+    if not self.walkway.attached or crewman.sitting:
+      return None
+    middle = crewman.middle
+    if lift.holds(middle):
+      if lift.target is not None:
+        return None
+      if lift.atTop:
+        return lift, FOOT, 'Ride the lift down to the ground'
+      return lift, TOP, 'Ride the lift up to the hall'
+    for stop, door in ((TOP, LIFT_TOP), (FOOT, LIFT_FOOT)):
+      there = tuple(0.5 * (a + b) for a, b in zip(*door))
+      if (math.dist(middle, there) < LIFT_CALL and lift.target != stop
+              and abs(lift.floor - stop) > 0.005):
+        return lift, stop, 'Call the lift'
+    return None
+
   def _elevatorOf(self, ) -> tuple | None:
     """Returns what E does with an elevator for Asger (docked, up): the
     elevator and its stop to send it to, and what it is said to do:
     standing in its cage, the other stop; at a stop's door with the cage
-    away, that stop; None: nothing."""
+    away, that stop; on the pad, the launch tower's lift; None:
+    nothing."""
     crewman = self.cockpit.crewman
-    if not self.vessel.docked or crewman.buckled:
+    if not self.vessel.docked:
+      return self._towerLiftOf()
+    if crewman.buckled:
       return None
     middle = crewman.middle
     ways = shaftWays(self.docking.relative)
@@ -1101,8 +1196,12 @@ class SpaceWindow(QMainWindow):
     dash['nose'] = self._noseCamera
     dash['hatch'] = self._hatch
     dash['door'], dash['swing'] = self.walkway.door, self.walkway.swing
+    dash['back'] = self.walkway.back
     dash['sbolts'] = self.bolts[len(rocketBolts()):]
     dash['aboard'] = self.vessel.docked
+    lift = self.towerLift
+    dash['lift'] = [(middle, turn, self.walkway.attached)
+                    for middle, _, turn, _ in lift.boxesOf()]
     cars = []
     if self.vessel.docked:
       for elevator, way in zip(self.elevators, shaftWays(
@@ -1136,9 +1235,8 @@ class SpaceWindow(QMainWindow):
   def _used(self, back: bool) -> None:
     """Works the input Asger looks at ('back': a right click, the other
     way: the slide down, the knobs back); out of his chair with none in
-    reach, the gravity gun: pointed at a magic bolt it pulls him there
-    (user, 2026-11-17: "The gravity gun can pull Asger towards them"), a
-    right click lets him go; dead, nothing."""
+    reach, an elevator, his chair; dead, nothing. (The gravity gun is the
+    right button's: '_gunPressed'.)"""
     if self.vitals.cause is not None or self.sleep.on:
       return
     action = self._looked()
@@ -1146,10 +1244,7 @@ class SpaceWindow(QMainWindow):
       self._acted(action, back)
       return
     crewman = self.cockpit.crewman
-    if crewman.buckled:
-      return
-    if back:
-      crewman.letGo()
+    if crewman.sitting or back:
       return
     lift = self._elevatorOf()
     if lift is not None:
@@ -1158,14 +1253,41 @@ class SpaceWindow(QMainWindow):
       return
     if self._chairAimed():
       self._buckled()
-      return
+
+  def _gunPressed(self, ) -> bool:
+    """The right button pressed out of his chair with no input in reach:
+    held at a bolt, he lets go of it; else at a magic bolt the gravity
+    gun tries to pick it up (user, 2026-11-17: "right click pulls Asger
+    towards it, but only as long as Asger holds right click *or* Asger
+    gets close enough to it to "pick" up the bolt. then Asger can let go
+    of right lcikc and still be attached to the bolt"): it will not
+    budge, so it pulls him to it. Returns whether the gun did anything."""
+    if self.vitals.cause is not None or self.sleep.on:
+      return False
+    crewman = self.cockpit.crewman
+    if crewman.sitting or self._looked():
+      return False
+    if crewman.towing is not None and crewman.attached:
+      crewman.letGo()
+      self._noteOf('Asger lets go of the bolt')
+      return True
     aimed = self.cockpit.boltAimed(self.bolts)
-    if aimed is not None:
-      crewman.towed(aimed, holdOf(self.bolts[aimed]))
-      self._tows += 1
-      self._beamSince = time.perf_counter()
-      self._noteOf('The gun tries to pick up the bolt; it will not budge,'
-                   ' so it pulls Asger instead')
+    if aimed is None:
+      return False
+    crewman.towed(aimed, holdOf(self.bolts[aimed]))
+    self._tows += 1
+    self._beamSince = time.perf_counter()
+    self._noteOf('The gun tries to pick up the bolt; it will not budge, so '
+                 'it pulls Asger to it (hold the right button)')
+    return True
+
+  def _gunReleased(self, ) -> None:
+    """The right button let go: short of the bolt the gun lets him go (he
+    drifts on as he moved); there, he holds on."""
+    crewman = self.cockpit.crewman
+    if crewman.towing is not None and not crewman.attached:
+      crewman.letGo()
+      self._noteOf('Let go short of the bolt: Asger drifts on')
 
   def _prompt(self, ) -> tuple | None:
     """Returns what Asger's eyes are on to work (its key and what working
@@ -1182,9 +1304,12 @@ class SpaceWindow(QMainWindow):
       return 'E', lift[2]
     if self._chairAimed():
       return 'E', 'Sit down'
+    crewman = self.cockpit.crewman
+    if crewman.towing is not None and not crewman.attached:
+      return 'Right button', 'Hold on: the gun pulls Asger to the bolt'
     if self.cockpit.boltAimed(self.bolts) is not None:
-      return 'Click', 'Pick up the magic bolt'
-    if self.cockpit.crewman.towing is not None:
+      return 'Right button', 'Hold to pick up the magic bolt'
+    if crewman.towing is not None:
       return 'Space', 'Push off the bolt (right click: let go)'
     return None
 

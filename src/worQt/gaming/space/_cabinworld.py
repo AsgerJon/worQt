@@ -202,7 +202,8 @@ class CabinWorld:
     own axes) and puts its solids ('boxes': each its middle, half sizes,
     turn (w x y z) and velocity, where it is as the frame begins: the
     world moves it on through the frame; at most 'STATION_SLOTS') in the
-    world, the rest away; undocked, none."""
+    world, the rest away; undocked, its rooms not joined (the boxes may
+    be the launch tower's then, '_launchtower')."""
     if len(boxes) > STATION_SLOTS:
       raise ValueError('%d station solids, room for %d' % (
         len(boxes), STATION_SLOTS))
@@ -213,10 +214,10 @@ class CabinWorld:
     halves = numpy.full((count, 3), 0.1)
     turns = numpy.tile([1.0, 0.0, 0.0, 0.0], (count, 1))
     velocities = numpy.zeros((count, 3))
+    for k, (middle, half, turn, velocity) in enumerate(boxes):
+      middles[k], halves[k], turns[k], velocities[k] = (middle, half,
+                                                        turn, velocity)
     if docked:
-      for k, (middle, half, turn, velocity) in enumerate(boxes):
-        middles[k], halves[k], turns[k], velocities[k] = (middle, half,
-                                                          turn, velocity)
       self.ways.assign(numpy.asarray(ways, numpy.float32))
     self._middles[first:] = middles
     self._halves[first:] = halves

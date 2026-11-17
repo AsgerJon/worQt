@@ -16,6 +16,7 @@ import functools
 import numpy
 
 from ._cockpit import BACKREST, CUSHION, FLOOR, FRAME, GLASS, GLOBE_AT
+from ._cabin import PEDESTAL
 from ._cockpit import LEFT_CONSOLE, PANEL_AXES, PANEL_HALF, PANEL_MIDDLE
 from ._cockpit import RIGHT_CONSOLE, SIDEBOARD
 from ._deckmodel import stillParts
@@ -23,13 +24,10 @@ from ._furnishings import obstacles
 from ._shapes import UNTURNED
 
 #  The panel's box: how far before and behind its middle it reaches (its
-#  knobs, guards and globe stand out), m; the chair's foot (its five legs
-#  as a flat box: half its width and height) and its column (half its
-#  width); the globe's stand (its foot's half width and height, its
-#  pillar's half width).
+#  knobs, guards and globe stand out), m; the chair's pedestal and the
+#  bucket on it ('_cabin.chairFrame', 'seatShell'); the globe's stand
+#  (its foot's half width and height, its pillar's half width).
 PANEL_DEEP = 0.04
-CHAIR_FOOT = (0.3, 0.05)
-CHAIR_COLUMN = 0.04
 GLOBE_FOOT = (0.17, 0.015)
 GLOBE_PILLAR = 0.025
 
@@ -41,13 +39,12 @@ def solids() -> tuple:
   out = [(middle, half, UNTURNED) for middle, half in (
     CUSHION, BACKREST, LEFT_CONSOLE, RIGHT_CONSOLE, SIDEBOARD)]
   (x, y, z), half = CUSHION
-  under = z - half[2]
-  out.append(((x, y, FLOOR + CHAIR_FOOT[1]), (CHAIR_FOOT[0],
-                                              CHAIR_FOOT[0],
-                                              CHAIR_FOOT[1]), UNTURNED))
-  column = 0.5 * (under - FLOOR)
-  out.append(((x, y, FLOOR + column), (CHAIR_COLUMN, CHAIR_COLUMN,
-                                       column), UNTURNED))
+  under = z - half[2] - 0.1
+  stand = 0.5 * (under - FLOOR)
+  out.append(((x, y, FLOOR + stand), (PEDESTAL[0], PEDESTAL[1], stand),
+              UNTURNED))
+  out.append(((x, y, under + 0.05), (half[0] + 0.02, half[1] + 0.06,
+                                     0.05), UNTURNED))
   out.append((PANEL_MIDDLE, (PANEL_HALF[0] + FRAME, PANEL_HALF[1] + FRAME,
                              PANEL_DEEP), PANEL_AXES))
   out.append(_deckBox())

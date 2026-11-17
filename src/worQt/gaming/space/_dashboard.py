@@ -32,6 +32,7 @@ from ._cockpit import LAMPS, LEGEND_HALF, LEGEND_UP, MONITOR_OUT
 from ._cockpit import PANEL_AXES, PANEL_HALF, PANEL_THICK, PAPER_AT
 from ._cockpit import PAPER_HIGH, PAPER_WIDE, SCREEN_AT, SCREEN_HALF
 from ._cockpit import SIDEBOARD, SLIDER_FROM, SLIDER_LONG, SWITCHES, TOP
+from ._cockpit import SNACK_BAG
 from ._cockpit import panelPoint
 from ._deckmodel import movingParts
 from ._elevator import PLATE_HALVES
@@ -40,6 +41,7 @@ from ._teleprinter import LINE, PITCH, WIDTH
 from ._gunmodel import gunParts, sideMark
 from ._walkwaymeshes import leafRows
 from ._bolts import STATION_BOLTS, boltPieceRows, ringPieceRows
+from ._launchtower import PLATE, SHAFT
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
@@ -151,6 +153,7 @@ def pieces(controls: tuple) -> tuple:
   ('hatch': open docked to the space station), the station's elevators'
   cages' plates ('car', six a cage: '_elevator.PLATE_HALVES'), the
   door's leaf ('door': it slides round into the wall, '_walkway'), the
+  launch tower's lift's car's floor and roof ('lift', '_towerlift'), the
   space station's magic bolts, docked ('sbolt', 'sring': each its steel
   and its ring, '_bolts.stationBolts')."""
   out = [('control', control) for control in controls]
@@ -170,6 +173,7 @@ def pieces(controls: tuple) -> tuple:
   out += [('hatch', 0)]
   out += [('car', k) for k in range(CARS * len(PLATE_HALVES))]
   out += [('door', 0)]
+  out += [('lift', k) for k in range(2)]
   out += [(kind, k) for k in range(STATION_BOLTS)
           for kind in ('sbolt', 'sring')]
   return tuple(out)
@@ -392,6 +396,20 @@ def paperFrame() -> tuple:
                          PANEL_AXES) for (bu, bv), (hu, hv) in bars])
 
 
+def snackBag() -> tuple:
+  """Returns the bag of pork scratchings under the dashboard."""
+  middle, axes, half = SNACK_BAG
+  return boxRows(middle, half, axes)
+
+
+def snackTray() -> tuple:
+  """Returns the little tray the bag stands on, under the panel."""
+  middle, axes, half = SNACK_BAG
+  foot = tuple(m - half[1] * u - 0.004 * u for m, u in zip(middle,
+                                                            axes[1]))
+  return boxRows(foot, (half[0] + 0.03, 0.004, half[2] + 0.03), axes)
+
+
 def sliderTrack() -> tuple:
   """Returns the throttle's slide control's slot along the right
   console."""
@@ -515,6 +533,11 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
     return leafRows()
   if kind == 'sbolt':
     return boltPieceRows()
+  if kind == 'lift':
+    (x0, y0, _), (x1, y1, _) = SHAFT
+    return boxRows((0.0, 0.0, 0.0), (0.5 * (x1 - x0) - 0.02,
+                                     0.5 * (y1 - y0) - 0.02, PLATE),
+                   UNTURNED)
   if kind == 'sring':
     return ringPieceRows()
   if kind == 'bug':

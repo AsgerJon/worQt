@@ -62,6 +62,9 @@ Item {
   property string manualPicture: ""
   property vector3d cabinLight: Qt.vector3d(0, 0, 0)
   property vector3d panelLamp: Qt.vector3d(0, 0, 0)
+  //  The globe's own glow on what is near it (user, 2026-11-17: "have the
+  //  ball-horizon emit light slightly")
+  property vector3d globeLight: Qt.vector3d(0, 0, 0)
   property vector3d floodPlace: Qt.vector3d(0, 0, 0)
   //  The cabin's warm lights (its floor lamp, its candles: their
   //  flicker) and the warp knob's glint's slide (once round its loop)
@@ -495,6 +498,15 @@ Item {
       constantFade: 1.0
       linearFade: 0.0
       quadraticFade: 20000
+    }
+    PointLight {
+      position: root.globeLight
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#cfe4ff"
+      brightness: 0.12
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 60000
     }
     PointLight {
       position: root.panelLamp

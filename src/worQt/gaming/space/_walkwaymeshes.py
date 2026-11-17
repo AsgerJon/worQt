@@ -1,15 +1,18 @@
 """
 The launch tower, its walkway and the door's meshes (user, 2026-11-17:
 "The door out of the rocket should be connected to a retractable walk
-way"; '_walkway'), Qt-free, rows of eight (place, normal, where on a
-picture), each by its look:
+way"; "Have us start inside a building level with the walkway";
+'_walkway', '_launchtower'), Qt-free, rows of eight (place, normal,
+where on a picture), each by its look:
 - 'towerParts': the tower on the pad (the pad's own axes: x east, y
-  north, z up from the ground): four red steel legs braced every storey
-  up to the platform at the cabin's floor, its grating, the cage round
-  it (open to the walkway, the lift's door at its back), floodlights on
-  its posts;
+  north, z up from the ground): the red steel tower under the hall's
+  east end, the hall (windows, a light panel, the walkway's opening),
+  the stair tower west of it (its walls with window slits, the stairs'
+  steps on their ramps, the landings, the wall between the lanes,
+  handrails, lamps, the lift's shaft), lamps over its doors outside,
+  floodlights on the hall's roof, the EXIT sign;
 - 'armParts': the walkway in its own axes (from its pivot at the
-  tower's platform, x out to the rocket): a glazed tunnel on a grating
+  hall's east wall, x out to the rocket): a glazed tunnel on a grating
   floor, a lamp along its roof, the rubber hood round the door, the
   door's panel on its wall by the door ('OUTSIDE_PANEL');
 - 'leafRows': the door's leaf in the rocket's own axes, closed (it
@@ -28,21 +31,21 @@ import numpy
 
 from ._cockpit import FLOOR, WALL, capsuleRadius
 from ._shapes import UNTURNED, boxRows, joined, quadRows
-from ._walkway import DOOR_HIGH, DOOR_SPAN, PAD_UP, PLATFORM_FAR
-from ._walkway import PLATFORM_HALF, SLOPE, TUNNEL_FROM, TUNNEL_HALF
-from ._walkway import TUNNEL_HIGH
+from ._launchtower import EXIT_SIGN, FLIGHTS, GROUND, HALL, LANDING, LANES
+from ._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT, STAIR_FOOT, STAIR_TOP
+from ._launchtower import STAIRWELL, TOWER, TOWER_LEGS, TOWER_TOP
+from ._launchtower import flightOf, landingLevel
+from ._walkway import DOOR_HIGH, DOOR_SPAN, PAD_UP, SLOPE, TUNNEL_FROM
+from ._walkway import TUNNEL_HALF, TUNNEL_HIGH
 
-#  The platform's height over the ground (the cabin's floor), m.
+#  The hall's floor's height over the ground (the cabin's floor's), m.
 DECK = FLOOR + PAD_UP
-#  The tower's legs (half their thickness), its storeys (m), its braces'
-#  half thickness, how far its posts rise over the platform, m.
+#  The steel tower's legs (half their thickness), its storeys (m), its
+#  braces' half thickness; the hall's walls' thickness, m.
 LEG = 0.18
 STOREY = 4.0
 BRACE = 0.06
-POSTS = 3.0
-#  The cage round the platform: its bars' spacing and height, m.
-BAR_EVERY = 0.25
-CAGE_HIGH = 2.3
+HALL_WALL = 0.2
 #  The walkway: how far it reaches from its pivot to the hull (the skin
 #  at the floor), its walls' thickness, its windows' sill and head over
 #  its floor, the mullions' spacing, m.
@@ -67,24 +70,71 @@ PLACARD = (160.5, 1.5, (0.21, 0.297))
 
 @functools.lru_cache(maxsize=1)
 def towerParts() -> dict:
-  """Returns the tower's meshes by look (the pad's own axes)."""
+  """Returns the launch tower's meshes by look (the pad's own axes): the
+  steel tower under the hall's east end, the hall, the stair tower with
+  its stairs and the lift's shaft, the lamps, the EXIT sign
+  ('_launchtower')."""
   parts = {}
 
   def put(look: str, mesh: tuple) -> None:
     """Adds 'mesh' to 'look''s."""
     parts.setdefault(look, []).append(mesh)
 
-  x0, x1, half = PLATFORM_FAR, TUNNEL_FROM, PLATFORM_HALF
-  corners = ((x0, -half), (x0, half), (x1, -half), (x1, half))
-  top = DECK + POSTS
-  for x, y in corners:
+  _steel(put)
+  _hall(put)
+  _stairTower(put)
+  _stairs(put)
+  for x, y, _ in floodlights():
+    put('lamp body', boxRows((x - 0.25, y, _flood_z()), (0.25, 0.35, 0.25),
+                             UNTURNED))
+    put('lamp', quadRows((x + 0.002, y, _flood_z()), ((0.0, 1.0, 0.0),
+                                                      (0.0, 0.0, 1.0),
+                                                      (1.0, 0.0, 0.0)),
+                         (0.3, 0.2)))
+  middle, half = EXIT_SIGN
+  put('exit', quadRows((middle[0], middle[1], middle[2] + PAD_UP), (
+    (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)), half))
+  return {look: joined(meshes) for look, meshes in parts.items()}
+
+
+def z_(z: float) -> float:
+  """Returns 'z' (the rocket's own, on the pad) on the pad's axes."""
+  return z + PAD_UP
+
+
+def _flood_z() -> float:
+  """Returns the floodlights' height (the pad's axes)."""
+  return z_(TOWER_TOP) + 0.6
+
+
+def floodlights() -> tuple:
+  """Returns where the tower's floodlights are (the pad's own axes): on
+  the hall's roof, at its east corners."""
+  (_, y0, _), (x1, y1, _) = HALL
+  return tuple((x1 + 0.3, y, _flood_z()) for y in (y0, y1))
+
+
+def hallLight() -> tuple:
+  """Returns where the hall's light is (the rocket's own axes)."""
+  (x0, y0, z0), (x1, y1, z1) = HALL
+  return 0.5 * (x0 + x1), 0.5 * (y0 + y1), z1 - 0.3
+
+
+def _steel(put: object) -> None:
+  """Adds the steel tower under the hall's east end: four legs from the
+  ground, braced every storey."""
+  xs = sorted({x for x, _ in TOWER_LEGS})
+  ys = sorted({y for _, y in TOWER_LEGS})
+  x0, x1, y0, y1 = xs[0], xs[-1], ys[0], ys[-1]
+  top = z_(FLOOR) - 0.3
+  for x, y in TOWER_LEGS:
     put('tower', boxRows((x, y, 0.5 * top), (LEG, LEG, 0.5 * top),
                          UNTURNED))
-  sides = (((x0, -half), (x1, -half)), ((x0, half), (x1, half)),
-           ((x0, -half), (x0, half)), ((x1, -half), (x1, half)))
-  storeys = int(DECK // STOREY)
+  sides = (((x0, y0), (x1, y0)), ((x0, y1), (x1, y1)),
+           ((x0, y0), (x0, y1)), ((x1, y0), (x1, y1)))
+  storeys = int(top // STOREY)
   for k in range(storeys + 1):
-    z = min(DECK - 0.4, STOREY * (k + 1))
+    z = min(top - 0.2, STOREY * (k + 1))
     for (ax, ay), (bx, by) in sides:
       put('tower', _beam((ax, ay, z), (bx, by, z), BRACE + 0.02))
       if k < storeys:
@@ -92,32 +142,128 @@ def towerParts() -> dict:
         a, b = ((ax, ay, low), (bx, by, z)) if k % 2 else (
           (bx, by, low), (ax, ay, z))
         put('tower', _beam(a, b, BRACE))
-  put('grating', boxRows((0.5 * (x0 + x1), 0.0, DECK - 0.075),
-                         (0.5 * (x1 - x0) + 0.1, half + 0.1, 0.075),
+
+
+def _wall(put: object, look: str, low: tuple, high: tuple,
+          holes: tuple) -> None:
+  """Adds a wall (the box from 'low' to 'high', the pad's axes) with
+  'holes' through it (each its low and high corners across and up: its
+  long side's axis and z), cut into the boxes round them."""
+  along = 0 if high[0] - low[0] >= high[1] - low[1] else 1
+  cuts = sorted({low[along], high[along]} | {
+    c for (a, _), (b, _) in holes for c in (a, b)})
+  for c0, c1 in zip(cuts[:-1], cuts[1:]):
+    spans = [(low[2], high[2])]
+    for (a, za), (b, zb) in holes:
+      if a <= 0.5 * (c0 + c1) <= b:
+        spans = [piece for z0, z1 in spans for piece in (
+          (z0, min(z1, za)), (max(z0, zb), z1)) if piece[1] - piece[0]
+                 > 1e-6]
+    for z0, z1 in spans:
+      lo, hi = list(low), list(high)
+      lo[along], hi[along], lo[2], hi[2] = c0, c1, z0, z1
+      put(look, boxRows(tuple(0.5 * (a + b) for a, b in zip(lo, hi)),
+                        tuple(0.5 * (b - a) for a, b in zip(lo, hi)),
+                        UNTURNED))
+
+
+def _hall(put: object) -> None:
+  """Adds the hall: its floor, roof, north, south and east walls (the
+  walkway's opening, windows either side), a light panel in its
+  ceiling; its west wall is the stair tower's."""
+  (x0, y0, z0), (x1, y1, z1) = HALL
+  w = HALL_WALL
+  put('hall floor', boxRows((0.5 * (x0 + x1), 0.0, z_(z0) - 0.15), (
+    0.5 * (x1 - x0) + w, y1 + w, 0.15), UNTURNED))
+  put('hall', boxRows((0.5 * (x0 + x1), 0.0, z_(z1) + 0.1), (
+    0.5 * (x1 - x0) + w, y1 + w, 0.1), UNTURNED))
+  sill, head = z_(z0) + 1.0, z_(z0) + 2.2
+  for y in (y0 - w, y1):
+    _wall(put, 'hall', (x0, y, z_(z0)), (x1 + w, y + w, z_(z1)),
+          (((x0 + 0.8, sill), (x1 - 0.8, head)),))
+    put('glass', boxRows((0.5 * (x0 + x1), y + 0.5 * w, 0.5 * (
+      sill + head)), (0.5 * (x1 - x0) - 0.8, 0.01, 0.5 * (head - sill)),
                          UNTURNED))
-  _cage(put, x0, x1, half)
-  for y in (-half, half):
-    put('lamp body', boxRows((x1, y, top + 0.25), (0.25, 0.35, 0.25),
-                             UNTURNED))
-    put('lamp', quadRows((x1 + 0.252, y, top + 0.25), ((0.0, 1.0, 0.0),
-                                                       (0.0, 0.0, 1.0),
-                                                       (1.0, 0.0, 0.0)),
-                         (0.3, 0.2)))
-  put('lift', boxRows((x0 - 0.05, 0.0, DECK + 1.05), (0.04, 0.55, 1.05),
+  _wall(put, 'hall', (x1, y0, z_(z0)), (x1 + w, y1, z_(z1)),
+        (((-TUNNEL_HALF - 0.05, z_(z0)), (TUNNEL_HALF + 0.05, z_(z0)
+                                           + TUNNEL_HIGH)),))
+  put('lamp', boxRows((0.5 * (x0 + x1), 0.0, z_(z1) - 0.02), (1.2, 0.5,
+                                                              0.02),
                       UNTURNED))
-  return {look: joined(meshes) for look, meshes in parts.items()}
 
 
-def floodlights() -> tuple:
-  """Returns where the tower's floodlights are (the pad's own axes)."""
-  return tuple((TUNNEL_FROM + 0.3, y, DECK + POSTS + 0.25)
-               for y in (-PLATFORM_HALF, PLATFORM_HALF))
+def _stairTower(put: object) -> None:
+  """Adds the stair tower's walls: outside round its footprint (the
+  stairs' doorway out west, the lift's north), its roof, its east wall
+  the hall's west (the stairs' and the lift's doorways into it), the
+  wall between the stairwell and the lift, the lift's shaft's west
+  wall, window slits up the stairwell, a lamp over each door outside."""
+  (tx0, ty0), (tx1, ty1) = TOWER
+  ground, top = z_(GROUND), z_(TOWER_TOP)
+  (sx0, sy0, _), (sx1, sy1, _) = STAIRWELL
+  put('tower wall', boxRows((0.5 * (tx0 + tx1), 0.5 * (ty0 + ty1),
+                             top - 0.1), (0.5 * (tx1 - tx0),
+                                          0.5 * (ty1 - ty0), 0.1),
+                            UNTURNED))
+  foot = STAIR_FOOT
+  _wall(put, 'tower wall', (tx0, ty0, ground), (sx0, ty1, top), (
+    ((foot[0][1], ground), (foot[1][1], ground + 2.2)),))
+  _wall(put, 'tower wall', (tx0, ty0, ground), (tx1, sy0, top), ())
+  lift = LIFT_FOOT
+  (hx0, hy0, _), (hx1, hy1, _) = SHAFT
+  _wall(put, 'tower wall', (tx0, hy1, ground), (tx1, ty1, top), (
+    ((lift[0][0], ground), (lift[1][0], ground + 2.2)),))
+  stair, door = STAIR_TOP, LIFT_TOP
+  floor = z_(FLOOR)
+  _wall(put, 'tower wall', (sx1, ty0, ground), (tx1, ty1, top), (
+    ((stair[0][1], floor), (stair[1][1], floor + 2.2)),
+    ((door[0][1], floor), (door[1][1], floor + 2.2))))
+  _wall(put, 'tower wall', (sx0, sy1, ground), (sx1, hy0, top), ())
+  _wall(put, 'tower wall', (sx0, hy0, ground), (hx0, hy1, top), ())
+  for k in range(1, FLIGHTS, 2):
+    z = z_(landingLevel(k)) + 1.6
+    put('glass', boxRows((sx1 - 2.5, ty0 + 0.1, z), (0.6, 0.11, 0.4),
+                         UNTURNED))
+  put('lamp', boxRows((foot[0][0] - 0.05, 0.5 * (foot[0][1] + foot[1][1]),
+                       ground + 2.5), (0.05, 0.3, 0.06), UNTURNED))
+  put('lamp', boxRows((0.5 * (lift[0][0] + lift[1][0]), ty1 + 0.05,
+                       ground + 2.5), (0.3, 0.05, 0.06), UNTURNED))
 
 
-def platformLight() -> tuple:
-  """Returns where the light over the platform and in the walkway is (the
-  rocket's own axes, the walkway at the door)."""
-  return 0.5 * (TUNNEL_FROM + PLATFORM_FAR), 0.0, FLOOR + 2.6
+def _stairs(put: object) -> None:
+  """Adds the stairs: each flight's steps on its ramp, the landings, the
+  wall between the lanes, a handrail up each flight, a lamp on the wall
+  at each landing."""
+  steps = 12
+  for k in range(FLIGHTS):
+    (y0, y1), (xa, xb), (za, zb) = flightOf(k)
+    run = (xb - xa) / steps
+    up = (zb - za) / steps
+    for j in range(steps):
+      x = xa + (j + 0.5) * run
+      top = z_(za) + (j + 1) * up
+      put('steps', boxRows((x, 0.5 * (y0 + y1), top - 0.5 * up - 0.05), (
+        0.5 * abs(run), 0.5 * (y1 - y0), 0.5 * up + 0.05), UNTURNED))
+    rail = y0 + 0.06 if k % 2 == 0 else y1 - 0.06
+    put('rail', _beam((xa, rail, z_(za) + 0.95), (xb, rail, z_(zb) + 0.95),
+                      0.025))
+  (x0, y0, _), (x1, y1, _) = STAIRWELL
+  for k in range(1, FLIGHTS + 1):
+    west = k % 2 == 0
+    xa, xb = (x0, x0 + LANDING) if west else (x1 - LANDING, x1)
+    level = z_(landingLevel(k))
+    put('steps', boxRows((0.5 * (xa + xb), 0.5 * (y0 + y1), level - 0.15),
+                         (0.5 * (xb - xa), 0.5 * (y1 - y0), 0.15),
+                         UNTURNED))
+    wall = x0 + 0.02 if west else x1 - 0.02
+    put('lamp', boxRows((wall, 0.5 * (y0 + y1), level + 2.2), (0.02, 0.3,
+                                                                0.05),
+                        UNTURNED))
+  wall = (x0 + LANDING, x1 - LANDING)
+  put('tower wall', boxRows((0.5 * sum(wall), LANES[0], 0.5 * (
+    z_(GROUND) + z_(FLOOR + 3.0))), (0.5 * (wall[1] - wall[0]), LANES[1],
+                                     0.5 * (FLOOR + 3.0 - GROUND)),
+                            UNTURNED))
 
 
 def armPivot() -> tuple:
@@ -128,7 +274,7 @@ def armPivot() -> tuple:
 @functools.lru_cache(maxsize=1)
 def armParts() -> dict:
   """Returns the walkway's meshes by look, in its own axes (its pivot at
-  the platform's edge, x out to the rocket, z up from its floor)."""
+  the hall's east wall, x out to the rocket, z up from its floor)."""
   parts = {}
 
   def put(look: str, mesh: tuple) -> None:
@@ -305,26 +451,6 @@ def _beam(a: tuple, b: tuple, half: float, side: tuple = None) -> tuple:
   up = _cross(out, along)
   middle = tuple(0.5 * (p + q) for p, q in zip(a, b))
   return boxRows(middle, (0.5 * long, half, half), (along, up, out))
-
-
-def _cage(put: object, x0: float, x1: float, half: float) -> None:
-  """Adds the cage round the platform: bars and rails along its back and
-  sides, and its front either side of the walkway."""
-  z0, z1 = DECK, DECK + CAGE_HIGH
-  runs = (((x0, -half), (x0, half)), ((x0, -half), (x1, -half)),
-          ((x0, half), (x1, half)), ((x1, -half), (x1, -TUNNEL_HALF - 0.1)),
-          ((x1, TUNNEL_HALF + 0.1), (x1, half)))
-  for (ax, ay), (bx, by) in runs:
-    long = math.hypot(bx - ax, by - ay)
-    count = max(1, int(long // BAR_EVERY))
-    for k in range(count + 1):
-      t = k / count
-      x, y = ax + t * (bx - ax), ay + t * (by - ay)
-      put('rail', boxRows((x, y, 0.5 * (z0 + z1)), (0.012, 0.012,
-                                                    0.5 * CAGE_HIGH),
-                          UNTURNED))
-    for z in (z0 + 0.1, z0 + 1.1, z1):
-      put('rail', _beam((ax, ay, z), (bx, by, z), 0.025))
 
 
 def _unit(v: tuple) -> tuple:

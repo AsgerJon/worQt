@@ -19,7 +19,7 @@ from worQt.gaming.sandbox._skin import PARTS
 from worQt.gaming.sandbox import Pushbutton, Slider
 
 from ._cockpit import BALL_RADIUS, CAMERA_AT, CAMERA_LOOK, CAMERA_UP
-from ._cockpit import FLOOR, GLOBE_AXES, GUARD_OPEN, PANEL_AXES
+from ._cockpit import FLOOR, GLOBE_AT, GLOBE_AXES, GUARD_OPEN, PANEL_AXES
 from ._cockpit import panelPoint
 from ._dashboard import ALTIMETER, ballCentre, dialAngle, dialCentre
 from ._dashboard import HATCH_HINGE, HATCH_OPEN, guardHinge, headPlace
@@ -30,9 +30,9 @@ from ._furnishings import candleLight, lampLight, looseParts
 from ._gunbeam import beamRows
 from ._meshes import CAP_REACH
 from ._night import shineOf
-from ._walkway import SWING_AWAY, leafTurn
+from ._walkway import BACK, SWING_AWAY, leafTurn
 from ._bolts import axesOf
-from ._walkwaymeshes import platformLight
+from ._walkwaymeshes import hallLight
 from ._orrery import SPAN
 from ._planets import PAD
 from ._stationmeshes import beaconTips
@@ -101,9 +101,11 @@ LEGEND_ON, LEGEND_OFF = 1.6, 0.05
 CABIN_LIGHT = (0.0, 0.0, FLOOR + 3.5)
 #  The panel's flood lamp, above it to his left and before it (the ball's
 #  shading shows it round), and how much the ball glows of its own (an
-#  instrument's backlight: lit only from outside it was black at night).
+#  instrument's backlight: lit only from outside it was black at night;
+#  user, 2026-11-17: "have the ball-horizon emit light slightly": it
+#  glows more, and lights what is near it a little, 'globeLight').
 PANEL_LAMP = panelPoint(-0.35, 0.35, 0.2)
-BALL_GLOW = 0.07
+BALL_GLOW = 0.3
 #  The hull's floodlight (user, 2026-11-16: "have a tiny bit of
 #  artificial light outside the rocket so we can stuff on it during
 #  takeoff"): over the closed circuit camera, along its look.
@@ -270,6 +272,7 @@ class Scenery:
       parts.append((there(pivot), product(turn, limb), shown, 0.0))
     return {'parts': parts, 'light': there(CABIN_LIGHT),
             'lamp': there(PANEL_LAMP),
+            'globe': there(GLOBE_AT),
             'flood': (there(FLOOD_AT), rotated(turn, unit(CAMERA_LOOK)),
                       rotated(turn, CAMERA_UP)),
             'hygge': (there(lampLight()), there(candleLight()),
@@ -277,8 +280,9 @@ class Scenery:
             'camera': self._cameraOf(there, turn, dash['nose']),
             'aboard': dash.get('aboard', False),
             'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
-            'swing': dash.get('swing', SWING_AWAY),
-            'outdoor': (there(platformLight()), dash.get('swing', SWING_AWAY)
+            'swing': (dash.get('back', BACK), dash.get('swing',
+                                                        SWING_AWAY)),
+            'outdoor': (there(hallLight()), dash.get('swing', SWING_AWAY)
                         < SWING_AWAY)}
 
   def _beamOf(self, there: object, turn: tuple, beam: tuple) -> tuple:
@@ -373,6 +377,10 @@ class Scenery:
       held = quaternionOf(tuple(zip(*axesOf(way))))
       return there(place), product(turn, held), True, (
         BOLT_GLOW if kind == 'sring' else 0.0)
+    if kind == 'lift':
+      place, held, shown = dash.get('lift', (((0.0, 0.0, 0.0), (
+        1.0, 0.0, 0.0, 0.0), False),) * 2)[what]
+      return there(place), product(turn, held), shown, 0.15
     if kind == 'door':
       return there((0.0, 0.0, 0.0)), product(turn, leafTurn(dash.get(
         'door', 0.0))), True, DOOR_FILL

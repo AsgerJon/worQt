@@ -19,9 +19,10 @@ ITEMS = (
   ('MAGIC BOLTS', 'The bolts with the violet glow are magic. Nothing '
    'pulls them loose: not your hands, not the gun, not the end of the '
    'world.'),
-  ('THE GUN', 'Point the Temu gravity gun at a magic bolt and click. The '
-   'gun tries to pick the bolt up. The bolt will not budge, so the gun '
-   'pulls YOU to the bolt instead, and holds you there.'),
+  ('THE GUN', 'Point the Temu gravity gun at a magic bolt and hold the '
+   'right button. The gun tries to pick the bolt up. The bolt will not '
+   'budge, so the gun pulls YOU to the bolt instead. Let go on the way and '
+   'you drift on; reach the bolt and the gun holds you there.'),
   ('LETTING GO', 'Space pushes you off the bolt you are held at. Right '
    'click lets go.'),
   ('NEVER UNDER GRAVITY', 'Never use the gun where things fall: on Terra, '

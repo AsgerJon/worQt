@@ -87,6 +87,9 @@ CABIN_LOOKS = {'wall': ((214, 208, 196), 0.0, 0.85),
                'pine': ((255, 255, 255), 0.0, 0.8),
                'boards': ((255, 255, 255), 0.0, 0.7),
                'brass': ((196, 160, 92), 0.3, 0.3),
+               'snacks': ((206, 62, 38), 0.15, 0.55),
+               'shell': ((46, 46, 50), 0.3, 0.45),
+               'harness': ((190, 36, 30), 0.0, 0.75),
                'wood': ((255, 255, 255), 0.0, 0.55),
                'dome': ((255, 255, 255), 0.0, 0.04)}
 #  How bright an unlit lamp's glass is, of its colour.
@@ -174,8 +177,14 @@ WALKWAY_LOOKS = {'tower': ((178, 64, 34), 0.3, 0.6),
                  'key green': ((90, 255, 110), 0.0, 1.0),
                  'key red': ((255, 70, 50), 0.0, 1.0),
                  'key amber': ((255, 170, 50), 0.0, 1.0),
-                 'door': ((214, 216, 220), 0.5, 0.4)}
-WALKWAY_GLOWS = ('lamp', 'key green', 'key red', 'key amber')
+                 'door': ((214, 216, 220), 0.5, 0.4),
+                 'hall': ((206, 202, 192), 0.0, 0.85),
+                 'hall floor': ((120, 122, 126), 0.1, 0.7),
+                 'tower wall': ((150, 148, 142), 0.0, 0.9),
+                 'steps': ((112, 114, 118), 0.3, 0.6),
+                 'exit': ((255, 255, 255), 0.0, 1.0),
+                 'lift': ((150, 154, 160), 0.6, 0.4)}
+WALKWAY_GLOWS = ('lamp', 'key green', 'key red', 'key amber', 'exit')
 WALKWAY_GLASS = 0.25
 #  Its lights pass through walls (no shadows): the floodlights shine on
 #  the rocket's body below the cabin ('FLOOD_AIM' m under its floor),
@@ -423,6 +432,7 @@ class SpaceViewport(QWidget):
     if satellites:
       root.setProperty('habitatLight', QVector3D(*satellites[0][0]))
     root.setProperty('panelLamp', QVector3D(*cabin['lamp']))
+    root.setProperty('globeLight', QVector3D(*cabin['globe']))
     lamp, candles, flicker = cabin['hygge']
     root.setProperty('lampLight', QVector3D(*lamp))
     root.setProperty('candleLight', QVector3D(*candles))
@@ -532,7 +542,7 @@ class SpaceViewport(QWidget):
                     outdoor: tuple) -> None:
     """Shows the launch tower's floodlights (on the pad: 'pad' its place,
     turn and whether it shows) shining on the rocket, and the lamp over
-    its platform and walkway ('outdoor': its place, whether the walkway
+    its hall and walkway ('outdoor': its place, whether the walkway
     is out)."""
     place, turn, shown = pad
     places, turns = [], []
@@ -641,6 +651,8 @@ class SpaceViewport(QWidget):
     still = (('pine', _cabin.innerWall(), cabin['pine']),
              ('boards', _cabin.floorRows(), cabin['boards']),
              ('seat', _cabin.seatRows(), ''),
+             ('shell', _cabin.seatShell(), ''),
+             ('harness', _cabin.harnessRows(), ''),
              ('chrome', _cabin.chairFrame(), ''),
              ('rosewood', _cabin.consoleRows(), ''),
              ('aluminium', _cabin.consoleTops(), ''),
@@ -652,6 +664,8 @@ class SpaceViewport(QWidget):
              ('black', _dashboard.monitorInset(), ''),
              ('black', _dashboard.sliderTrack(), ''),
              ('aluminium', _dashboard.consoleBases(), ''),
+             ('aluminium', _dashboard.snackTray(), ''),
+             ('snacks', _dashboard.snackBag(), ''),
              ('rosewood', _dashboard.sideboardRows(), ''),
              ('aluminium', _dashboard.sideboardTop(), ''),
              ('chrome', _dashboard.globeStand(), ''))
@@ -793,6 +807,8 @@ class SpaceViewport(QWidget):
       return WALKWAY_LOOKS['door'], '', False, None, 1.0
     if kind == 'sbolt':
       return BOLT_LOOK, '', False, None, 1.0
+    if kind == 'lift':
+      return WALKWAY_LOOKS['lift'], '', False, None, 1.0
     if kind == 'sring':
       return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
     return looks['black'], '', False, None, 1.0
@@ -807,6 +823,9 @@ class SpaceViewport(QWidget):
       if name == 'glass':
         out.append(_partOf(mesh, look, slot, False, '', True,
                            WALKWAY_GLASS))
+      elif name == 'exit':
+        out.append(_partOf(mesh, look, slot, False, cabinPicturesReady()[
+          'exit'], True))
       else:
         out.append(_partOf(mesh, look, slot, False, '',
                            name in WALKWAY_GLOWS))
@@ -855,14 +874,17 @@ class SpaceViewport(QWidget):
       root.boardPicked.connect(self.boardPicked)
 
 
-def _armOf(pad: tuple, swing: float) -> tuple:
+def _armOf(pad: tuple, arm: tuple) -> tuple:
   """Returns the walkway's place, turn, whether it shows and its glow,
-  from the pad's ('pad': its place, turn, whether it shows) swung away
-  'swing' rad about its pivot."""
+  from the pad's ('pad': its place, turn, whether it shows), slid back
+  and swung away ('arm': m, rad) about its pivot."""
   place, turn, shown = pad
-  there = tuple(p + r for p, r in zip(place, rotated(turn, armPivot())))
-  return there, product(turn, aboutAxis((0.0, 0.0, 1.0), swing)), (
-    shown), ARM_FILL
+  back, swing = arm
+  swung = aboutAxis((0.0, 0.0, 1.0), swing)
+  pivot = tuple(p + s for p, s in zip(armPivot(), rotated(swung, (
+    -back, 0.0, 0.0))))
+  there = tuple(p + r for p, r in zip(place, rotated(turn, pivot)))
+  return there, product(turn, swung), shown, ARM_FILL
 
 
 def _partOf(geometry: object, look: tuple, slot: int, culled: bool,

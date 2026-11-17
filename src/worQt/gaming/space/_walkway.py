@@ -4,11 +4,11 @@ have an entrance ot the rocket perpendicular to the way Asger faces, but
 behind him and behind where all those books were at"; "The door out of
 the rocket should be connected to a retractable walk way"; "bro just fit
 the door"): a door in the capsule's wall straight behind him, sliding
-round into the wall; a covered walkway from it to a platform on the launch
-tower beside the rocket (on the pad, west of it). Its rooms (in the
-rocket's own axes, the cabin's world's) join the cabin's while it is at
-the door: the walkway and the platform; and while the door is open, the
-doorway through the wall. Its state: whether the walkway is at the door
+round into the wall; a covered walkway from it to the launch tower's
+hall beside the rocket (on the pad, west of it; '_launchtower'). Its
+rooms (in the rocket's own axes, the cabin's world's) join the cabin's
+while it is at the door: the walkway and the tower's; and while the
+door is open, the doorway through the wall. Its state: whether the walkway is at the door
 ('attached'; dismissed, it swings away and is gone for good), how far
 it has swung, the door (how far open, wanted open or not, locked).
 Qt-free.
@@ -37,24 +37,22 @@ SLIDE = 1.5
 PASSABLE = 0.97
 #  The doorway's room (a box through the wall, inside the frame), m.
 DOORWAY = ((-5.6, -0.42, FLOOR), (-4.0, 0.42, DOOR_HIGH - 0.05))
-#  The walkway's tunnel (inside: from the platform's edge to the hull,
-#  its room reaching a metre into the platform's: two rooms barely
-#  meeting are each too shallow at their seam for his body to pass; half
-#  its width across, its height over the floor), the platform at the
-#  tower's top (inside its cage: from the far end to the tunnel; half its
-#  width; open to the sky, the room as high as 'OPEN_SKY'), m.
+#  The walkway's tunnel (inside: from the launch tower's hall's east wall
+#  to the hull, its room reaching a metre into the hall's: two rooms
+#  barely meeting are each too shallow at their seam for his body to
+#  pass; half its width across, its height over the floor), m. (The hall
+#  and the rest of the tower: '_launchtower'.)
 TUNNEL_FROM = -13.0
 TUNNEL_HALF = 1.0
 TUNNEL_HIGH = 2.4
-PLATFORM_FAR = -17.0
-PLATFORM_HALF = 2.0
-OPEN_SKY = 20.0
 TUNNEL = ((TUNNEL_FROM - 1.0, -TUNNEL_HALF, FLOOR),
           (-3.0, TUNNEL_HALF, FLOOR + TUNNEL_HIGH))
-PLATFORM = ((PLATFORM_FAR, -PLATFORM_HALF, FLOOR),
-            (TUNNEL_FROM, PLATFORM_HALF, FLOOR + OPEN_SKY))
-#  Dismissed, the walkway swings away about its tower's end (rad, toward
-#  y: north on the pad) at 'SWING_SPEED' (rad/s).
+#  Dismissed, the walkway first slides back along itself 'BACK' m at
+#  'BACK_SPEED' m/s, clear of the hull (swung at once its corner cut 8
+#  cm into it), then swings away about its tower's end (rad, toward y:
+#  north on the pad) at 'SWING_SPEED' (rad/s).
+BACK = 1.5
+BACK_SPEED = 0.5
 SWING_AWAY = math.radians(85.0)
 SWING_SPEED = math.radians(12.0)
 #  The rocket's own axes on the pad: the pad's own (x east, y north, z up)
@@ -80,9 +78,8 @@ def hullOutside(point: tuple) -> float:
 
 def walkwayInside(point: tuple) -> float:
   """Returns how far 'point' is inside the walkway's tunnel (outside the
-  hull) or on its platform, m."""
-  tunnel = min(boxInside(point, *TUNNEL), hullOutside(point))
-  return max(tunnel, boxInside(point, *PLATFORM))
+  hull), m."""
+  return min(boxInside(point, *TUNNEL), hullOutside(point))
 
 
 def doorwayInside(point: tuple) -> float:
@@ -99,7 +96,8 @@ def leafTurn(share: float) -> tuple:
 class Walkway:
   """
   Walkway holds the way in: whether the walkway is at the door
-  ('attached'), how far it has swung away ('swing', rad), how far the
+  ('attached'), how far it has slid back ('back', m) and swung away
+  ('swing', rad), how far the
   door is open ('door', its share of the way) and whether it is wanted
   open ('wanted'),
   whether it is locked ('locked'). 'opened', 'closed', 'locking' and
@@ -114,6 +112,7 @@ class Walkway:
 
   #  Public Variables
   attached: bool
+  back: float
   swing: float
   door: float
   wanted: bool
@@ -125,6 +124,7 @@ class Walkway:
 
   def __init__(self, attached: bool) -> None:
     self.attached = bool(attached)
+    self.back = 0.0 if self.attached else BACK
     self.swing = 0.0 if self.attached else SWING_AWAY
     self.door, self.wanted, self.locked = 0.0, False, not self.attached
 
@@ -147,7 +147,8 @@ class Walkway:
   @property
   def outside(self, ) -> int:
     """The 'outside' property is which rooms join the cabin's: one for
-    the walkway's (at the door), two for the doorway's (open)."""
+    the walkway's and the launch tower's (at the door), two for the
+    doorway's (open)."""
     return (1 if self.attached else 0) | (2 if self.passable else 0)
 
   @property
@@ -204,5 +205,12 @@ class Walkway:
     step = seconds / SLIDE
     target = 1.0 if self.wanted else 0.0
     self.door += max(-step, min(step, target - self.door))
-    if not self.attached:
-      self.swing = min(SWING_AWAY, self.swing + SWING_SPEED * seconds)
+    if self.attached:
+      return
+    left = seconds
+    if self.back < BACK:
+      used = min(left, (BACK - self.back) / BACK_SPEED)
+      self.back = min(BACK, self.back + BACK_SPEED * used)
+      left -= used
+    if left > 0.0:
+      self.swing = min(SWING_AWAY, self.swing + SWING_SPEED * left)

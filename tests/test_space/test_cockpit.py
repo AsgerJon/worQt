@@ -213,7 +213,8 @@ class TestCockpit(SpaceTest):
     """He, his seat, the consoles, every still mesh of the dashboard
     and every moving piece at rest are inside the capsule's wall, over
     its floor (but the space station's elevators' cages: they ride its
-    shafts, 'test_aboard'; its bolts, placed docked; and the door's leaf:
+    shafts, 'test_aboard'; its bolts, placed docked; the launch tower's
+    lift's car, 'test_launchtower'; and the door's leaf:
     it is the wall where the door is, within its thickness)."""
     cockpit = Cockpit()
     for index, place, turn in cockpit.figureOf():
@@ -239,7 +240,7 @@ class TestCockpit(SpaceTest):
       self.assertTrue((numpy.hypot(rows[:, 0], rows[:, 1]) <= wall).all())
     cells = labelCells()
     for piece in pieces(cockpit.controls):
-      if piece[0] in ('car', 'sbolt', 'sring'):
+      if piece[0] in ('car', 'sbolt', 'sring', 'lift'):
         continue
       rows = numpy.asarray(pieceRows(piece, cells)[0])
       if piece[0] == 'door':

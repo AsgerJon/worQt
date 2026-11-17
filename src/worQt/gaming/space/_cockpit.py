@@ -315,6 +315,14 @@ def _negative(axis: tuple) -> tuple:
   return tuple(-x for x in axis)
 
 
+#  The pork scratchings under the dashboard by his right knee, in reach
+#  of his chair (user, 2026-11-17: "Asger needs to be able to grab some
+#  snacks whilst sitting in his chair"): the bag on its tray (middle,
+#  axes, half sizes), m.
+SNACK_BAG = (seated(0.42, -0.34, 0.66 + LIFT), ((0.0, -1.0, 0.0),
+                                                (0.0, 0.0, 1.0),
+                                                (-1.0, 0.0, 0.0)),
+             (0.07, 0.09, 0.035))
 #  What is worked from outside the cabin (the door's key on the walkway;
 #  the rest from inside it).
 OUTSIDE = ('door outside',)
@@ -328,6 +336,7 @@ def _household() -> tuple:
   """Returns what he may work away from the dashboard (looked at within
   reach, E or a click): the rations' crate (he eats one), the daybed
   (he sleeps till morning, if it is night), the sofa (he sits on it),
+  the pork scratchings under the dashboard (in reach of his chair),
   the door's keys (outside on the walkway: the door; inside by it: the
   door, its lock, the walkway), the warning placard (a closer look)."""
   from ._furnishings import bedBox, rationCrate, sofaBox
@@ -340,6 +349,7 @@ def _household() -> tuple:
       ('RCIR', 'eat', 'Eat a ration (RCIR)', rationCrate()),
       ('BED', 'sleep', 'Sleep till morning', bedBox()),
       ('SOFA', 'lounge', 'Chill out on the sofa', sofaBox()),
+      ('SNACKS', 'snack', 'Grab some pork scratchings', SNACK_BAG),
       ('DOOR', 'door outside', KEY_PROMPTS['door'], outsideKey()),
       ('MANUAL', 'manual', 'Read the warning manual', placardBox())] + keys:
     top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))

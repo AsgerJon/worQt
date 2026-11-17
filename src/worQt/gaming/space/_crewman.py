@@ -33,7 +33,7 @@ HEFT = 80.0
 #  Getting up he stands behind his chair (his rig's middle, his soles a
 #  hair over the floor), facing ahead; he sits again within 'SIT' m of
 #  his seat's middle.
-STAND = seated(-0.85, 0.0, 0.002)
+STAND = seated(-0.88, 0.0, 0.002)
 SIT = 1.0
 #  Pulled to the floor harder than 'WALK' g he walks, at 'STRIDE' m/s,
 #  slower the harder he is pulled past one g (as its square); he jumps
@@ -54,6 +54,9 @@ FLOAT_LEGS, FLOAT_ARMS = -0.35, -0.7
 #  The keys' wishes: ahead, back, left, right.
 #  Off the sofa he stands this far before its seat's middle, m.
 LEAVE = 0.6
+#  The gravity gun has picked up its bolt (he holds on to it, the right
+#  button let go or not) once he is this near where it holds him, m.
+PICKED_UP = 0.25
 MOVES = {'ahead': (1.0, 0.0), 'back': (-1.0, 0.0), 'left': (0.0, 1.0),
          'right': (0.0, -1.0)}
 
@@ -89,6 +92,7 @@ class Crewman:
   gait: Gait
   towTo: tuple | None
   towing: int | None
+  attached: bool
   lounge: tuple | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -132,7 +136,7 @@ class Crewman:
     self.up, self.ahead = (0.0, 0.0, 1.0), tuple(facing)
     self.middle = tuple(s + 0.3 * u for s, u in zip(seat, self.up))
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
-    self.towing, self.towTo = None, None
+    self.towing, self.towTo, self.attached = None, None, False
 
   def offSofa(self, ) -> None:
     """The 'offSofa' method stands him up off the sofa, before it,
@@ -146,12 +150,22 @@ class Crewman:
 
   def towed(self, index: int, hold: tuple) -> None:
     """The 'towed' method has the gravity gun pull him to bolt 'index',
-    his middle to 'hold' (and hold him there)."""
-    self.towing, self.towTo = index, tuple(hold)
+    his middle to 'hold' (and hold him there once he has it: 'picked')."""
+    self.towing, self.towTo, self.attached = index, tuple(hold), False
+
+  def picked(self, ) -> bool:
+    """The 'picked' method says whether he has just reached the bolt the
+    gun pulls him to (within 'PICKED_UP' of where it holds him), and from
+    then on holds on to it ('attached')."""
+    if self.towTo is not None and not self.attached and math.dist(
+        self.middle, self.towTo) < PICKED_UP:
+      self.attached = True
+      return True
+    return False
 
   def letGo(self, ) -> None:
     """The 'letGo' method has the gravity gun let him go."""
-    self.towing, self.towTo = None, None
+    self.towing, self.towTo, self.attached = None, None, False
 
   def strappedIn(self, ) -> None:
     """The 'strappedIn' method puts him in his chair wherever he is."""
@@ -322,4 +336,4 @@ class Crewman:
     self.middle = tuple(s + MIDDLE * u for s, u in zip(STAND, self.up))
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)
-    self.towing, self.towTo = None, None
+    self.towing, self.towTo, self.attached = None, None, False

@@ -151,3 +151,21 @@ class TestCabinMixer(SpaceTest):
     self.assertLess(mix.tapeAt, 0.2 * RATE)
     sound = _played(mix, _told(*REPLAY), 1.0)
     self.assertGreater(_loudness(sound), 0.01)
+
+  def test_food_near(self) -> None:
+    """The kitchen's music, begun, plays as loud as he is near the food
+    (user, 2026-11-17: "when walking away from the food area fade out
+    the audible France"): out of earshot nothing of it."""
+    sound = numpy.sin(numpy.arange(RATE) * 0.05)
+    loudness = []
+    for near in (1.0, 0.0):
+      heard = []
+      for music in (sound, 0.0 * sound):
+        mix = CabinMixer(RATE, 1)
+        mix.records[mixer.EATS][0] = music
+        _played(mix, _told((mixer.FOOD_NEAR, near)), 1.5)
+        heard.append(_played(mix, _told((mixer.EATS, 1.0),
+                                        (mixer.FOOD_NEAR, near)), 0.5))
+      loudness.append(_loudness(heard[0] - heard[1]))
+    self.assertGreater(loudness[0], 0.2)
+    self.assertLess(loudness[1], 0.01)

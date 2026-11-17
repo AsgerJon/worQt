@@ -35,6 +35,7 @@ import warp as wp
 
 from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius
 from . import _stationinterior as rooms
+from . import _launchtower as tower
 from . import _walkway as walkway
 
 wp.config.log_level = wp.LOG_WARNING
@@ -76,17 +77,37 @@ TUBE_INSIDE = _single(rooms.TUBE_INSIDE)
 DECK = _single(rooms.DECK)
 PLANE = _single(rooms.PLANE)
 #  On the pad (user, 2026-11-17: "The door out of the rocket should be
-#  connected to a retractable walk way"; '_walkway'): the hull's skin at
-#  the floor (its radius; it narrows as the wall does), the walkway's
-#  tunnel and the tower's platform (each a box: its low and high
-#  corners), the doorway through the wall (a box).
+#  connected to a retractable walk way"; '_walkway'; "We *must* have the
+#  ability to walk around in the dark before getting in"; '_launchtower'):
+#  the hull's skin at the floor (its radius; it narrows as the wall
+#  does), the walkway's tunnel, the doorway through the wall; the launch
+#  tower's hall, stairwell, lift shaft, the doorways between them and
+#  the ground (each a box: its low and high corners); the yard (a box,
+#  outside the rocket's body (a round column, 'BODY' radius) and the
+#  stair tower's walls (a box)).
 HULL_LOW = _single(capsuleRadius(FLOOR))
-TUNNEL_LOW = wp.constant(wp.vec3(*walkway.TUNNEL[0]))
-TUNNEL_HIGH = wp.constant(wp.vec3(*walkway.TUNNEL[1]))
-PLATFORM_LOW = wp.constant(wp.vec3(*walkway.PLATFORM[0]))
-PLATFORM_HIGH = wp.constant(wp.vec3(*walkway.PLATFORM[1]))
-DOORWAY_LOW = wp.constant(wp.vec3(*walkway.DOORWAY[0]))
-DOORWAY_HIGH = wp.constant(wp.vec3(*walkway.DOORWAY[1]))
+
+
+def _box(box: tuple) -> tuple:
+  """Returns 'box' (its low and high corners) as two Warp constants."""
+  return wp.constant(wp.vec3(*box[0])), wp.constant(wp.vec3(*box[1]))
+
+
+TUNNEL_LOW, TUNNEL_HIGH = _box(walkway.TUNNEL)
+DOORWAY_LOW, DOORWAY_HIGH = _box(walkway.DOORWAY)
+HALL_LOW, HALL_HIGH = _box(tower.HALL)
+STAIRS_LOW, STAIRS_HIGH = _box(tower.STAIRWELL)
+SHAFT_LOW, SHAFT_HIGH = _box(tower.SHAFT)
+STAIR_TOP_LOW, STAIR_TOP_HIGH = _box(tower.STAIR_TOP)
+STAIR_FOOT_LOW, STAIR_FOOT_HIGH = _box(tower.STAIR_FOOT)
+LIFT_TOP_LOW, LIFT_TOP_HIGH = _box(tower.LIFT_TOP)
+LIFT_FOOT_LOW, LIFT_FOOT_HIGH = _box(tower.LIFT_FOOT)
+YARD_LOW, YARD_HIGH = _box(tower.YARD)
+TOWER_LOW = wp.constant(wp.vec3(tower.TOWER[0][0], tower.TOWER[0][1],
+                                tower.GROUND - 1.0))
+TOWER_HIGH = wp.constant(wp.vec3(tower.TOWER[1][0], tower.TOWER[1][1],
+                                 tower.TOWER_TOP))
+BODY = _single(tower.BODY)
 #  A meeting's spring: four of them carry a body at 'OMEGA' rad/s (its
 #  mass by them sinks g / OMEGA² under g: 0.16 mm at one g, 0.8 mm at
 #  five), damped 'DAMPING' of critical; rubbing at most 'GRIP' of the
@@ -188,10 +209,55 @@ def boxRoom(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
 
 
 @wp.func
+def boxOutside(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
+  """Returns how far 'point' is outside the box from 'low' to 'high'
+  (along the axis it is furthest out by) and the way out of it."""
+  room = wp.vec4(-1.0, 0.0, 0.0, low[0] - point[0])
+  room = deeper(room, point[0] - high[0], wp.vec3(1.0, 0.0, 0.0))
+  room = deeper(room, low[1] - point[1], wp.vec3(0.0, -1.0, 0.0))
+  room = deeper(room, point[1] - high[1], wp.vec3(0.0, 1.0, 0.0))
+  room = deeper(room, low[2] - point[2], wp.vec3(0.0, 0.0, -1.0))
+  return deeper(room, point[2] - high[2], wp.vec3(0.0, 0.0, 1.0))
+
+
+@wp.func
+def towerRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
+  """Returns 'best' or the launch tower's rooms if deeper: its hall,
+  stairwell and lift shaft, the stairwell's doorways, the lift's open
+  ones ('outside' four: the hall's, eight: the ground's), the yard round
+  it (outside the rocket's body and the stair tower)."""
+  room = boxRoom(point, HALL_LOW, HALL_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = boxRoom(point, STAIRS_LOW, STAIRS_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = boxRoom(point, SHAFT_LOW, SHAFT_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = boxRoom(point, STAIR_TOP_LOW, STAIR_TOP_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = boxRoom(point, STAIR_FOOT_LOW, STAIR_FOOT_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  if outside % 8 >= 4:
+    room = boxRoom(point, LIFT_TOP_LOW, LIFT_TOP_HIGH)
+    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  if outside >= 8:
+    room = boxRoom(point, LIFT_FOOT_LOW, LIFT_FOOT_HIGH)
+    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  yard = boxRoom(point, YARD_LOW, YARD_HIGH)
+  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
+  outward = wp.vec3(1.0, 0.0, 0.0)
+  if across > 1.0e-6:
+    outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
+  yard = shallower(yard, across - BODY, outward)
+  walls = boxOutside(point, TOWER_LOW, TOWER_HIGH)
+  yard = shallower(yard, walls[3], wp.vec3(walls[0], walls[1], walls[2]))
+  return deeper(best, yard[3], wp.vec3(yard[0], yard[1], yard[2]))
+
+
+@wp.func
 def outsideRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
   """Returns 'best' or the rooms outside the rocket on the pad if
   deeper: 'outside' one, the walkway's tunnel (outside the hull's skin)
-  and the tower's platform; two, the doorway."""
+  and the launch tower's rooms ('towerRooms'); two, the doorway."""
   if outside % 2 == 1:
     across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
     outward = wp.vec3(1.0, 0.0, 0.0)
@@ -205,9 +271,8 @@ def outsideRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
       -CABIN_SLOPE * CABIN_LEAN))
     best = deeper(best, tunnel[3], wp.vec3(tunnel[0], tunnel[1],
                                            tunnel[2]))
-    room = boxRoom(point, PLATFORM_LOW, PLATFORM_HIGH)
-    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  if outside >= 2:
+    best = towerRooms(point, best, outside)
+  if outside % 4 >= 2:
     room = boxRoom(point, DOORWAY_LOW, DOORWAY_HIGH)
     best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
   return best
