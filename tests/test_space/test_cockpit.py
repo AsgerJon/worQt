@@ -103,16 +103,18 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 36 inputs, each its own action and key
+    """The dashboard has its 35 inputs, each its own action and key
     (but the tape deck's own keys: the right console's work the same):
-    the view's and the map's switches, three knobs (warp, orbit, the
+    the map's switch (the view is no dashboard's: user, 2026-11-17, "the
+    dashboard should not show the view as a dashboard function"), three
+    knobs (warp, orbit, the
     engine's limit), 30 keys (the AUTOPILOT's three modes, ENGAGE and
     WARP TO ACTION, the ASSISTS, LAUNCH, the docking's six thrusters, the
     monitor's feed, undock; the tape's on the console and on the deck),
     the push-pull throttle; the switches plain FourthPeeps, the rest
     their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 36)
+    self.assertEqual(len(controls), 35)
     own = [control for control in controls if not _atDeck(control)]
     self.assertEqual(len(own), len(controls) - len(DECK_KEYS))
     actions = [control.action for control in own]
@@ -123,9 +125,10 @@ class TestCockpit(SpaceTest):
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 2, 'Knob': 3, 'Pushbutton': 30,
+    self.assertEqual(kinds, {'FourthPeep': 1, 'Knob': 3, 'Pushbutton': 30,
                              'Slider': 1})
-    self.assertIs(type(Cockpit().controlOf('view').peep), FourthPeep)
+    self.assertIs(type(Cockpit().controlOf('map').peep), FourthPeep)
+    self.assertIsNone(Cockpit().controlOf('view'))
     for name in LIT_KEYS:
       self.assertIn(name, [control.name for control in controls])
     self.assertIsInstance(Cockpit().controlOf('hold').peep, Pushbutton)
@@ -396,7 +399,7 @@ class TestCockpit(SpaceTest):
                            KEY_TRAVEL, 9)
     cockpit.acted(0.2)
     self.assertAlmostEqual(math.dist(parts()[at][0], plain[at][0]), 0.0, 9)
-    switch = cockpit.controlOf('view')
+    switch = cockpit.controlOf('map')
     at = order[('control', switch)]
     switch.peep.used()
     cockpit.acted(1.0)

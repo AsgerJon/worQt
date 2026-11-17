@@ -334,8 +334,7 @@ CONSOLE_KEYS = (('PLAY', 'P', 'play', seated(-0.28, -0.47, 0.0)[:2]),
                 ('STOP', 'O', 'halt', seated(-0.21, -0.47, 0.0)[:2]),
                 ('EJECT', 'I', 'eject', seated(-0.14, -0.47, 0.0)[:2]),
                 ('PAD', '\u232b', 'pad', seated(-0.16, 0.47, 0.0)[:2]))
-CONSOLE_SWITCHES = (('VIEW', 'V', 'view', seated(-0.16, 0.58, 0.0)[:2]),
-                    ('MAP', 'M', 'map', seated(-0.26, 0.58, 0.0)[:2]))
+CONSOLE_SWITCHES = (('MAP', 'M', 'map', seated(-0.26, 0.58, 0.0)[:2]),)
 CONSOLE_KEY_HALF = (0.03, 0.03)
 #  The teleprinter in the panel's middle (user, 2026-11-17: "the
 #  teleprinter should be larger"): its paper's middle (right, up) and
@@ -387,10 +386,6 @@ TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
 #  seen from there, 'BOLT_SEEN' m round).
 REACH = 1.6
 GUN_REACH = 40.0
-#  The gun sees a bolt if the way to it runs through the rooms, looked at
-#  every 'SIGHT_STEP' m, up to 'SIGHT_SHORT' m before the bolt, m.
-SIGHT_STEP = 0.15
-SIGHT_SHORT = 0.2
 AIM = math.radians(3.0)
 BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -404,18 +399,6 @@ def capsuleRadius(z: float) -> float:
   own axes), m."""
   share = min(1.0, max(0.0, (z - FLOOR) / (NOSE - FLOOR)))
   return RADIUS + share * (0.45 * SIZE - RADIUS)
-
-
-def _inSight(eye: tuple, off: tuple, far: float, open_: object) -> bool:
-  """Returns whether the way from 'eye' along 'off' ('far' m long) to a
-  bolt runs through the rooms ('open_'), up to 'SIGHT_SHORT' m before
-  it (the bolt is on a wall)."""
-  count = int((far - SIGHT_SHORT) // SIGHT_STEP)
-  for k in range(1, count + 1):
-    share = k * SIGHT_STEP / far
-    if not open_(tuple(e + share * o for e, o in zip(eye, off))):
-      return False
-  return True
 
 
 def inCabin(point: tuple) -> bool:
@@ -448,7 +431,7 @@ KEY_PROMPTS = {'door': 'Open or close the door', 'lock': 'Lock the door',
 
 def _household() -> tuple:
   """Returns what he may work away from the dashboard (looked at within
-  reach, a click): the rations' crate (he eats one), the daybed
+  reach, E or a click): the rations' crate (he eats one), the daybed
   (he sleeps till morning, if it is night), the sofa (he sits on it),
   the pork scratchings under the dashboard (in reach of his chair),
   the door's keys (outside on the walkway: the door; inside by it: the
@@ -469,7 +452,7 @@ def _household() -> tuple:
     top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))
     peep = Pushbutton(name, None, top, (0.0, 0.0, -1.0), 0.01,
                       (prompt,) * 2)
-    out.append(Control(name, 'Click', action, middle, axes, half, peep))
+    out.append(Control(name, 'E', action, middle, axes, half, peep))
   return tuple(out)
 
 
@@ -672,15 +655,15 @@ class Cockpit:
       -1.0, min(1.0, look[2])))))
     return True
 
-  def boltAimed(self, bolts: tuple, open_: object = None) -> int | None:
+  def boltAimed(self, bolts: tuple, seen: object = None) -> int | None:
     """The 'boltAimed' method returns the magic bolt (its index in
     'bolts': each its place and the way it faces) the gravity gun points
     at out of his chair: within 'GUN_REACH' of his eyes, facing him, in
     sight (user, 2026-11-17: "the gravgun should not be able to grab
-    bolts through walls": 'open_' says whether a point is in the rooms,
-    every 'SIGHT_STEP' m from his eyes to before the bolt; None: no
-    walls), nearest to his eyes' middle within 'AIM' or its ring; None
-    if none (or he sits)."""
+    bolts through walls": 'seen' says whether nothing is in the way from
+    his eyes to a place, '_sight.inSight'; None: no walls), nearest to
+    his eyes' middle within 'AIM' or its ring; None if none (or he
+    sits)."""
     if self.crewman.sitting:
       return None
     eye, look = self.eye(), self.looking()[0]
@@ -694,16 +677,16 @@ class Cockpit:
       along = sum(o * l for o, l in zip(off, look)) / far
       angle = math.acos(max(-1.0, min(1.0, along)))
       if angle <= max(AIM, math.atan(BOLT_SEEN / far)) and angle < least:
-        if open_ is None or _inSight(eye, off, far, open_):
+        if seen is None or seen(eye, place):
           best, least = k, angle
     return best
 
-  def looseAimed(self, things: tuple, open_: object = None) -> int | None:
+  def looseAimed(self, things: tuple, seen: object = None) -> int | None:
     """The 'looseAimed' method returns the loose thing (its index in
     'things': each its middle and its half sizes) the Grav-Gun points at
     out of his chair: the nearest whose round (its half sizes' length)
     his eyes' middle passes through, within 'GUN_REACH', in sight
-    ('open_', as 'boltAimed'); None if none (or he sits)."""
+    ('seen', as 'boltAimed'); None if none (or he sits)."""
     if self.crewman.sitting:
       return None
     eye, look = self.eye(), self.looking()[0]
@@ -716,8 +699,7 @@ class Cockpit:
       round_ = math.sqrt(sum(h * h for h in half))
       aside = math.sqrt(max(0.0, sum(o * o for o in off) - along * along))
       if aside <= round_ and along < nearest:
-        far = math.sqrt(sum(o * o for o in off))
-        if open_ is None or _inSight(eye, off, far, open_):
+        if seen is None or seen(eye, middle):
           best, nearest = k, along
     return best
 

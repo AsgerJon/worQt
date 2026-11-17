@@ -161,8 +161,17 @@ class TestBolts(SpaceTest):
     gravgun should not be able to grab bolts through walls"): one beyond
     the cabin's wall, facing him, is aimed at only if nothing is in the
     way."""
-    from worQt.gaming.space._cockpit import inCabin
+    import numpy
     from worQt.gaming.space._crewman import MIDDLE
+    from worQt.gaming.space._sight import inSight
+    from worQt.gaming.space._stationinterior import cabinInside
+    nothing = (numpy.zeros((0, 3)), numpy.zeros((0, 3)),
+               numpy.zeros((0, 3, 3)))
+
+    def seen(eye: tuple, there: tuple) -> bool:
+      """The cabin alone, no solids."""
+      return inSight(eye, there, cabinInside, nothing)
+
     cockpit = Cockpit()
     cockpit.gotUp()
     crewman = cockpit.crewman
@@ -173,6 +182,6 @@ class TestBolts(SpaceTest):
     bolt = ((-7.0, 0.0, eye[2]), (1.0, 0.0, 0.0))
     cockpit.yaw, cockpit.pitch = 0.0, 0.0
     self.assertEqual(cockpit.boltAimed((bolt,)), 0)
-    self.assertIsNone(cockpit.boltAimed((bolt,), inCabin))
+    self.assertIsNone(cockpit.boltAimed((bolt,), seen))
     inside = ((-4.0, 0.0, eye[2]), (1.0, 0.0, 0.0))
-    self.assertEqual(cockpit.boltAimed((inside,), inCabin), 0)
+    self.assertEqual(cockpit.boltAimed((inside,), seen), 0)

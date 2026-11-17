@@ -95,7 +95,7 @@ class TestNight(SpaceTest):
     cockpit = Cockpit()
     bed = [c for c in cockpit.household if c.action == 'sleep']
     self.assertEqual(len(bed), 1)
-    self.assertEqual(bed[0].key, 'Click')
+    self.assertEqual(bed[0].key, 'E')
     self.assertEqual(bed[0].peep.prompt(), 'Sleep till morning')
     middle, axes, half = bedBox()
     eye = tuple(m + 1.0 * a + 0.9 * u for m, a, u in zip(

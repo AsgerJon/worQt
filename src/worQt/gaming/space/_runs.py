@@ -46,6 +46,7 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_inventory',
                'tests.test_space.test_autoflight',
                'tests.test_space.test_gravgun',
+               'tests.test_space.test_sight',
                'tests.test_sandbox.test_peepkinds',
                'tests.test_sandbox.test_mousetrail')
 

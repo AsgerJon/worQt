@@ -46,6 +46,7 @@ from ._orrery import Orrery, lengthText, timeText
 from ._approach import closestApproach
 from ._gunbeam import muzzle, strengthOf
 from ._gravgun import GravGun
+from ._sight import inSight
 from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
 from ._kolonihave import gardenSolids
 from ._night import MORNING, morningIn, nightIn
@@ -130,10 +131,10 @@ AIMING = {Qt.Key.Key_W: (1.0, 0.0), Qt.Key.Key_S: (-1.0, 0.0),
 AIM_STEP = math.radians(5.0)
 AIM_RATE = math.radians(20.0)
 REPEAT_AFTER = 0.35
-#  Q rolls the vessel about its nose, the wheels straight (E is the
-#  inventory's now, always: user, 2026-11-17, "key_E should *always*
-#  open Asger's inventory"; the other roll key is the user's to choose:
-#  "As for manual controls, let's defer those decisions for now").
+#  Q rolls the vessel about its nose, the wheels straight (E is his use
+#  and inventory key, in his chair too: user, 2026-11-17; the other roll
+#  key is the user's to choose: "As for manual controls, let's defer
+#  those decisions for now").
 ROLLING = {Qt.Key.Key_Q: 1.0}
 #  Warping to the apoapsis stops this long before it, s.
 APOAPSIS_LEAD = 30.0
@@ -161,7 +162,7 @@ CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Plus: '+',
         Qt.Key.Key_Space: 'Space', Qt.Key.Key_Return: 'Enter',
         Qt.Key.Key_Enter: 'Enter', Qt.Key.Key_BracketLeft: '[',
         Qt.Key.Key_BracketRight: ']', Qt.Key.Key_M: 'M',
-        Qt.Key.Key_Backspace: '⌫', Qt.Key.Key_V: 'V',
+        Qt.Key.Key_Backspace: '⌫', Qt.Key.Key_Tab: 'Tab',
         Qt.Key.Key_P: 'P', Qt.Key.Key_O: 'O', Qt.Key.Key_I: 'I',
         Qt.Key.Key_B: 'B',
         Qt.Key.Key_Y: 'Y', Qt.Key.Key_U: 'U', Qt.Key.Key_Up: '\u2191',
@@ -180,7 +181,7 @@ KEY_ACTIONS = {Qt.Key.Key_Z: 'full', Qt.Key.Key_X: 'cut',
                Qt.Key.Key_Enter: 'action',
                Qt.Key.Key_BracketRight: 'higher',
                Qt.Key.Key_BracketLeft: 'lower', Qt.Key.Key_M: 'map',
-               Qt.Key.Key_Backspace: 'pad', Qt.Key.Key_V: 'view',
+               Qt.Key.Key_Backspace: 'pad', Qt.Key.Key_Tab: 'view',
                Qt.Key.Key_P: 'play', Qt.Key.Key_O: 'halt',
                Qt.Key.Key_I: 'eject', Qt.Key.Key_B: 'buckle',
                Qt.Key.Key_Y: 'limit down', Qt.Key.Key_U: 'limit up',
@@ -206,7 +207,8 @@ STATION_SAID = 2e6
 WARP_CLEAR = 2e3
 #  The hotbar's keys (user, 2026-11-17: "Give Asger a hotbar and an
 #  inventory like in minecraft": 1 to 9 as Minecraft's; E opens the
-#  inventory: "key_E should *always* open Asger's inventory"), the
+#  inventory when there is nothing to use: "key_E should still be the
+#  general interaction"; "I meant even when in the seat"), the
 #  telescope's magnification (held
 #  in hand, the right button held: "give Asger also a telescope"), how
 #  fast the view eases to it, s.
@@ -267,8 +269,8 @@ MOVING = {Qt.Key.Key_W: 'ahead', Qt.Key.Key_S: 'back',
 TAKING = ('full', 'cut', 'hold', 'prograde', 'retrograde', 'aim',
           'throttle', 'pad')
 HINT = ('click: look round   wheel: zoom   Esc: free the mouse   click a'
-        ' lamp: do it   V: Asger\'s eyes   Shift: get up (up: crouch)'
-        '   click the chair: sit   1-9: hotbar   E: inventory')
+        ' lamp: do it   Tab: Asger\'s eyes   Shift: get up (up: crouch)'
+        '   E: use (nothing to use: inventory)   1-9: hotbar')
 MAP_HINT = ('drag: turn   wheel: zoom   click a name: look at it   '
             '⌫: back to the rocket   M: back to flying')
 
@@ -487,7 +489,7 @@ class SpaceWindow(QMainWindow):
       'ap dock': flying.mode == 'dock', 'engage': flying.engaged,
       'action': not self._actionWhy(), 'camera': self._noseCamera}
     self.instruments.acted(real, vessel, system, keeper, self.guidance,
-                           self.mapOpen, self.inside, self._header())
+                           self.mapOpen, self._header())
     told = list(self.instruments.told(vessel, system, self.inside))
     told[THUDS], told[THUD] = self.world.thuds, self.world.loudest
     told[HURTS], told[EATS] = self.vitals.hurts, self.vitals.meals
@@ -652,9 +654,12 @@ class SpaceWindow(QMainWindow):
     if key in CAPS:
       self._flashed[CAPS[key]] = time.perf_counter()
     if key == Qt.Key.Key_E:
-      self._manualOpen = False
-      if self._inventoryOpen:
+      if self._manualOpen:
+        self._manualOpen = False
+      elif self._inventoryOpen:
         self._inventoryShut()
+      elif self.inside and self._usable():
+        self._used(False)
       else:
         self._inventoryOpened()
       return True
@@ -850,8 +855,8 @@ class SpaceWindow(QMainWindow):
     if action in UP_KEYS:
       self._acted(action)
     else:
-      self._noteOf('Asger is out of his chair: a click on the chair sits'
-                   ' him down (or reach the input and click it)')
+      self._noteOf('Asger is out of his chair: E at the chair sits him'
+                   ' down (or reach the input: E)')
     return True
 
   def _buckled(self, ) -> None:
@@ -1122,9 +1127,9 @@ class SpaceWindow(QMainWindow):
   def _gotUp(self, ) -> None:
     """Gets Asger up out of his chair (user, 2026-11-17: Shift), said."""
     self.cockpit.gotUp()
-    self._noteOf('Asger is up: W A S D, Space, Shift crouches; a click'
-                 ' on the chair sits him; 1-9 his hotbar, E his inventory;'
-                 ' the right button uses what he holds')
+    self._noteOf('Asger is up: W A S D, Space, Shift crouches; E at the'
+                 ' chair sits him; 1-9 his hotbar, E (nothing to use) his'
+                 ' inventory; the right button uses what he holds')
 
   def _chairAimed(self, ) -> bool:
     """Returns whether Asger, up, looks at his chair within 'SIT' of it
@@ -1222,23 +1227,28 @@ class SpaceWindow(QMainWindow):
       self.bolts = rocketBolts()
     self._stationed = docked
 
-  def _open(self, point: tuple) -> bool:
-    """Returns whether 'point' is in the rooms Asger may be in now (the
+  def _openDepth(self, point: tuple) -> float:
+    """Returns how deep 'point' is in the rooms Asger may be in now (the
     cabin; docked, the station's; on the pad, the walkway's, the launch
-    tower's and the doorway if open): what the gravity gun sees
-    through."""
+    tower's and the doorway if open), m (nought or less: out of them)."""
     docked = self.vessel.docked
     ways = shaftWays(self.docking.relative) if docked else ()
-    if roomsInside(point, docked, ways) > 0.0:
-      return True
+    depth = roomsInside(point, docked, ways)
     walkway = self.walkway
-    if walkway.passable and doorwayInside(point) > 0.0:
-      return True
+    if walkway.passable:
+      depth = max(depth, doorwayInside(point))
     if docked or not walkway.attached:
-      return False
+      return depth
     lift = self.towerLift
-    return walkwayInside(point) > 0.0 or groundsInside(
-      point, lift.atTop, lift.atFoot) > 0.0
+    return max(depth, walkwayInside(point), groundsInside(
+      point, lift.atTop, lift.atFoot))
+
+  def _seen(self, eye: tuple, there: tuple) -> bool:
+    """Returns whether nothing is in the way from 'eye' to 'there' (the
+    vessel's own axes): the rooms all the way, no solid (what the
+    Grav-Gun sees through: user, 2026-11-17, "the fucking gravity gun
+    still works through walls")."""
+    return inSight(eye, there, self._openDepth, self.world.solidBoxes())
 
   def _towerKept(self, real: float) -> None:
     """On the pad with the walkway out, the launch tower's solids (its
@@ -1413,6 +1423,19 @@ class SpaceWindow(QMainWindow):
     if self.inventory.held == 'gravgun':
       self._gunPulsed()
 
+  def _usable(self, ) -> bool:
+    """Returns whether E has something to work (user, 2026-11-17: "key_E
+    should still be the general interaction"; with nothing to work it
+    opens the inventory, in his chair too): an input or the household's
+    looked at in reach; out of his chair an elevator, his chair."""
+    if self.vitals.cause is not None or self.sleep.on:
+      return False
+    if self._looked():
+      return True
+    if self.cockpit.crewman.sitting:
+      return False
+    return self._elevatorOf() is not None or self._chairAimed()
+
   def _heldPressed(self, ) -> bool:
     """The right button pressed with no input in reach: what is in his
     hand is used (user, 2026-11-17: "Give Asger a hotbar and an inventory
@@ -1529,10 +1552,10 @@ class SpaceWindow(QMainWindow):
     cockpit = self.cockpit
     things = [(place, half) for (place, _), (_, _, half, _, _) in zip(
       self.world.shown(), looseThings())]
-    thing = cockpit.looseAimed(things, self._open)
+    thing = cockpit.looseAimed(things, self._seen)
     if thing is not None:
       return 'loose', thing
-    bolt = cockpit.boltAimed(self.bolts, self._open)
+    bolt = cockpit.boltAimed(self.bolts, self._seen)
     return None if bolt is None else ('bolt', bolt)
 
   def _gunTargetAt(self, target: tuple) -> tuple:
@@ -1557,7 +1580,8 @@ class SpaceWindow(QMainWindow):
     thing it acts on (None: a bolt, held by the hull) and the force on
     that the other way over its mass (the vessel's own axes); None: no
     push. Its field ends put away, out of his hand, him in his chair or
-    dead, or its bolt gone (undocked)."""
+    dead, its bolt gone (undocked), or something come between (it acts
+    through nothing)."""
     gun = self.gravgun
     acting = gun.acting
     if acting is None:
@@ -1570,7 +1594,12 @@ class SpaceWindow(QMainWindow):
       gun.released()
       return None
     there = self._gunTargetAt(acting)
-    start = tuple(e + m for e, m in zip(self.cockpit.eye(), rotated(
+    eye = self.cockpit.eye()
+    if not self._seen(eye, there):
+      gun.released()
+      self._noteOf('Grav-Gun: something came between, the field broke')
+      return None
+    start = tuple(e + m for e, m in zip(eye, rotated(
       self._eyesFrame(), muzzle())))
     force = gun.pushOf(start, there, real)
     onAsger = tuple(f / HEFT for f in force)
@@ -1601,9 +1630,9 @@ class SpaceWindow(QMainWindow):
       return looked.key, self._promptOf(looked)
     lift = self._elevatorOf()
     if lift is not None:
-      return 'Click', lift[2]
+      return 'E', lift[2]
     if self._chairAimed():
-      return 'Click', 'Sit down'
+      return 'E', 'Sit down'
     crewman = self.cockpit.crewman
     held = self.inventory.held
     if held == 'gravgun' and not crewman.sitting:

@@ -114,7 +114,7 @@ class Instruments:
 
   def acted(self, real: float, vessel: Vessel, system: SolarSystem,
             keeper: Timekeeper, guidance: AscentGuidance, mapOpen: bool,
-            inside: bool, header: str) -> None:
+            header: str) -> None:
     """The 'acted' method keeps the cabin to the flight 'real' s of real
     time on: the log and the teleprinter, the deck (cheering the vessel
     out of the air), each input's FourthPeep (counting its snap or tick
@@ -128,7 +128,7 @@ class Instruments:
     self.printer.acted(real)
     self.deck.acted(real)
     states = {mode: vessel.autopilot.mode == mode for mode in MODES}
-    states.update({'map': mapOpen, 'view': inside})
+    states.update({'map': mapOpen})
     states.update(self.switched)
     self.limit = LIMITS[limitNotch(vessel.engine)]
     latched = {'play': self.deck.playing, 'camera': self.switched[

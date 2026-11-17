@@ -43,31 +43,32 @@ class TestInstruments(SpaceTest):
     the warp's notch (a tick a notch); the lever goes to the throttle;
     the legend by a thrown switch is lit."""
     system, vessel, keeper, guidance, kit = self._ready()
-    kit.acted(0.0, vessel, system, keeper, guidance, False, True, 'go')
-    self.assertEqual((kit.snaps, kit.ticks), (1, 0))
+    kit.acted(0.0, vessel, system, keeper, guidance, False, 'go')
+    self.assertEqual((kit.snaps, kit.ticks), (0, 0))
     clicked = kit.clicks
     vessel.autopilot.engaged('hold', vessel.turn)
     keeper.factor = 100
     vessel.engine.throttled(0.5)
-    kit.acted(1.0, vessel, system, keeper, guidance, True, True, 'go')
+    kit.acted(1.0, vessel, system, keeper, guidance, True, 'go')
     cockpit = kit.cockpit
     self.assertEqual(cockpit.controlOf('hold').peep.value, 1.0)
     self.assertEqual(cockpit.controlOf('map').peep.value, 1.0)
-    self.assertEqual(cockpit.controlOf('view').peep.value, 1.0)
+    self.assertIsNone(cockpit.controlOf('view'))
     self.assertEqual(cockpit.controlOf('prograde').peep.value, 0.0)
     self.assertEqual(cockpit.controlOf('warp').peep.notch, 4)
     self.assertTrue(cockpit.controlOf('hold').peep.latched)
     self.assertEqual(kit.ticks, 4)
-    self.assertEqual(kit.snaps, 2)
+    self.assertEqual(kit.snaps, 1)
     self.assertEqual(kit.clicks, clicked + 1)
     self.assertAlmostEqual(cockpit.controlOf('throttle').peep.value, 0.5)
     lit = dict(zip(LEGENDS, kit.legends))
-    self.assertTrue(lit['HOLD'] and lit['MAP'] and lit['VIEW'])
+    self.assertTrue(lit['HOLD'] and lit['MAP'])
+    self.assertNotIn('VIEW', lit)
     self.assertTrue(lit['ORBIT'])
     self.assertFalse(lit['PRO'] or lit['ENGAGE'] or lit['RNDZ'])
-    kit.acted(1.0, vessel, system, keeper, guidance, True, True, 'go')
+    kit.acted(1.0, vessel, system, keeper, guidance, True, 'go')
     self.assertEqual((kit.snaps, kit.ticks, kit.clicks),
-                     (2, 4, clicked + 1))
+                     (1, 4, clicked + 1))
 
   def test_keys(self) -> None:
     """A key pressed sinks and clicks (a mode's too); knobs and the
@@ -75,7 +76,7 @@ class TestInstruments(SpaceTest):
     stays in while the tape plays (the autopilot's ORBIT chosen and the
     LAUNCH key, the engine lit, stay in from the first frame)."""
     system, vessel, keeper, guidance, kit = self._ready()
-    kit.acted(0.0, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.0, vessel, system, keeper, guidance, False, 'go')
     self.assertTrue(kit.cockpit.controlOf('ap orbit').peep.latched)
     self.assertTrue(kit.cockpit.controlOf('launch').peep.latched)
     base = kit.clicks
@@ -86,13 +87,13 @@ class TestInstruments(SpaceTest):
     kit.pressed('warp')
     self.assertEqual(kit.clicks, base + 2)
     kit.deck.play()
-    kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.5, vessel, system, keeper, guidance, False, 'go')
     play = kit.cockpit.controlOf('play').peep
     self.assertTrue(play.latched)
     self.assertEqual(play.value, 1.0)
     self.assertEqual(kit.clicks, base + 4)
     kit.deck.halt()
-    kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.5, vessel, system, keeper, guidance, False, 'go')
     self.assertFalse(play.latched)
     self.assertEqual(play.value, 0.0)
 
@@ -100,14 +101,14 @@ class TestInstruments(SpaceTest):
     """On the pad the air and ground lamps are lit, the rest dark; in
     orbit the orbit's lamp alone, each change a relay's click."""
     system, vessel, keeper, guidance, kit = self._ready()
-    kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     lit = {name: on for (name, _), on in zip(LAMPS, kit.lamps)}
     self.assertEqual(lit, {'ENGINE': False, 'AIR': True, 'GROUND': True,
                            'WARP': False, 'GUIDE': False, 'ORBIT': False,
                            'DOCK': False})
     self.assertEqual(kit.relays, 2)
     vessel = self.orbiting(system, 300e3, 300e3)
-    kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     lit = {name: on for (name, _), on in zip(LAMPS, kit.lamps)}
     self.assertEqual([name for name, on in lit.items() if on], ['ORBIT'])
     self.assertEqual(kit.relays, 5)
@@ -118,19 +119,19 @@ class TestInstruments(SpaceTest):
     speed's at nought (the speed over the ground, in the air)."""
     system, vessel, keeper, guidance, kit = self._ready()
     vessel = self.orbiting(system, 300e3, 300e3)
-    kit.acted(NEEDLE, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(NEEDLE, vessel, system, keeper, guidance, False, 'go')
     names = [name for name, _ in DIALS]
     height, speed = names.index('HEIGHT'), names.index('SPEED')
     want = dialShare('HEIGHT', vessel.heightOver(system))
     self.assertAlmostEqual(kit.needles[height], want * (
       1.0 - math.exp(-1.0)), 6)
     for _ in range(40):
-      kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+      kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     self.assertAlmostEqual(kit.needles[height], want, 6)
     self.assertGreater(kit.needles[speed], 0.5)
     vessel = self.padded(system)
     for _ in range(40):
-      kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+      kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     self.assertLess(kit.needles[speed], 0.01)
 
   def test_announced(self) -> None:
@@ -149,7 +150,7 @@ class TestInstruments(SpaceTest):
       vessel.placed(terra, tuple((body.radius + body.air.top - below) * x
                                  for x in up), tuple(climb * x for x in up),
                     vessel.turn, (0.0, 0.0, 0.0))
-      kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+      kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
       self.assertEqual(kit.deck.announced, want, (below, climb))
       self.assertEqual(kit.told(vessel, system, True)[mixer.ANNOUNCED],
                        1 if want else 0)
@@ -159,10 +160,10 @@ class TestInstruments(SpaceTest):
   def test_cheered(self) -> None:
     """Leaving the air the tape plays, from its beginning, once."""
     system, vessel, keeper, guidance, kit = self._ready()
-    kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     self.assertFalse(kit.deck.playing)
     vessel = self.orbiting(system, 300e3, 300e3)
-    kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
+    kit.acted(0.1, vessel, system, keeper, guidance, False, 'go')
     self.assertTrue(kit.deck.playing)
     self.assertEqual(kit.deck.rewinds, 1)
 

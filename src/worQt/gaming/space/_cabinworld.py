@@ -260,6 +260,24 @@ class CabinWorld:
       self.outside = int(outside)
       self._pressed.set_param_by_name('outside', self.outside)
 
+  def solidBoxes(self, ) -> tuple:
+    """The 'solidBoxes' method returns the solids in the world now, as
+    the frame began (the cabin's, the tower's or the station's; not his
+    own box, none put away): their middles, half sizes and axes as
+    columns (numpy arrays (n, 3), (n, 3), (n, 3, 3))."""
+    keep = numpy.ones(len(self._middles), bool)
+    keep[self.own] = False
+    keep &= self._middles[:, 2] > AWAY[2] + 1.0
+    w, x, y, z = self._solidTurns[keep].T
+    axes = numpy.stack([
+      numpy.stack([1 - 2 * (y * y + z * z), 2 * (x * y + w * z),
+                   2 * (x * z - w * y)], 1),
+      numpy.stack([2 * (x * y - w * z), 1 - 2 * (x * x + z * z),
+                   2 * (y * z + w * x)], 1),
+      numpy.stack([2 * (x * z + w * y), 2 * (y * z - w * x),
+                   1 - 2 * (x * x + y * y)], 1)], 2)
+    return self._middles[keep], self._halves[keep], axes
+
   def shown(self, ) -> tuple:
     """The 'shown' method returns each loose thing's place (its middle,
     the vessel's own axes) and turn from how it rests (w x y z)."""
