@@ -18,12 +18,17 @@ FONT = 'JetBrainsMono Nerd Font Mono'
 ICONS = {'rocket': '\uf135', 'flame': '\uf06d', 'stop': '\uf04d',
          'globe': '\uf0ac', 'flag': '\uf11e', 'clock': '\uf017',
          'cog': '\uf013', 'down': '\uf063'}
-#  Characters a second (a teletype's); characters a line (few and big:
-#  read from the seat, an arm's length and more away); lines kept on the
-#  paper shown; how long the carriage takes to return, s.
+#  Characters a second (a teletype's); characters a line (user,
+#  2026-11-17: "Smaller font on the teleprint. also make it wider. It
+#  should fit 77 characters"), at a Teletype's pitch: ten characters and
+#  six lines an inch ('PITCH', 'LINE', m) on its 8.5 inch paper; lines
+#  kept (as many as the paper shows above the line typed); how long the
+#  carriage takes to return, s.
 RATE = 10.0
-WIDTH = 24
-KEPT = 14
+WIDTH = 77
+PITCH = 0.0254 / 10.0
+LINE = 0.0254 / 6.0
+KEPT = 54
 RETURN = 0.25
 
 

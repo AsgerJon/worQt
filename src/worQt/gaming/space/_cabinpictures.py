@@ -19,7 +19,10 @@ import random
 from ._looks import cacheFolder
 
 #  The pictures' version (a change paints them anew) and sizes, pixels.
-VERSION = 7
+VERSION = 9
+#  The gravity gun's 3's picture's size, pixels.
+THREE_SIZE = 256
+MANUAL_SIZE = (1024, 1448)
 SIZE = 512
 #  How many m one picture of each covers (its tile).
 PINE_TILE = 1.2
@@ -28,14 +31,17 @@ BOARD_TILE = 1.6
 
 def cabinPicturesReady() -> dict:
   """Returns the cabin's pictures' files by name ('pine', 'boards',
-  'rug', 'blanket', 'glint', 'rcir'), painted if not kept yet."""
+  'rug', 'blanket', 'glint', 'rcir', 'three': the gravity gun's 3,
+  'manual': the warning placard by the door), painted if not kept
+  yet."""
   folder = cacheFolder()
   folder.mkdir(parents=True, exist_ok=True)
   out = {}
   for name, painter in (('pine', pinePainted), ('boards', boardsPainted),
                         ('rug', rugPainted), ('blanket', blanketPainted),
                         ('glint', glintPainted),
-                        ('rcir', rcirPainted)):
+                        ('rcir', rcirPainted), ('three', threePainted),
+                        ('manual', manualPainted)):
     target = folder / ('cabin-%s-%d.png' % (name, VERSION))
     if not target.exists() and not painter().save(str(target)):
       raise OSError('the picture %s could not be kept in %s' % (name,
@@ -220,5 +226,110 @@ def rcirPainted() -> object:
   painter.setFont(small)
   painter.drawText(QRectF(0, 0.08 * SIZE, SIZE, 0.14 * SIZE),
                    Qt.AlignmentFlag.AlignCenter, '1 JOUR')
+  painter.end()
+  return image
+
+
+def threePainted() -> object:
+  """Returns the gravity gun's 3 (user, 2026-11-17: "give a more
+  prominent 3 on the side. where it is visible"): a big orange 3 with a
+  dark edge, in a ring, on clear (its clear pixels holes on the gun)."""
+  from PySide6.QtCore import QPointF
+  from PySide6.QtGui import (QColor, QFont, QImage, QPainter,
+                             QPainterPath, QPen)
+  size = THREE_SIZE
+  image = QImage(size, size, QImage.Format.Format_ARGB32)
+  image.fill(QColor(0, 0, 0, 0))
+  painter = QPainter(image)
+  painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+  middle = QPointF(0.5 * size, 0.5 * size)
+  painter.setPen(QPen(QColor(255, 150, 20), 0.05 * size))
+  painter.setBrush(QColor(20, 18, 16, 220))
+  painter.drawEllipse(middle, 0.44 * size, 0.44 * size)
+  font = QFont('Sans')
+  font.setBold(True)
+  font.setPixelSize(int(0.72 * size))
+  path = QPainterPath()
+  path.addText(0.0, 0.0, font, '3')
+  box = path.boundingRect()
+  path.translate(middle.x() - box.center().x(),
+                 middle.y() - box.center().y())
+  painter.setPen(QPen(QColor(30, 16, 4), 0.035 * size))
+  painter.setBrush(QColor(255, 157, 0))
+  painter.drawPath(path)
+  painter.end()
+  return image
+
+
+def manualPainted() -> object:
+  """Returns the warning placard by the door ('_manual': the bolts, the
+  Temu gravity gun, never under gravity): a hazard striped head, its
+  title, its numbered items, small print, on a cream card; small on the
+  wall (read close, or E for a better look)."""
+  from PySide6.QtCore import QPointF, QRectF, Qt
+  from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPolygonF
+  from ._manual import ITEMS, LEAD, SMALL_PRINT, SUBTITLE, TITLE
+  wide, high = MANUAL_SIZE
+  image = QImage(wide, high, QImage.Format.Format_RGB32)
+  image.fill(QColor(244, 238, 220))
+  painter = QPainter(image)
+  painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+  band = 0.08 * high
+  painter.fillRect(QRectF(0.0, 0.0, wide, band), QColor(250, 196, 30))
+  painter.setPen(Qt.PenStyle.NoPen)
+  painter.setBrush(QColor(20, 20, 20))
+  step = 0.08 * wide
+  x = -band
+  while x < wide:
+    painter.drawPolygon(QPolygonF([QPointF(x, band), QPointF(x + 0.5 * step,
+                                                             band),
+                                   QPointF(x + 0.5 * step + band, 0.0),
+                                   QPointF(x + band, 0.0)]))
+    x += step
+  margin = 0.07 * wide
+  font = QFont('Sans')
+  font.setBold(True)
+  font.setPixelSize(int(0.065 * high))
+  painter.setFont(font)
+  painter.setPen(QColor(20, 20, 20))
+  top = band + 0.02 * high
+  painter.fillRect(QRectF(margin, top, wide - 2 * margin, 0.08 * high),
+                   QColor(250, 196, 30))
+  painter.drawText(QRectF(margin, top, wide - 2 * margin, 0.08 * high),
+                   Qt.AlignmentFlag.AlignCenter, TITLE)
+  top += 0.095 * high
+  font.setPixelSize(int(0.028 * high))
+  painter.setFont(font)
+  painter.drawText(QRectF(margin, top, wide - 2 * margin, 0.04 * high),
+                   Qt.AlignmentFlag.AlignCenter, SUBTITLE)
+  top += 0.05 * high
+  body = QFont('Sans')
+  body.setPixelSize(int(0.019 * high))
+  body.setItalic(True)
+  painter.setFont(body)
+  painter.drawText(QRectF(margin, top, wide - 2 * margin, 0.03 * high),
+                   Qt.AlignmentFlag.AlignCenter, LEAD)
+  top += 0.05 * high
+  body.setItalic(False)
+  font.setPixelSize(int(0.02 * high))
+  for k, (heading, words) in enumerate(ITEMS):
+    painter.setFont(font)
+    painter.drawText(QRectF(margin, top, wide - 2 * margin, 0.03 * high),
+                     Qt.AlignmentFlag.AlignLeft, '%d. %s' % (k + 1,
+                                                             heading))
+    top += 0.028 * high
+    painter.setFont(body)
+    box = QRectF(margin + 0.04 * wide, top, wide - 2 * margin - 0.04 * wide,
+                 0.2 * high)
+    used = painter.boundingRect(box, Qt.TextFlag.TextWordWrap, words)
+    painter.drawText(box, Qt.TextFlag.TextWordWrap, words)
+    top += used.height() + 0.016 * high
+  small = QFont('Sans')
+  small.setPixelSize(int(0.016 * high))
+  painter.setFont(small)
+  painter.setPen(QColor(90, 86, 80))
+  painter.drawText(QRectF(margin, high - 0.06 * high, wide - 2 * margin,
+                          0.03 * high), Qt.AlignmentFlag.AlignCenter,
+                   SMALL_PRINT)
   painter.end()
   return image

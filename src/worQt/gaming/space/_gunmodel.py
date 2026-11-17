@@ -27,6 +27,9 @@ from ._shapes import boxRows
 
 #  Full metal draws black with nothing to mirror: as the deck's, capped.
 METAL_MOST = 0.3
+#  Its 3: at most this big (half its size), this far off its side, m.
+SIDE_MARK_MOST = 0.06
+SIDE_MARK_OFF = 0.003
 
 
 @functools.lru_cache(maxsize=1)
@@ -111,3 +114,16 @@ def _screen(linear: float) -> float:
   if linear <= 0.0031308:
     return 12.92 * linear
   return 1.055 * linear ** (1.0 / 2.4) - 0.055
+
+
+@functools.lru_cache(maxsize=1)
+def sideMark() -> tuple:
+  """Returns where the gun's 3 is painted (user, 2026-11-17: "give a
+  more prominent 3 on the side. where it is visible"): on its left side,
+  the one he sees, a hair off it: its middle (his eyes' frame) and half
+  its size, m."""
+  rows = numpy.concatenate([part[2][:, :3] for part in gunParts()])
+  low, high = rows.min(axis=0), rows.max(axis=0)
+  half = min(SIDE_MARK_MOST, 0.45 * float(high[1] - low[1]))
+  return ((float(low[0]) - SIDE_MARK_OFF, 0.5 * float(low[1] + high[1]),
+           0.5 * float(low[2] + high[2])), half)

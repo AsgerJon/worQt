@@ -30,6 +30,11 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 #  and at most this many a frame.
 STEP = 1.0 / 1200.0
 MOST_STEPS = 120
+#  The solids' places kept for the space station's (docked: its
+#  elevators' cages, its garden's furniture), after the cabin's own.
+STATION_SLOTS = 160
+#  Where a solid not there is kept (far from everything), m.
+AWAY = (0.0, 0.0, -1e4)
 
 
 def preloadedCabin(device: str) -> float:
@@ -49,7 +54,9 @@ class CabinWorld:
   CabinWorld steps the cabin's bodies on 'device' ('stepped'): body 0
   Asger (left out while he sits: 'Crewman.buckled'), then each of
   '_furnishings.looseThings', every frame as long as the real time
-  passed, in steps of 'STEP'. 'shown' says where each loose thing is and
+  passed, in steps of 'STEP'. Docked to the space station ('stationed')
+  its rooms join the cabin's and its solids (moving, some) the cabin's
+  own. 'shown' says where each loose thing is and
   how it is turned from how it rests; 'thuds' counts the meetings begun
   hard and 'loudest' says how hard the loudest of the last frame was
   (m/s, by its heft); 'landed' how fast Asger met anything the last
@@ -78,6 +85,7 @@ class CabinWorld:
     preloadedCabin(device)
     self.wp, self.kernels, self.device = wp, _cabin_kernels, device
     self.thuds, self.loudest, self.landed, self._present = 0, 0.0, 0.0, 0
+    self.docked, self.outside = False, 0
     things = looseThings()
     rest = [_turnOf(axes) for _, _, _, axes, _ in things]
     self._rest = numpy.array(rest, numpy.float64)
@@ -106,6 +114,7 @@ class CabinWorld:
             radii.append(skin)
     self.pointCount = len(owners)
     held = solids()
+    self._held = len(held)
     vec3, quat = wp.vec3, wp.quat
     self.places = self._sent(self._places, vec3)
     self.turns = self._sent(_warpQuats(self._turns), quat)
@@ -117,10 +126,20 @@ class CabinWorld:
     self.owners = self._sent(owners, wp.int32)
     self.locals = self._sent(locals_, vec3)
     self.radii = self._sent(radii, wp.float32)
-    self.solidMiddles = self._sent([m for m, _, _ in held], vec3)
-    self.solidTurns = self._sent(_warpQuats(numpy.array(
-      [_turnOf(axes) for _, _, axes in held], numpy.float64)), quat)
-    self.solidHalves = self._sent([h for _, h, _ in held], vec3)
+    away = [AWAY] * STATION_SLOTS
+    self._middles = numpy.array([m for m, _, _ in held] + away,
+                                numpy.float64)
+    self._solidTurns = numpy.array([_turnOf(axes) for _, _, axes in held]
+                                   + [(1.0, 0.0, 0.0, 0.0)] * STATION_SLOTS,
+                                   numpy.float64)
+    self._halves = numpy.array([h for _, h, _ in held] + [
+      (0.1, 0.1, 0.1)] * STATION_SLOTS, numpy.float64)
+    self.solidMiddles = self._sent(self._middles, vec3)
+    self.solidTurns = self._sent(_warpQuats(self._solidTurns), quat)
+    self.solidHalves = self._sent(self._halves, vec3)
+    self.solidVelocities = self._sent(numpy.zeros((len(self._middles), 3)),
+                                      vec3)
+    self.ways = self._sent(numpy.zeros((4, 3)), vec3)
     self.touched = self._sent([0] * len(owners), wp.int32)
     self.pushes = self._sent(numpy.zeros((len(masses), 3)), vec3)
     self.twists = self._sent(numpy.zeros((len(masses), 3)), vec3)
@@ -145,7 +164,7 @@ class CabinWorld:
     if seconds <= 0.0:
       return
     wp = self.wp
-    present = 0 if crewman.buckled else 1
+    present = 0 if crewman.sitting else 1
     if present and not self._present:
       self._asgerSent(crewman)
     self._present = present
@@ -172,9 +191,53 @@ class CabinWorld:
     for k in range(steps):
       if k == 1:
         moved.set_param_by_name('leap', vec3(0.0, 0.0, 0.0))
+      pressed.set_param_by_name('elapsed', float(k * step))
       pressed.launch()
       moved.launch()
     self._taken(crewman, present)
+
+  def stationed(self, docked: bool, ways: tuple, boxes: tuple) -> None:
+    """The 'stationed' method joins the space station's rooms to the
+    cabin's ('docked'; its shafts out along 'ways', the docked rocket's
+    own axes) and puts its solids ('boxes': each its middle, half sizes,
+    turn (w x y z) and velocity, where it is as the frame begins: the
+    world moves it on through the frame; at most 'STATION_SLOTS') in the
+    world, the rest away; undocked, none."""
+    if len(boxes) > STATION_SLOTS:
+      raise ValueError('%d station solids, room for %d' % (
+        len(boxes), STATION_SLOTS))
+    wp = self.wp
+    first = self._held
+    count = STATION_SLOTS
+    middles = numpy.array([AWAY] * count, numpy.float64)
+    halves = numpy.full((count, 3), 0.1)
+    turns = numpy.tile([1.0, 0.0, 0.0, 0.0], (count, 1))
+    velocities = numpy.zeros((count, 3))
+    if docked:
+      for k, (middle, half, turn, velocity) in enumerate(boxes):
+        middles[k], halves[k], turns[k], velocities[k] = (middle, half,
+                                                          turn, velocity)
+      self.ways.assign(numpy.asarray(ways, numpy.float32))
+    self._middles[first:] = middles
+    self._halves[first:] = halves
+    self._solidTurns[first:] = turns
+    self.solidMiddles.assign(self._middles.astype(numpy.float32))
+    self.solidHalves.assign(self._halves.astype(numpy.float32))
+    self.solidTurns.assign(_warpQuats(self._solidTurns).astype(
+      numpy.float32))
+    every = numpy.zeros((len(self._middles), 3), numpy.float32)
+    every[first:] = velocities
+    self.solidVelocities.assign(every)
+    self.docked = bool(docked)
+    self._pressed.set_param_by_name('docked', 1 if docked else 0)
+
+  def walked(self, outside: int) -> None:
+    """The 'walked' method joins the rooms outside the rocket on the pad
+    to the cabin's ('_walkway.Walkway.outside': one, the walkway's
+    tunnel and the tower's platform; two, the doorway)."""
+    if int(outside) != self.outside:
+      self.outside = int(outside)
+      self._pressed.set_param_by_name('outside', self.outside)
 
   def shown(self, ) -> tuple:
     """The 'shown' method returns each loose thing's place (its middle,
@@ -196,9 +259,11 @@ class CabinWorld:
     pressed = wp.launch(kernels.pressed, self.pointCount, [
       self.places, self.turns, self.velocities, self.spins, self.masses,
       self.halves, self.owners, self.locals, self.radii,
-      self.solidMiddles, self.solidTurns, self.solidHalves, self.touched,
+      self.solidMiddles, self.solidTurns, self.solidHalves,
+      self.solidVelocities, self.ways, self.touched,
       self.pushes, self.twists, self.asger, self.thudding, self.landing,
-      zero, 0, 0], [], [], [], device, None, False, False, True)
+      zero, 0, 0, 0, 0, 0.0], [], [], [], device, None, False, False,
+                      True)
     moved = wp.launch(kernels.moved, len(self._places), [
       self.places, self.turns, self.velocities, self.spins, self.masses,
       self.inertias, self.pushes, self.twists, self.asger, self.met,

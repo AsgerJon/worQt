@@ -22,16 +22,22 @@ from ._cockpit import BALL_RADIUS, CAMERA_AT, CAMERA_LOOK, CAMERA_UP
 from ._cockpit import FLOOR, GLOBE_AXES, GUARD_OPEN, PANEL_AXES
 from ._cockpit import panelPoint
 from ._dashboard import ALTIMETER, ballCentre, dialAngle, dialCentre
-from ._dashboard import guardHinge, headPlace, pieces
+from ._dashboard import HATCH_HINGE, HATCH_OPEN, guardHinge, headPlace
+from ._dashboard import pieces
 from ._deckmodel import AXIS, movingParts
 from ._dockingport import NOSE_PORT
 from ._furnishings import candleLight, lampLight, looseParts
+from ._gunbeam import beamRows
 from ._meshes import CAP_REACH
+from ._night import shineOf
+from ._walkway import SWING_AWAY, leafTurn
+from ._bolts import axesOf
+from ._walkwaymeshes import platformLight
 from ._orrery import SPAN
 from ._planets import PAD
 from ._stationmeshes import beaconTips
 from ._turns import aboutAxis, cross, dot, matrixBack, matrixTimes, norm
-from ._turns import product, quaternionOf, rotated, unit
+from ._turns import product, quaternionOf, rotated, unit, unrotated
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._cockpit import Cockpit
@@ -51,12 +57,16 @@ SATELLITE_SEEN = 2.9e6
 #  seen as a point however small it is; drawn as it is it would fall
 #  between the pixels), m.
 LIGHTS_FROM = 2e4
+#  The station's bolts' rings glow this much (violet: magic).
+BOLT_GLOW = 1.0
+#  The door's leaf glows this share of its own colour (lit inside and out
+#  alike: the tower's lights pass through walls).
+DOOR_FILL = 0.15
 #  The light near a body (user, 2026-11-17: the station "visible from
 #  the gorund"): the body's shadow (the sun's light gone within it,
-#  fading over 'PENUMBRA' m at its edge) and its day side's light
+#  fading at its edge: '_night.shineOf') and its day side's light
 #  thrown back up ('ALBEDO' of the sun's, as much as its lit share of
 #  the face seen and as near as it is).
-PENUMBRA = 2e4
 ALBEDO = 0.3
 #  The pad shows within this of the eye, m; the ground's cap below this
 #  height, m, made anew once the eye is a quarter of its reach off its
@@ -68,9 +78,9 @@ CAP_MOVED = 0.25 * CAP_REACH
 SKY = (110.0, 160.0, 225.0)
 #  A path's points round a body.
 ORBIT_POINTS = 256
-#  The cabin: its marks on the horizon's ball (their 'Navball' kinds),
-#  the radius in pixels the ball's marks are given for ('NAV_RADIUS' of
-#  the window's); how bright a lamp glows lit and not, a legend lit and
+#  The cabin: its marks on the horizon's globe (their 'Navball' kinds,
+#  where they truly are: the globe is held level with the horizon); how
+#  bright a lamp glows lit and not, a legend lit and
 #  not; its lamp, under the nose (the vessel's own axes, m). Its moving
 #  parts' order: the dashboard's pieces, the ball, its mechanism, its
 #  marks, Asger's limbs ('AFTER_PIECES' after the pieces).
@@ -86,7 +96,6 @@ MECHANISM = ('ring', 'axles', 'hubs')
 LOCKED = 0.05
 MARK_GLOW = 0.6
 MARK_OVER = 0.0008
-NAV_PIXELS = 104.0
 LAMP_ON, LAMP_OFF = 1.3, 0.0
 LEGEND_ON, LEGEND_OFF = 1.6, 0.05
 CABIN_LIGHT = (0.0, 0.0, FLOOR + 3.5)
@@ -240,24 +249,22 @@ class Scenery:
     centre = ballCentre()
     panel = quaternionOf(tuple((GLOBE_AXES[0][k], GLOBE_AXES[1][k],
                                 GLOBE_AXES[2][k]) for k in range(3)))
-    parts.append((there(centre), product(turn, product(panel, ball[
-      'turn'])), True, BALL_GLOW))
-    for held in self.mechanismOf(ball['turn']):
-      parts.append((there(centre), product(turn, product(panel, held)),
+    held = ball['held']
+    globe = product((panel[0], -panel[1], -panel[2], -panel[3]), held)
+    parts.append((there(centre), product(turn, held), True, BALL_GLOW))
+    for gimbal in self.mechanismOf(globe):
+      parts.append((there(centre), product(turn, product(panel, gimbal)),
                     True, 0.0))
-    marks = {mark['kind']: mark for mark in ball['marks']}
     for kind in MARK_KINDS:
-      mark = marks.get(kind)
-      if mark is None:
+      way = ball['ways'].get(kind)
+      if way is None:
         parts.append(((0.0, 0.0, 0.0), turn, False, 0.0))
         continue
-      x, y = mark['x'] / NAV_PIXELS, -mark['y'] / NAV_PIXELS
-      z = math.sqrt(max(0.0, 1.0 - x * x - y * y))
       out = BALL_RADIUS + MARK_OVER
-      local = tuple(c + out * (x * a + y * b + z * n) for c, a, b, n in zip(
-        centre, *GLOBE_AXES))
+      local = tuple(c + out * w for c, w in zip(centre, way))
+      normal = unrotated(panel, way)
       parts.append((there(local), product(turn, product(panel, decalTurnOf(
-        (x, y, z)))), True, MARK_GLOW))
+        normal))), True, MARK_GLOW))
     for index, pivot, limb in cockpit.figureOf():
       shown = not (inside and PARTS[index][0] in UNSEEN)
       parts.append((there(pivot), product(turn, limb), shown, 0.0))
@@ -267,7 +274,24 @@ class Scenery:
                       rotated(turn, CAMERA_UP)),
             'hygge': (there(lampLight()), there(candleLight()),
                       dash['flicker']),
-            'camera': self._cameraOf(there, turn, dash['nose'])}
+            'camera': self._cameraOf(there, turn, dash['nose']),
+            'aboard': dash.get('aboard', False),
+            'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
+            'swing': dash.get('swing', SWING_AWAY),
+            'outdoor': (there(platformLight()), dash.get('swing', SWING_AWAY)
+                        < SWING_AWAY)}
+
+  def _beamOf(self, there: object, turn: tuple, beam: tuple) -> tuple:
+    """Returns the gravity gun's beam ('_gunbeam'; 'beam' the window's:
+    shown, the muzzle and the bolt (the vessel's own axes), its phase and
+    strength): its place from the eye, its turn, whether shown, its core's
+    and its coils' meshes (None when not shown)."""
+    if not beam[0]:
+      return (0.0, 0.0, 0.0), turn, False, None, None
+    _, start, end, phase, strength = beam
+    core, coils = beamRows(tuple(e - s for e, s in zip(end, start)), phase,
+                           strength)
+    return there(start), turn, True, core, coils
 
   def _cameraOf(self, there: object, turn: tuple, nose: bool) -> tuple:
     """Returns the closed circuit camera feeding the monitor ('nose':
@@ -335,9 +359,29 @@ class Scenery:
     if kind == 'loose':
       place, held = dash['loose'][looseParts()[what][0]]
       return there(place), product(turn, held), True, 0.0
-    if kind == 'gun':
+    if kind in ('gun', 'gun mark'):
       shown, eye, held = dash['gun']
       return there(eye), product(turn, held), shown, 0.0
+    if kind == 'hatch':
+      return there(HATCH_HINGE), product(turn, aboutAxis(
+        (0.0, 1.0, 0.0), -HATCH_OPEN * dash.get('hatch', 0.0))), True, 0.0
+    if kind in ('sbolt', 'sring'):
+      bolts = dash.get('sbolts', ())
+      if what >= len(bolts):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      place, way = bolts[what]
+      held = quaternionOf(tuple(zip(*axesOf(way))))
+      return there(place), product(turn, held), True, (
+        BOLT_GLOW if kind == 'sring' else 0.0)
+    if kind == 'door':
+      return there((0.0, 0.0, 0.0)), product(turn, leafTurn(dash.get(
+        'door', 0.0))), True, DOOR_FILL
+    if kind == 'car':
+      cars = dash.get('cars', ())
+      if what >= len(cars):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      middle, held, shown = cars[what]
+      return there(middle), product(turn, held), shown, 0.0
     if kind in ('guard', 'glint lid'):
       share = dash['guards'].get(what.action, 0.0)
       return (there(guardHinge(what)), product(turn, aboutAxis(
@@ -408,15 +452,12 @@ class Scenery:
   def _litOf(self, body: object, eye: tuple, sun: tuple) -> tuple:
     """Returns how much of the sun's light reaches 'eye' (from 'body''s
     middle; the light going 'sun'): nought in the body's shadow, fading
-    over 'PENUMBRA' at its edge; and the body's light thrown back up:
+    at its edge ('shineOf'); and the body's light thrown back up:
     the way it goes (out of the body) and how strong."""
     far = norm(eye)
     if far <= 0.0:
       return 1.0, ((0.0, 0.0, 1.0), 0.0)
-    behind = dot(eye, sun)
-    across = norm(tuple(e - behind * s for e, s in zip(eye, sun)))
-    shine = 1.0 if behind <= 0.0 else min(1.0, max(0.0, 0.5 + (
-      across - body.radius) / PENUMBRA))
+    shine = shineOf(body.radius, eye, sun)
     up = tuple(e / far for e in eye)
     lit = 0.5 * (1.0 - dot(up, sun))
     return shine, (up, ALBEDO * lit * min(1.0, (body.radius / far) ** 2))

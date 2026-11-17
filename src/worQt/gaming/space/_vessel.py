@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 from ._aerospike import MAGIC_ISP, Aerospike
 from ._autopilot import Autopilot, aimOf
 from ._conic import Conic
-from ._turns import cross, dot, matrixBack, matrixTimes, norm
-from ._turns import quaternionOf, rotated, unit
+from ._turns import aboutAxis, cross, dot, matrixBack, matrixTimes, norm
+from ._turns import product, quaternionOf, rotated, unit
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
@@ -78,8 +78,9 @@ class Vessel:
   its own axes); how many of its legs stand on the ground ('touching').
   Its docking thrusters push it 'rcs' (N, its own axes: user,
   2026-11-17, docking); 'docked' to the space station it rides with it
-  (moved by it, not by the flight). The flight's kernel moves it
-  ('Flight').
+  (moved by it, not by the flight); 'bumped' how fast it last hit the
+  station (m/s into it, the last frame; nought: it did not). The
+  flight's kernel moves it ('Flight').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -98,6 +99,7 @@ class Vessel:
   touching: int
   rcs: tuple
   docked: bool
+  bumped: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -109,7 +111,7 @@ class Vessel:
     self.steer, self.anchor, self.touching = (0.0, 0.0, 0.0), 0, 0
     self.place, self.velocity = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.turn, self.spin = (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
-    self.rcs, self.docked = (0.0, 0.0, 0.0), False
+    self.rcs, self.docked, self.bumped = (0.0, 0.0, 0.0), False, 0.0
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -154,6 +156,17 @@ class Vessel:
     place = tuple((body.radius + CENTRE - SAG) * x for x in up)
     self.placed(anchor, place, cross(spin, place), quaternionOf(rows),
                 matrixBack(rows, spin))
+
+  def carried(self, system: SolarSystem, seconds: float) -> None:
+    """The 'carried' method moves the vessel 'seconds' s on as it rests
+    on its anchor's turning ground (user, 2026-11-17: a night slept on
+    the pad): its place, velocity and turn round the body's pole with
+    it, its own spin as it was."""
+    body = system.bodies[self.anchor]
+    turn = aboutAxis(body.pole, body.spin * seconds)
+    self.placed(self.anchor, rotated(turn, self.place),
+                rotated(turn, self.velocity), product(turn, self.turn),
+                self.spin)
 
   def steered(self, pitch: float, yaw: float, roll: float) -> None:
     """The 'steered' method sets the keys on the reaction wheels (each

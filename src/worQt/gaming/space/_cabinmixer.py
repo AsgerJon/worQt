@@ -41,17 +41,20 @@ from ._tapedeck import LEAD_IN
 #  Asger has been hurt (a point of health lost) and how many rations he
 #  has begun, whether the gravity gun pulls him (one) or not (nought)
 #  and how often it has fired at a magic bolt, how hard the docking
-#  thrusters push (nought to one) and how often the docking latch has
-#  caught.
+#  thrusters push (nought to one), how often the docking latch has
+#  caught, how often the rocket has hit the space station and how hard
+#  the last hit was (m/s into it), how often Asger has been laughed at.
 VOLUME, ENGINE, INSIDE, AIR, CLICKS, SNAPS, TICKS = range(7)
 SLIDE, TYPED, BELLS, RETURNS, DECK, REWINDS, RELAYS = range(7, 14)
 ANNOUNCED, THUDS, THUD, HURTS, EATS, TOWING, TOWS = range(14, 21)
-THRUSTING, DOCKS = 21, 22
-TOLD = 23
+THRUSTING, DOCKS, CRASHES, CRASH, LAUGHS = 21, 22, 23, 24, 25
+TOLD = 26
 #  How fast the gravity gun's hum swells and fades, s.
 HUM_FADE = 0.12
-#  A thud this hard (m/s, by its heft) is as loud as a thud gets.
+#  A thud this hard (m/s, by its heft) is as loud as a thud gets; a hit
+#  on the station this hard (m/s into it), as loud as a hit gets.
 LOUDEST = 4.0
+CRASH_LOUDEST = 3.0
 #  How fast the engine's roar and the ear's place ease, s.
 EASE = 0.15
 #  How loud the tape plays, and how fast it fades in and out, s.
@@ -63,6 +66,13 @@ TAPE_GAIN, TAPE_FADE = 0.55, 0.08
 MEAL_MUSIC = Path(__file__).resolve().parents[4] / 'previews' / (
   'le_food.mp3')
 MEAL_GAIN = 0.5
+#  Risitas laughing at Asger (user, 2026-11-17, of launching with the
+#  walkway still on: "have risitas laugh at Asger"; "Just play the
+#  laughing bit lol, just a few seconds": 4.6 s cut from the user's
+#  previews/risitas.mkv, kept out of git), each time he is laughed at,
+#  from its start; how loud.
+LAUGH = MEAL_MUSIC.parent / 'risitas.mp3'
+LAUGH_GAIN = 0.8
 #  How loud the teleprinter is (user, 2026-11-16: "the terminal doesn't
 #  need to make that clicking every time. It makes *way* too much noise.
 #  Make it be nearly inaudible"; then "The teleprinter should be even
@@ -230,6 +240,23 @@ def latchOf(rate: int) -> numpy.ndarray:
   return 0.9 * sound
 
 
+def crashOf(rate: int) -> numpy.ndarray:
+  """Returns the hull striking the space station: a deep boom through
+  the whole rocket, a clang on it and the hull ringing long after;
+  2 s."""
+  t = numpy.arange(int(2.0 * rate)) / rate
+  boom = numpy.sin(2.0 * math.pi * (48.0 - 14.0 * t) * t) * numpy.exp(
+    -t / 0.35)
+  sound = 0.9 * boom
+  for at, seed in ((0.0, 7), (0.05, 8)):
+    hit = clunkOf(rate, seed)
+    start = int(at * rate)
+    sound[start:start + len(hit)] += 0.8 * hit
+  sound += 0.35 * _ring(rate, 2.0, ((95.0, 1.0), (233.0, 0.6),
+                                    (520.0, 0.35), (1180.0, 0.15)), 0.8)
+  return 0.8 * sound
+
+
 def motorOf(rate: int, length: float) -> numpy.ndarray:
   """Returns the deck's capstan motor spinning up over 'length' s: a hum
   rising from 30 to 120 Hz with its overtones, swelling in."""
@@ -320,12 +347,13 @@ class CabinMixer:
                   'returns': returnOf(rate), 'bells': bellOf(rate),
                   'thuds': thudOf(rate), 'hurts': oofOf(rate),
                   'eats': eatOf(rate), 'tows': 0.6 * yeetOf(rate),
-                  'docks': latchOf(rate)}
+                  'docks': latchOf(rate), 'crashes': crashOf(rate)}
     self.humming = 0.0
     self.clacks = [clackOf(rate, k) for k in range(4)]
     self.playing, self.seen = [], None
     self.tape, self.tapeAt, self.tapeGain, self.rewound = None, 0, 0.0, None
-    self.meal, self.mealAt, self.eaten = None, None, None
+    self.records = {EATS: [None, None, None, MEAL_GAIN, False],
+                    LAUGHS: [None, None, None, LAUGH_GAIN, True]}
     self.leadIn, self.leads = leadInOf(rate), []
     self.announced, self.decked = None, None
     self._decoding = threading.Thread(target=self._decoded, daemon=True)
@@ -349,7 +377,8 @@ class CabinMixer:
     sound += self._swish(told[SLIDE], count)
     sound += self._announcedOf(told, count)
     sound += self._taped(told[DECK] > 0.5, told[REWINDS], count)
-    sound += self._mealPlayed(told[EATS], count)
+    for slot in self.records:
+      sound += self._recordPlayed(slot, told[slot], count)
     sound += self._gunHum(told[TOWING] > 0.5, count, t)
     sound += self._hissed(told[THRUSTING], count)
     self.time += count / self.rate
@@ -360,12 +389,13 @@ class CabinMixer:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def _decoded(self, ) -> None:
-    """Decodes the tape and the kitchen's music (on a thread of its
-    own)."""
+    """Decodes the tape, the kitchen's music and the laugh (on a thread
+    of its own)."""
     from ._tapedeck import tapeFile
     self.tape = tapeOf(tapeFile(), self.rate)
-    self.meal = tapeOf(MEAL_MUSIC if MEAL_MUSIC.is_file() else None,
-                       self.rate)
+    for slot, path in ((EATS, MEAL_MUSIC), (LAUGHS, LAUGH)):
+      self.records[slot][0] = tapeOf(path if path.is_file() else None,
+                                     self.rate)
 
   def _filtered(self, name: str, coefficients: tuple,
                 noise: numpy.ndarray) -> numpy.ndarray:
@@ -419,7 +449,8 @@ class CabinMixer:
 
   def _shots(self, told: list, count: int) -> numpy.ndarray:
     """Returns the clicks, snaps, ticks, relays, clacks, carriage returns,
-    bells, thuds (each as loud as it was hard), Asger's grunts and meals,
+    bells, thuds and hits on the station (each as loud as it was hard),
+    Asger's grunts and meals,
     the gravity gun's shots playing, one more of
     each started as its count grows (the first counts heard are taken as
     they are)."""
@@ -428,8 +459,10 @@ class CabinMixer:
               'typed': told[TYPED], 'returns': told[RETURNS],
               'bells': told[BELLS], 'thuds': told[THUDS],
               'hurts': told[HURTS], 'eats': told[EATS],
-              'tows': told[TOWS], 'docks': told[DOCKS]}
+              'tows': told[TOWS], 'docks': told[DOCKS],
+              'crashes': told[CRASHES]}
     hard = min(1.0, told[THUD] / LOUDEST)
+    crash = min(1.0, told[CRASH] / CRASH_LOUDEST)
     if self.seen is None:
       self.seen = dict(counts)
     for name, value in counts.items():
@@ -439,6 +472,8 @@ class CabinMixer:
           shot = self.clacks[int(value - k) % len(self.clacks)]
         elif name == 'thuds':
           shot = self.shots[name] * (0.15 + 0.85 * hard)
+        elif name == 'crashes':
+          shot = self.shots[name] * (0.3 + 0.7 * crash)
         else:
           shot = self.shots[name]
         self.playing.append([shot, -int(k * 0.02 * self.rate)])
@@ -489,23 +524,26 @@ class CabinMixer:
       1.0 + 0.35 * numpy.sin(two * 7.0 * t)) + 0.4 * crackle
     return 0.05 * numpy.linspace(was, self.humming, count) * hum
 
-  def _mealPlayed(self, eats: float, count: int) -> numpy.ndarray:
-    """Returns the kitchen's music: begun from its start as Asger begins
-    a ration (the first count heard taken as it is), unless it plays
-    already, played through to its end."""
-    if self.eaten is not None and eats > self.eaten and (
-        self.mealAt is None):
-      self.mealAt = 0
-    self.eaten = eats
+  def _recordPlayed(self, slot: int, seen: float,
+                    count: int) -> numpy.ndarray:
+    """Returns a recording ('records' by the slot told its count: its
+    samples, where it plays (None: not), the count last seen, its gain,
+    whether it starts again while playing): begun from its start as the
+    count grows (the first count heard taken as it is), played through
+    to its end."""
+    record = self.records[slot]
+    sound, at, was, gain, again = record
+    if was is not None and seen > was and (at is None or again):
+      at = 0
+    record[2] = seen
     out = numpy.zeros(count)
-    if self.mealAt is None or self.meal is None:
-      self.mealAt = None
+    if at is None or sound is None:
+      record[1] = None
       return out
-    part = self.meal[self.mealAt:self.mealAt + count]
-    out[:len(part)] = MEAL_GAIN * part
-    self.mealAt += count
-    if self.mealAt >= len(self.meal):
-      self.mealAt = None
+    part = sound[at:at + count]
+    out[:len(part)] = gain * part
+    at += count
+    record[1] = None if at >= len(sound) else at
     return out
 
   def _taped(self, playing: bool, rewinds: float,

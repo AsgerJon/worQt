@@ -95,6 +95,23 @@ class TestCabinMixer(SpaceTest):
     printer = max(loudest[name] for name in ('TYPED', 'RETURNS', 'BELLS'))
     self.assertLess(printer, 0.2 * inputs)
 
+  def test_crash(self) -> None:
+    """A hit on the station booms once, louder than the latch, as loud
+    as it was hard; within one."""
+    loud = {}
+    for hard in (0.5, 3.0):
+      mix = CabinMixer(RATE, 4)
+      _played(mix, _told((mixer.CRASHES, 1.0)), 0.5)
+      shot = _played(mix, _told((mixer.CRASHES, 2.0),
+                                (mixer.CRASH, hard)), 1.0)
+      loud[hard] = _loudness(shot)
+      self.assertLessEqual(float(numpy.max(numpy.abs(shot))), 1.0)
+    self.assertGreater(loud[3.0], 1.5 * loud[0.5])
+    mix = CabinMixer(RATE, 4)
+    _played(mix, _told((mixer.DOCKS, 1.0)), 0.5)
+    latch = _loudness(_played(mix, _told((mixer.DOCKS, 2.0)), 1.0))
+    self.assertGreater(loud[3.0], latch)
+
   def test_announced(self) -> None:
     """Announced, the deck clicks itself ready (loud, no tape) for
     'LEAD_IN' s and falls quiet; announced again, clicking, then the

@@ -30,7 +30,8 @@ from worQt.gaming.space._cockpit import LAMPS, LEFT_CONSOLE, PANEL_AXES
 from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE, SLIDER_LONG
 from worQt.gaming.space._cockpit import WALL, Cockpit, capsuleRadius
 from worQt.gaming.space._cabinworld import restingLoose
-from worQt.gaming.space._cockpit import inWindow
+from worQt.gaming.space._cockpit import SIDEBOARD, inWindow, seated
+from worQt.gaming.space._crewman import MIDDLE, STAND
 from worQt.gaming.space._dashboard import SWEEP, dialAngle, dialShare
 from worQt.gaming.space._dashboard import LEGENDS, ballCentre, legendAxes
 from worQt.gaming.space._dashboard import pieces
@@ -38,10 +39,14 @@ from worQt.gaming.space._dashboard import pieceRows, pivotOf
 from worQt.gaming.space._dashpictures import labelCells
 from worQt.gaming.space._deckmodel import AXIS, movingParts, stillParts
 from worQt.gaming.space._turns import aboutAxis, cross, product, rotated
-from worQt.gaming.space._turns import unrotated
+from worQt.gaming.space._turns import unit, unrotated
 from worQt.gaming.space._vessel import RADIUS
 
 from . import SpaceTest
+
+#  The tape deck's keys' actions (behind him on his right: reached up out
+#  of his chair).
+DECK_ACTIONS = ('play', 'halt', 'eject')
 
 #  The dashboard's still meshes, by their makers' names.
 STILL = ('panelFace', 'panelFrame', 'dialFaces', 'bezels', 'monitorBody',
@@ -122,12 +127,18 @@ class TestCockpit(SpaceTest):
         self.assertAlmostEqual(math.hypot(*axis), 1.0, 9)
 
   def test_reach(self) -> None:
-    """Every input is within his arms' reach: 0.3 m or more from his
-    eyes, at most 0.8 m from his nearer shoulder (his arm and hand),
-    none behind him."""
+    """Every input but the tape deck's keys is within his arms' reach:
+    0.3 m or more from his eyes, at most 0.8 m from his nearer shoulder
+    (his arm and hand), none behind him; the deck's keys are behind him
+    on his right (user, 2026-11-17: "move the stereo to behind Asger to
+    the right": 'test_deck_keys')."""
     shoulders = [tuple(f + SCALE * p for f, p in zip(FIGURE, part[2]))
                  for part in PARTS if part[0].endswith('arm')]
     for control in Cockpit().controls:
+      if control.action in DECK_ACTIONS:
+        self.assertLess(control.centre[0] - EYE[0], -1.0, control.name)
+        self.assertLess(control.centre[1] - EYE[1], -0.5, control.name)
+        continue
       self.assertGreater(math.dist(control.centre, EYE), 0.3, control.name)
       reach = min(math.dist(control.centre, s) for s in shoulders)
       self.assertLess(reach, 0.8, control.name)
@@ -135,15 +146,44 @@ class TestCockpit(SpaceTest):
 
   def test_looked_at(self) -> None:
     """Looking at an input's middle his eyes rest on it, no other in
-    the way."""
+    the way (the deck's, behind him, standing: 'test_deck_keys')."""
     cockpit = Cockpit()
     for control in cockpit.controls:
+      if control.action in DECK_ACTIONS:
+        continue
       way = tuple(a - b for a, b in zip(control.centre, EYE))
       size = math.dist(control.centre, EYE)
       way = tuple(x / size for x in way)
       cockpit.yaw = math.atan2(way[1], way[0])
       cockpit.pitch = math.asin(way[2])
       self.assertIs(cockpit.lookedAt(), control, control.name)
+
+  def test_deck_keys(self) -> None:
+    """Up out of his chair, stood before the sideboard behind it on his
+    right, he looks at each of the deck's keys (and so works it: his
+    eyes move as his head turns, so his look is let settle); the way
+    from where he gets up out to the cabin is clear of it."""
+    cockpit = Cockpit()
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    stand = seated(-0.8, -1.0, MIDDLE)
+    crewman.placed(stand, (0.0, 0.0, 0.0), 1, (0.0, 0.0, 1.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (-1.0, 0.0, 0.0)
+    left = (0.0, -1.0, 0.0)
+    for control in cockpit.controls:
+      if control.action not in DECK_ACTIONS:
+        continue
+      for _ in range(40):
+        eye = cockpit.eye()
+        way = tuple(a - b for a, b in zip(control.centre, eye))
+        size = math.dist(control.centre, eye)
+        yaw = math.atan2(sum(w * l for w, l in zip(way, left)), -way[0])
+        cockpit.yaw = 0.5 * (cockpit.yaw + yaw)
+        cockpit.pitch = math.asin(way[2] / size)
+      self.assertIs(cockpit.lookedAt(), control, control.name)
+    (x, y, _), half = SIDEBOARD[0], SIDEBOARD[1]
+    up = STAND
+    self.assertGreater(up[0] - (x + half[0]), 0.3)
 
   def test_glance(self) -> None:
     """A key pressed, his head turns to its input, most of the way in
@@ -163,7 +203,8 @@ class TestCockpit(SpaceTest):
                              control.name)
       for _ in range(30):
         cockpit.acted(1.0 / 60.0)
-      self.assertIs(cockpit.lookedAt(), control, control.name)
+      if control.action not in DECK_ACTIONS:
+        self.assertIs(cockpit.lookedAt(), control, control.name)
     cockpit.glanced('hold')
     cockpit.turned(10.0, 0.0)
     self.assertIsNone(cockpit.glancing)
@@ -171,7 +212,9 @@ class TestCockpit(SpaceTest):
   def test_inside(self) -> None:
     """He, his seat, the consoles, every still mesh of the dashboard
     and every moving piece at rest are inside the capsule's wall, over
-    its floor."""
+    its floor (but the space station's elevators' cages: they ride its
+    shafts, 'test_aboard'; its bolts, placed docked; and the door's leaf:
+    it is the wall where the door is, within its thickness)."""
     cockpit = Cockpit()
     for index, place, turn in cockpit.figureOf():
       block = PARTS[index][1]
@@ -196,7 +239,15 @@ class TestCockpit(SpaceTest):
       self.assertTrue((numpy.hypot(rows[:, 0], rows[:, 1]) <= wall).all())
     cells = labelCells()
     for piece in pieces(cockpit.controls):
+      if piece[0] in ('car', 'sbolt', 'sring'):
+        continue
       rows = numpy.asarray(pieceRows(piece, cells)[0])
+      if piece[0] == 'door':
+        skin = numpy.vectorize(capsuleRadius)(rows[:, 2])
+        across = numpy.hypot(rows[:, 0], rows[:, 1])
+        self.assertTrue((across < skin).all())
+        self.assertTrue((across > skin - WALL).all())
+        continue
       pivot = pivotOf(piece)
       for row in rows:
         point = tuple(a + b for a, b in zip(row[:3], pivot))
@@ -359,6 +410,46 @@ class TestCockpit(SpaceTest):
       want = product(turn, aboutAxis(AXIS, angle))
       self.assertLess(_turnClose(part[1], want), 1e-9, (kind, index))
       self.assertClose(unrotated(turn, part[0]), pivot, 1e-9)
+
+  def test_globe(self) -> None:
+    """The globe is honest (user, 2026-11-17: "Right now, the north
+    pole should point up as we are still parked at the pad"): held level
+    with the horizon, on the pad (the rocket upright, facing east) its
+    pole up the cabin and its north on his left; in orbit its prograde
+    mark where the rocket truly travels."""
+    from worQt.gaming.space._navball import PROGRADE, Navball
+    from worQt.gaming.space._scenery import MARK_KINDS, MECHANISM, Scenery
+    system = self.systemOf()
+    cockpit, scenery = Cockpit(), Scenery()
+    every = pieces(cockpit.controls)
+    dash = {'needles': [0.0] * 4, 'lamps': [False] * len(LAMPS),
+            'legends': [False] * len(LEGENDS), 'reels': (0.0, 0.0),
+            'column': 0.0, 'knob': 0.0, 'bug': 0.5, 'guards': {},
+            'flicker': 1.0}
+    dash.update(_resting())
+    vessel = self.padded(system)
+    ball = Navball().frameOf(vessel, system, 104.0)
+    rocket = ((0.0, 0.0, 0.0), vessel.turn, True)
+    parts = scenery.cabinOf(system, vessel, cockpit, rocket, ball, dash,
+                            True)['parts']
+    globe = product(_inverse(vessel.turn), parts[len(every)][1])
+    self.assertClose(rotated(globe, (0.0, 0.0, 1.0)), (0.0, 0.0, 1.0),
+                     1e-6)
+    self.assertClose(rotated(globe, (0.0, 1.0, 0.0)), (0.0, 1.0, 0.0),
+                     1e-6)
+    vessel = self.orbiting(system, 300e3, 300e3, 'up')
+    ball = Navball().frameOf(vessel, system, 104.0)
+    rocket = ((0.0, 0.0, 0.0), vessel.turn, True)
+    parts = scenery.cabinOf(system, vessel, cockpit, rocket, ball, dash,
+                            True)['parts']
+    mark = parts[len(every) + 1 + len(MECHANISM) + MARK_KINDS.index(
+      PROGRADE)]
+    self.assertTrue(mark[2])
+    local = unrotated(vessel.turn, mark[0])
+    way = tuple(m - c for m, c in zip(local, ballCentre()))
+    size = math.sqrt(sum(w * w for w in way))
+    self.assertClose(tuple(w / size for w in way), unrotated(
+      vessel.turn, unit(vessel.pathOf(system))), 1e-6)
 
   def test_ball(self) -> None:
     """The horizon is a globe on its stand (user, 2026-11-16: "like a

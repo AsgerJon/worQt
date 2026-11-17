@@ -53,6 +53,23 @@ class TestVitals(SpaceTest):
     self.assertIsNone(vitals.cause)
     self.assertEqual(vitals.health, HEALTH)
 
+  def test_seated(self) -> None:
+    """In his chair the pull never hurts him (user, 2026-11-17: "When
+    Asger sits in the seat, he is protected from damage taken by g
+    forces"): a minute at four g, unhurt (fed); hungry as fast as up."""
+    seated, up = Vitals(), Vitals()
+    for _ in range(int(60.0 / FRAME)):
+      seated.lived(FRAME, 4.0, True)
+    self.assertIsNone(seated.cause)
+    self.assertEqual(seated.health, HEALTH)
+    for _ in range(int(10.0 / FRAME)):
+      up.lived(FRAME, 4.0, False)
+    self.assertLess(up.health, HEALTH)
+    eating = Vitals()
+    for _ in range(int(10.0 / FRAME)):
+      eating.lived(FRAME, 4.0, True)
+    self.assertAlmostEqual(eating.food, up.food, 9)
+
   def test_hunger(self) -> None:
     """A full stomach lasts 'FOOD_LASTS' at one g, four times less at
     two."""
@@ -127,7 +144,7 @@ class TestVitals(SpaceTest):
     """The rations' crate is out of his reach from his chair, his to eat
     from looked at near it."""
     cockpit = Cockpit()
-    crate = cockpit.galley[0]
+    crate = cockpit.household[0]
     self.assertEqual(crate.action, 'eat')
     cockpit.gotUp()
     crewman = cockpit.crewman

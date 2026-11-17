@@ -43,6 +43,23 @@ Item {
   //  lamp's place
   property var nearGlows: []
   property real nearClip: 0.3
+  property vector3d habitatLight: Qt.vector3d(0, 0, 0)
+  property bool habitatOn: false
+  //  The way in on the pad at night (user, 2026-11-17: "Asger must start
+  //  outside in the night"): the launch tower's floodlights on the rocket
+  //  (each its place and turn), the lamp over its platform and walkway,
+  //  whether the walkway is out (its lamp lit)
+  property var towerFloodPlaces: []
+  property var towerFloodTurns: []
+  property vector3d outdoorLamp: Qt.vector3d(0, 0, 0)
+  property bool outdoorOn: false
+  //  The quest (user, 2026-11-17: "Here the quest begins"; '_quest'): its
+  //  steps (each its text, done, current, optional); the warning manual
+  //  looked at close (E: "with E you get a better view at it. Like in
+  //  RDR2"), its picture
+  property var questRows: []
+  property bool manualShown: false
+  property string manualPicture: ""
   property vector3d cabinLight: Qt.vector3d(0, 0, 0)
   property vector3d panelLamp: Qt.vector3d(0, 0, 0)
   property vector3d floodPlace: Qt.vector3d(0, 0, 0)
@@ -115,7 +132,8 @@ Item {
   //  input he looks at (its key and what working it does, '' none); the
   //  teleprinter's paper (user, 2026-11-16: "Instead of a terminal ...
   //  a teleprinter"; "a modern font like nerd monospace to be cheeky"):
-  //  its lines printed, the line being typed, its font, its mesh; the
+  //  its lines printed, the line being typed, its font, its mesh, its
+  //  picture's layout ('Dashboard.paperLayout': 77 a line, 2026-11-17); the
   //  closed circuit monitor (user, 2026-11-16: "Replase the radar with a
   //  cctv type thing"): its screen's mesh, the hull camera's place and
   //  turn (the scene's), the picture's time
@@ -126,7 +144,10 @@ Item {
   property string paperTyping: ""
   property string paperFont: "JetBrainsMono Nerd Font Mono"
   property var paperGeometry: null
+  property var paperLayout: null
+  property real sleepShade: 0
   onPaperLinesChanged: paperCanvas.requestPaint()
+  onPaperLayoutChanged: paperCanvas.requestPaint()
   onPaperTypingChanged: paperCanvas.requestPaint()
   property var screenGeometry: null
   property vector3d cctvPlace: Qt.vector3d(0, 0, 0)
@@ -146,6 +167,14 @@ Item {
   property vector3d capPlace: Qt.vector3d(0, 0, 0)
   property quaternion capTurn: Qt.quaternion(1, 0, 0, 0)
   property bool capShown: false
+  //  The gravity gun's beam to the bolt it holds (user, 2026-11-17: "a
+  //  laser beam between it and the bolts"): its core and its coils,
+  //  remade each frame, from the muzzle in the rocket's own axes.
+  property var beamCore: null
+  property var beamCoils: null
+  property vector3d beamPlace: Qt.vector3d(0, 0, 0)
+  property quaternion beamTurn: Qt.quaternion(1, 0, 0, 0)
+  property bool beamShown: false
   //  The map: open or not; its eye's turn; its bodies {geometry,
   //  picture, glow, slot} with each slot's place, turn and scale; its
   //  lines {geometry, colour, slot} with each slot's place and scale;
@@ -345,11 +374,86 @@ Item {
         roughness: 1
       }
     }
+    Model {
+      geometry: root.beamCore
+      visible: root.beamShown && root.beamCore !== null
+      position: root.beamPlace
+      rotation: root.beamTurn
+      materials: PrincipledMaterial {
+        lighting: PrincipledMaterial.NoLighting
+        baseColor: "#eedcff"
+        opacity: 0.95
+        cullMode: Material.NoCulling
+      }
+    }
+    Model {
+      geometry: root.beamCoils
+      visible: root.beamShown && root.beamCoils !== null
+      position: root.beamPlace
+      rotation: root.beamTurn
+      materials: PrincipledMaterial {
+        lighting: PrincipledMaterial.NoLighting
+        baseColor: "#a35cff"
+        opacity: 0.95
+        cullMode: Material.NoCulling
+      }
+    }
     //  Qt Quick 3D takes a light's fades as if its scene were in cm (it
     //  scales the linear term by 0.01 and the quadratic by 0.0001): this
     //  scene is in m, so a quadratic fade of q a square metre is written
     //  q x 10000 (written in metres, every lamp lit the whole cabin
     //  alike, at its full brightness).
+    //  The space station's own light on its axis (docked: going aboard,
+    //  user, 2026-11-17), lighting its hub, shafts and ring from inside,
+    //  as bright at the deck as at the hub.
+    PointLight {
+      position: root.habitatLight
+      visible: root.habitatOn
+      color: "#fff3df"
+      brightness: 0.85
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 0.0
+    }
+    SpotLight {
+      position: root.towerFloodPlaces.length > 0
+                ? root.towerFloodPlaces[0] : Qt.vector3d(0, 0, 0)
+      rotation: root.towerFloodTurns.length > 0
+                ? root.towerFloodTurns[0] : Qt.quaternion(1, 0, 0, 0)
+      visible: root.towerFloodPlaces.length > 0
+               && (root.nearShown[0] || false)
+      color: "#eef2ff"
+      brightness: 3.0
+      coneAngle: 55
+      innerConeAngle: 10
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 30
+    }
+    SpotLight {
+      position: root.towerFloodPlaces.length > 1
+                ? root.towerFloodPlaces[1] : Qt.vector3d(0, 0, 0)
+      rotation: root.towerFloodTurns.length > 1
+                ? root.towerFloodTurns[1] : Qt.quaternion(1, 0, 0, 0)
+      visible: root.towerFloodPlaces.length > 1
+               && (root.nearShown[0] || false)
+      color: "#eef2ff"
+      brightness: 3.0
+      coneAngle: 55
+      innerConeAngle: 10
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 30
+    }
+    PointLight {
+      position: root.outdoorLamp
+      visible: root.outdoorOn
+      color: "#fff1d8"
+      brightness: 0.6
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 1500
+    }
     PointLight {
       position: root.cabinLight
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
@@ -410,27 +514,33 @@ Item {
         roughness: 0.9
         cullMode: Material.NoCulling
         baseColorMap: Texture {
+          generateMipmaps: true
+          mipFilter: Texture.Linear
           sourceItem: Canvas {
             id: paperCanvas
-            width: 512
-            height: 640
+            width: root.paperLayout ? root.paperLayout.width : 1
+            height: root.paperLayout ? root.paperLayout.height : 1
             onPaint: {
               var ctx = getContext("2d")
+              var at = root.paperLayout
               ctx.fillStyle = "#f4efe0"
               ctx.fillRect(0, 0, width, height)
+              if (!at) return
+              var foot = height - at.foot
               ctx.fillStyle = "#dfeccf"
-              for (var bar = 0; bar < height; bar += 80)
-                ctx.fillRect(0, height - bar - 40, width, 40)
-              ctx.font = "bold 33px '" + root.paperFont + "'"
+              for (var bar = 0; foot - bar * at.line > -at.line;
+                   bar += 2 * at.band)
+                ctx.fillRect(0, foot - (bar + at.band - 0.2) * at.line,
+                             width, at.band * at.line)
+              ctx.font = "bold " + at.font + "px '" + root.paperFont + "'"
               ctx.fillStyle = "#1c1a24"
-              var step = 40
-              var y = height - 12
-              ctx.fillText(root.paperTyping, 12, y)
+              var y = foot
+              ctx.fillText(root.paperTyping, at.margin, y)
               var lines = root.paperLines
               for (var k = lines.length - 1; k >= 0; --k) {
-                y -= step
+                y -= at.line
                 if (y < 0) break
-                ctx.fillText(lines[k], 12, y)
+                ctx.fillText(lines[k], at.margin, y)
               }
             }
           }
@@ -819,7 +929,7 @@ Item {
       }
       Text {
         x: 8
-        y: -8
+        y: -8 + 16 * modelData.line
         text: modelData.text
         color: modelData.colour
         font.pixelSize: 14
@@ -1004,8 +1114,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             y: 2 - root.bob
             spacing: 3
-            KeyCap { name: "Shift" }
-            KeyCap { name: "Ctrl" }
+            KeyCap { name: "+" }
+            KeyCap { name: "\u2212" }
           }
           Rectangle {
             y: 24
@@ -1068,10 +1178,11 @@ Item {
                action: "toAp"; tint: "#8fd3ff"; lit: root.boardToAp }
       }
       Group {
-        title: "DOCKING"
+        title: "2 RENDEZVOUS AND DOCKING"
         Lamp { label: "Match: " + (lit ? "on" : "off"); keys: ["L"]
                action: "match"; tint: "#7dff9a"; lit: root.boardMatch }
-        Lamp { label: "Auto: " + root.boardDocking; keys: ["C"]
+        Lamp { label: "Rendezvous, dock: " + root.boardDocking
+               keys: ["C"]
                action: "autodock"; tint: "#7dff9a"
                lit: root.boardDocking !== "off" }
         Lamp { label: "Thrusters"
@@ -1085,7 +1196,7 @@ Item {
                tint: "#e8ecf0"; lit: false }
       }
       Group {
-        title: "ASCENT GUIDANCE"
+        title: "1 ASCENT TO ORBIT"
         Lamp { label: "Ascent: " + (lit ? "on" : "off"); keys: ["J"]
                action: "ascent"; tint: "#c59bff"; lit: root.boardAscent }
         Lamp { label: "Orbit " + root.boardTarget; keys: ["[", "]"]
@@ -1101,8 +1212,8 @@ Item {
         Lamp { label: "Back to pad"; keys: ["\u232b"]; action: "pad"
                tint: "#e8ecf0"; lit: false }
         Lamp { label: root.boardUp ? "Up: sit down" : "Seated: get up"
-               keys: ["B"]; action: "buckle"; tint: "#ffd27a"
-               lit: root.boardUp }
+               keys: root.boardUp ? ["E"] : ["Shift"]; action: "buckle"
+               tint: "#ffd27a"; lit: root.boardUp }
       }
     }
   }
@@ -1148,6 +1259,41 @@ Item {
         font.bold: true
         style: Text.Outline
         styleColor: "#000000"
+      }
+    }
+  }
+
+  Rectangle {
+    visible: root.questRows.length > 0 && !root.mapOpen
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.margins: 12
+    width: questColumn.width + 20
+    height: questColumn.height + 16
+    color: "#90000000"
+    radius: 6
+    Column {
+      id: questColumn
+      x: 10
+      y: 8
+      spacing: 3
+      Text {
+        text: "QUEST"
+        color: "#ffd77a"
+        font.pixelSize: 14
+        font.bold: true
+      }
+      Repeater {
+        model: root.questRows
+        delegate: Text {
+          required property var modelData
+          text: (modelData.done ? "\u2611  " : "\u2610  ") + modelData.text
+          color: modelData.done ? "#7f8a96"
+                                : modelData.current ? "#ffffff" : "#b8c2cc"
+          font.pixelSize: 13
+          font.bold: modelData.current
+          font.strikeout: modelData.done
+        }
       }
     }
   }
@@ -1276,6 +1422,46 @@ Item {
         radius: 2
         color: "#e2a064"
       }
+    }
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    visible: root.manualShown
+    color: "#c8000000"
+    Image {
+      anchors.centerIn: parent
+      height: 0.92 * parent.height
+      width: height * 1024 / 1448
+      source: root.manualPicture
+      smooth: true
+      mipmap: true
+    }
+    Text {
+      anchors.bottom: parent.bottom
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.bottomMargin: 8
+      text: "E or Esc: put it back"
+      color: "#ffffff"
+      font.pixelSize: 15
+      style: Text.Outline
+      styleColor: "#000000"
+    }
+  }
+
+  //  Asger asleep (user, 2026-11-17: "key_E into bed to advance the time
+  //  to morning if it is dark"): the view darkens and lightens again
+  Rectangle {
+    anchors.fill: parent
+    visible: root.sleepShade > 0
+    opacity: root.sleepShade
+    color: "#000000"
+    Text {
+      anchors.centerIn: parent
+      text: "Zzz"
+      color: "#c8c8e8"
+      font.pixelSize: 40
+      font.italic: true
     }
   }
 

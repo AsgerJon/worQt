@@ -16,20 +16,27 @@ import numpy
 from ._cockpit import BACKREST, CUSHION, FLOOR, LEFT_CONSOLE, NOSE
 from ._cockpit import RIGHT_CONSOLE, WALL, WINDOWS, capsuleRadius
 from ._cabinpictures import BOARD_TILE, PINE_TILE
+from ._stationinterior import HATCH, HATCH_HIGH
+from ._walkway import DOOR
 from ._vessel import SIZE
 
-#  The cone's round in steps of this many degrees (the windows' edges
-#  fall on them), its heights at least every 'STOREY' m and at every
-#  window's edge.
+#  The cone's round in steps of this many degrees (the windows' and the
+#  door's edges fall on them), its heights at least every 'STOREY' m and
+#  at every window's and the door's edge. The openings cut through the
+#  walls: the windows and the door ('_walkway.DOOR', round 180 deg: its
+#  span past 180).
 STEP = 2.0
 STOREY = 0.2
+OPENINGS = WINDOWS + (DOOR,)
 
 
 def capsuleShell(inner: bool) -> tuple:
-  """Returns the capsule's skin (its nose, and the windows' jambs through
-  the wall) or, 'inner', its inner wall (and the ceiling), the windows
-  cut through both: rows (place, normal) and triangles."""
-  heights = sorted({FLOOR, NOSE} | {z for _, span in WINDOWS for z in span}
+  """Returns the capsule's skin (its nose, and the openings' jambs
+  through the wall) or, 'inner', its inner wall (and the ceiling), the
+  windows and the door cut through both: rows (place, normal) and
+  triangles."""
+  heights = sorted({FLOOR, NOSE} | {z for _, span in OPENINGS
+                                    for z in span}
                    | set(numpy.arange(FLOOR, NOSE, STOREY).round(6)))
   angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, STEP)
   rows, faces = [], []
@@ -40,12 +47,16 @@ def capsuleShell(inner: bool) -> tuple:
       if not _inWindow(0.5 * (a0 + a1), 0.5 * (z0 + z1)):
         _cellOf(rows, faces, a0, a1, z0, z1, inner)
   if inner:
-    _discOf(rows, faces, NOSE, capsuleRadius(NOSE) - WALL, -1.0)
+    _annulusOf(rows, faces, NOSE, HATCH, capsuleRadius(NOSE) - WALL)
+    _tunnelOf(rows, faces, NOSE, HATCH_HIGH - 0.5, HATCH)
     return numpy.array(rows), numpy.array(faces, numpy.uint32)
-  for (a0, a1), (z0, z1) in WINDOWS:
+  for (a0, a1), (z0, z1) in OPENINGS:
     middle = (0.5 * (a0 + a1), 0.5 * (z0 + z1))
-    for one, two in (((a0, z0), (a1, z0)), ((a1, z0), (a1, z1)),
-                     ((a1, z1), (a0, z1)), ((a0, z1), (a0, z0))):
+    steps = numpy.arange(a0, a1 + 0.5 * STEP, STEP)
+    for b0, b1 in zip(steps[:-1], steps[1:]):
+      _jambOf(rows, faces, (b0, z0), (b1, z0), middle)
+      _jambOf(rows, faces, (b1, z1), (b0, z1), middle)
+    for one, two in (((a1, z0), (a1, z1)), ((a0, z1), (a0, z0))):
       _jambOf(rows, faces, one, two, middle)
   _coneOf(rows, faces, NOSE, capsuleRadius(NOSE), NOSE + 0.4 * SIZE,
           0.05 * SIZE, True)
@@ -152,10 +163,10 @@ _BOX_FACES = (
 
 
 def _inWindow(angle: float, z: float) -> bool:
-  """Returns whether the cone's point at 'angle' (deg) and 'z' is in a
-  window."""
-  return any(a0 <= angle <= a1 and z0 <= z <= z1
-             for (a0, a1), (z0, z1) in WINDOWS)
+  """Returns whether the cone's point at 'angle' (deg) and 'z' is in an
+  opening (a window or the door; an opening's span may run past 180)."""
+  return any((a0 <= angle <= a1 or a0 <= angle + 360.0 <= a1)
+             and z0 <= z <= z1 for (a0, a1), (z0, z1) in OPENINGS)
 
 
 def _onCone(angle: float, z: float, inner: bool) -> tuple:
@@ -237,6 +248,37 @@ def _discOf(rows: list, faces: list, z: float, radius: float,
   for j in range(len(angles) - 1):
     one, two = middle + 1 + j, middle + 2 + j
     faces.extend((middle, one, two) if up > 0 else (middle, two, one))
+
+
+def _annulusOf(rows: list, faces: list, z: float, inner: float,
+               outer: float) -> None:
+  """Adds the ceiling at height 'z' from 'inner' (the hatch's hole
+  through the nose: user, 2026-11-17, going aboard the space station) to
+  'outer' m round, facing down."""
+  angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, 4 * STEP)
+  first = len(rows)
+  for a in angles:
+    c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
+    rows.append((inner * c, inner * s, z, 0.0, 0.0, -1.0))
+    rows.append((outer * c, outer * s, z, 0.0, 0.0, -1.0))
+  for j in range(len(angles) - 1):
+    a, b = first + 2 * j, first + 2 * j + 2
+    faces.extend((a, b, b + 1, a, b + 1, a + 1))
+
+
+def _tunnelOf(rows: list, faces: list, low: float, high: float,
+              radius: float) -> None:
+  """Adds the hatch's tunnel up through the nose from 'low' to 'high',
+  'radius' m round, facing in."""
+  angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, 4 * STEP)
+  first = len(rows)
+  for a in angles:
+    c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
+    rows.append((radius * c, radius * s, low, -c, -s, 0.0))
+    rows.append((radius * c, radius * s, high, -c, -s, 0.0))
+  for j in range(len(angles) - 1):
+    a, b = first + 2 * j, first + 2 * j + 2
+    faces.extend((a, b + 1, b, a, a + 1, b + 1))
 
 
 def _box(middle: tuple, half: tuple, axes: tuple = None) -> tuple:

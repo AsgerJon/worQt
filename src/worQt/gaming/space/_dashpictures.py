@@ -23,7 +23,7 @@ from ._dashboard import DIAL_SCALES, LEGENDS, dialAngle, dialShare
 from ._looks import cacheFolder
 
 #  The pictures' versions (a change paints them anew) and sizes, pixels.
-VERSION = 12
+VERSION = 14
 FACE = (2048, 1280)
 DIAL = 512
 CELL = (256, 128)
@@ -279,15 +279,13 @@ WOOD = (512, 512)
 
 
 def glassPainted() -> object:
-  """Returns the horizon's glass cover's picture (user, 2026-11-16: "The
-  two yellow lines on the horizon has to be replaced. maybe with glass
-  cover over the ball that has them painted on?"): clear but a breath
-  of tint, the reference painted in amber (two wings, their tips down,
-  a dot in the middle), ticks round its rim every 30 degrees of roll, a
-  window's glint up on its left."""
+  """Returns the horizon's glass cover's picture: clear but a breath of
+  tint, a window's glint up on its left, its rim (its amber wings, dot
+  and roll ticks are gone: user, 2026-11-17, "The yellow markers need
+  to disappear": the globe is held level with the horizon, not turned
+  to the nose, so a reference on its glass marked nothing)."""
   from PySide6.QtCore import QPointF, QRectF, Qt
-  from PySide6.QtGui import (QColor, QImage, QPainter, QPainterPath, QPen,
-                             QRadialGradient)
+  from PySide6.QtGui import QColor, QImage, QPainter, QPen, QRadialGradient
   size = GLASS_SIZE
   image = QImage(size, size, QImage.Format.Format_ARGB32)
   image.fill(QColor(0, 0, 0, 0))
@@ -303,28 +301,6 @@ def glassPainted() -> object:
   painter.setBrush(glint)
   painter.drawEllipse(QPointF(0.33 * size, 0.27 * size), 0.22 * size,
                       0.12 * size)
-  amber = QColor(255, 168, 30, 245)
-  pen = QPen(amber, 0.022 * size)
-  pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-  pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-  painter.setPen(pen)
-  painter.setBrush(Qt.BrushStyle.NoBrush)
-  for side in (-1.0, 1.0):
-    wing = QPainterPath(QPointF(middle.x() + side * 0.08 * size, middle.y()))
-    wing.lineTo(middle.x() + side * 0.25 * size, middle.y())
-    wing.lineTo(middle.x() + side * 0.25 * size, middle.y() + 0.04 * size)
-    painter.drawPath(wing)
-  painter.setPen(Qt.PenStyle.NoPen)
-  painter.setBrush(amber)
-  painter.drawEllipse(middle, 0.022 * size, 0.022 * size)
-  painter.setPen(QPen(QColor(255, 255, 255, 150), 0.008 * size))
-  for k in range(12):
-    angle = math.radians(30.0 * k)
-    inner, outer = 0.43 * size, 0.47 * size
-    painter.drawLine(QPointF(middle.x() + inner * math.sin(angle),
-                             middle.y() - inner * math.cos(angle)),
-                     QPointF(middle.x() + outer * math.sin(angle),
-                             middle.y() - outer * math.cos(angle)))
   painter.setPen(QPen(QColor(20, 20, 22, 160), 0.012 * size))
   painter.setBrush(Qt.BrushStyle.NoBrush)
   painter.drawEllipse(QRectF(0.006 * size, 0.006 * size, 0.988 * size,

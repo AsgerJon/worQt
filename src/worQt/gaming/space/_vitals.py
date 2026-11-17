@@ -90,11 +90,14 @@ class Vitals:
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def lived(self, seconds: float, gees: float) -> None:
+  def lived(self, seconds: float, gees: float,
+            seated: bool = False) -> None:
     """The 'lived' method lives 'seconds' s (real time) pulled 'gees' g:
-    hungrier the harder he is pulled, hurt past two g or starving,
-    mending when fed and unhurt, a ration eaten on; dead at no health
-    (what killed him in 'cause')."""
+    hungrier the harder he is pulled, hurt past two g (not 'seated': his
+    chair keeps him from the pull's harm, user, 2026-11-17: "When Asger
+    sits in the seat, he is protected from damage taken by g forces") or
+    starving, mending when fed and unhurt, a ration eaten on; dead at no
+    health (what killed him in 'cause')."""
     if self.cause is not None or seconds <= 0.0:
       return
     hunger = FOOD / FOOD_LASTS * HUNGRIER ** min(1.0, max(0.0, gees - 1.0))
@@ -103,7 +106,8 @@ class Vitals:
       self.eating -= seconds
       if self.eating <= 0.0:
         self.eating, self.food = 0.0, min(FOOD, self.food + RATION)
-    crushing = CRUSHING * max(0.0, gees - CRUSHING_FROM) ** 2
+    crushing = 0.0 if seated else CRUSHING * max(
+      0.0, gees - CRUSHING_FROM) ** 2
     starving = STARVING if self.food <= 0.0 else 0.0
     harm = (crushing + starving) * seconds
     mend = MENDING * seconds if (self.food >= FED and not harm) else 0.0

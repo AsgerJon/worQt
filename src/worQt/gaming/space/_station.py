@@ -62,20 +62,20 @@ class Station:
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, system: SolarSystem) -> None:
+  def __init__(self, system: SolarSystem, lead: float = LEAD) -> None:
     self.parent = system.named('Terra')
     terra = system.bodies[self.parent]
     rows = terra.turnAt(0.0)
     over = unit(tuple(row[0] for row in rows))
     east = unit(cross(terra.pole, over))
-    c, s = math.cos(LEAD), math.sin(LEAD)
+    c, s = math.cos(lead), math.sin(lead)
     up = tuple(c * o + s * e for o, e in zip(over, east))
     ahead = tuple(-s * o + c * e for o, e in zip(over, east))
     far = terra.radius + HIGH
     speed = math.sqrt(terra.mu / far)
     conic = Conic.fromState(terra.mu, tuple(far * u for u in up),
                             tuple(speed * a for a in ahead))
-    self.body = HeavenlyBody('Station', terra, GRAVITATION * MASS, REACH,
+    self.body = HeavenlyBody('Terra Prime', terra, GRAVITATION * MASS, REACH,
                              SPIN, terra.pole, 0.0, conic, 'station', None)
     system.satellites.append(self.body)
 

@@ -87,6 +87,16 @@ class Timekeeper:
     self.aimed = self.elapsed + float(seconds)
     self._aimedFactor()
 
+  def leapt(self, seconds: float) -> None:
+    """The 'leapt' method moves time on 'seconds' s at once (a night
+    slept on the ground, where it may not be warped through), folded
+    into the sky at once, the warp ended."""
+    self.realtime()
+    self.now += float(seconds)
+    self.elapsed += float(seconds)
+    self.system.fold(self.now)
+    self.now, self.leaps = 0.0, self.leaps + 1
+
   def secondsOf(self, real: float) -> float:
     """The 'secondsOf' method returns the game seconds a step of 'real'
     s covers: 'real' times the warp, cut not to pass the moment warped

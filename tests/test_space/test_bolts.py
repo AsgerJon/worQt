@@ -5,7 +5,9 @@ clearly marked 'magic' bolts in the walls floors and ceilings. The
 gravity gun can pull Asger towards them"): each on the cabin's floor,
 ceiling or wall facing into the room, where it holds him inside the
 cabin clear of every solid; the gun points at one he looks at, never
-from his chair, never one facing away.
+from his chair, never one facing away; the space station's bolts, docked
+(user, 2026-11-17: "use bolts to enter Terra Prime docking"), are on its
+rooms' walls and its cages' floors, holding him inside.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -13,9 +15,13 @@ from __future__ import annotations
 
 import math
 
-from worQt.gaming.space._bolts import holdOf, rocketBolts
+from worQt.gaming.space._bolts import STATION_BOLTS, holdOf, rocketBolts
+from worQt.gaming.space._bolts import stationBolts
+from worQt.gaming.space._elevator import Elevator
+from worQt.gaming.space._stationinterior import PORT_LOW, roomsInside
 from worQt.gaming.space._cabinsolids import solids
-from worQt.gaming.space._cockpit import FLOOR, NOSE, WALL, Cockpit
+from worQt.gaming.space._cockpit import FLOOR, GUN_REACH, NOSE, WALL
+from worQt.gaming.space._cockpit import Cockpit
 from worQt.gaming.space._cockpit import capsuleRadius
 
 from . import SpaceTest
@@ -76,3 +82,76 @@ class TestBolts(SpaceTest):
       far = math.sqrt(sum(x * x for x in off))
       cockpit.yaw, cockpit.pitch = 0.0, math.asin(off[2] / far)
       self.assertEqual(cockpit.boltAimed(bolts), k, (place, far))
+
+  def test_hatch(self) -> None:
+    """No magic bolt in the ceiling's hatch (going aboard the station)."""
+    from worQt.gaming.space._stationinterior import HATCH
+    for place, _ in rocketBolts():
+      if abs(place[2] - NOSE) < 1e-9:
+        self.assertGreater(math.hypot(place[0], place[1]), HATCH + 0.2)
+
+  def test_beam(self) -> None:
+    """The gun's beam (user, 2026-11-17: "a laser beam between it and the
+    bolts"): its core runs from the muzzle to the bolt, its grip rings
+    the bolt, its coils twist on as time goes; its grab flashes strong
+    and settles to one."""
+    import numpy
+    from worQt.gaming.space._gunbeam import FLASH, GRIP, beamRows
+    from worQt.gaming.space._gunbeam import strengthOf
+    way = (0.4, -3.0, 1.5)
+    core, coils = beamRows(way, 0.0, 1.0)
+    reach = numpy.einsum('ij,j->i', core[0][:, :3], numpy.array(way)) / (
+      numpy.linalg.norm(way) ** 2)
+    self.assertAlmostEqual(float(reach.max()), 1.0, 2)
+    self.assertLess(float(reach.min()), 0.01)
+    end = numpy.array(way)
+    near = numpy.linalg.norm(core[0][:, :3] - end, axis=1)
+    self.assertGreater(float(near[near < 2.0 * GRIP].max()), 0.6 * GRIP)
+    turned = beamRows(way, 1.0, 1.0)[1]
+    self.assertGreater(float(numpy.abs(turned[0][:, :3] - coils[0][:, :3])
+                             .max()), 0.01)
+    self.assertAlmostEqual(strengthOf(0.0), FLASH, 9)
+    self.assertAlmostEqual(strengthOf(5.0), 1.0, 6)
+    self.assertGreater(strengthOf(0.1), strengthOf(0.2))
+
+  def test_three(self) -> None:
+    """The gun's 3 (user, 2026-11-17: "a more prominent 3 on the side.
+    where it is visible"): on its left side (the one his eyes see), off
+    it, facing his eyes' side, big."""
+    import numpy
+    from worQt.gaming.space._dashboard import pieceRows
+    from worQt.gaming.space._dashpictures import labelCells
+    from worQt.gaming.space._gunmodel import gunParts, sideMark
+    rows = numpy.concatenate([part[2][:, :3] for part in gunParts()])
+    mark, _ = pieceRows(('gun mark', 0), labelCells())
+    self.assertTrue((mark[:, 0] < rows[:, 0].min()).all())
+    self.assertTrue((mark[:, 3] < -0.99).all())
+    middle, half = sideMark()
+    self.assertGreater(middle[0], 0.0)
+    self.assertGreater(half, 0.04)
+
+  def test_station(self) -> None:
+    """Docked, the station's bolts lie on its rooms' walls (the port's,
+    the hub's end round the port) or on its cages' floors, facing into
+    them: the gun holds him inside a room, or in the cage; from the
+    hatch to a cage each is within the gun's reach of one before it."""
+    ways = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0),
+            (0.0, -1.0, 0.0))
+    elevators = [Elevator() for _ in ways]
+    bolts = stationBolts(ways, tuple(e.floor for e in elevators))
+    self.assertEqual(len(bolts), STATION_BOLTS)
+    for k, bolt in enumerate(bolts):
+      place, way = bolt
+      self.assertAlmostEqual(math.hypot(*way), 1.0, 9)
+      hold = holdOf(bolt)
+      if k < 10:
+        self.assertLess(abs(roomsInside(place, True, ways)), 0.01, k)
+        self.assertGreater(roomsInside(hold, True, ways), 0.9, k)
+      else:
+        self.assertTrue(elevators[k - 10].holds(ways[k - 10], hold), k)
+    hops = ((bolts[0], bolts[2]), (bolts[2], bolts[6]),
+            (bolts[6], bolts[10]))
+    for one, two in hops:
+      self.assertLess(math.dist(holdOf(one), two[0]), GUN_REACH)
+    hatch = (0.0, 0.0, PORT_LOW)
+    self.assertLess(math.dist(hatch, bolts[0][0]), GUN_REACH)

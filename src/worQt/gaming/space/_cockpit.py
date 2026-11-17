@@ -97,12 +97,15 @@ PANEL_HALF = (0.4, 0.25)
 PANEL_THICK = 0.03
 FRAME = 0.025
 #  The panel in framed sections, each titled on its face (user,
-#  2026-11-16: "Have a clearer section devoted to autopolit functions"):
+#  2026-11-16: "Have a clearer section devoted to autopolit functions";
+#  2026-11-17: "I want reaching orbit to be a separate step from
+#  rendezvous and docking. So this must be clear from the dashboard":
+#  numbered, 1 to orbit, 2 to Terra Prime and docked):
 #  title, left, bottom, right, top (right, up from its middle, m).
-SECTIONS = (('AUTOPILOT', -0.39, -0.055, -0.112, 0.095),
-            ('ASCENT GUIDANCE', 0.112, -0.055, 0.39, 0.112),
+SECTIONS = (('AUTOPILOT', -0.39, -0.055, -0.13, 0.095),
+            ('1  ASCENT TO ORBIT', 0.13, -0.055, 0.39, 0.112),
             ('TIME AND ENGINE', -0.39, -0.235, -0.09, -0.085),
-            ('DOCKING', 0.085, -0.235, 0.39, -0.085))
+            ('2  RENDEZVOUS AND DOCKING', 0.085, -0.235, 0.39, -0.085))
 #  On the panel (right, up from its middle, m), its outputs: the dials
 #  (each its name and middle; their radius): the altimeter by the orbit
 #  knob, its pink mark at the guidance's target ("The orbit knob is
@@ -115,7 +118,7 @@ SECTIONS = (('AUTOPILOT', -0.39, -0.055, -0.112, 0.095),
 #  tele-printer": its screen's middle, half its size (4:3), how far its
 #  housing stands out). The horizon's ball is the globe's ('GLOBE_AT'):
 #  its radius, its glass dome's (from its middle).
-DIALS = (('HEIGHT', (0.175, 0.025)), ('SPEED', (-0.205, 0.17)),
+DIALS = (('HEIGHT', (0.185, 0.025)), ('SPEED', (-0.205, 0.17)),
          ('APOAPSIS', (0.215, 0.17)), ('PERIAPSIS', (0.33, 0.17)))
 DIAL_RADIUS = 0.04
 LAMPS = (('ENGINE', (-0.1, 0.205)), ('AIR', (-0.06, 0.205)),
@@ -154,9 +157,9 @@ SCREEN_AT, SCREEN_HALF, MONITOR_OUT = (0.0, -0.165), (0.052, 0.039), 0.03
 #  example 1. Then no need for magic gravity"): the most the engine may
 #  push, g ('LIMITS', its notches; the last its full thrust: no limit).
 SWITCHES = (('HOLD', 'T', 'hold', (-0.35, 0.0)),
-            ('PRO', 'F', 'prograde', (-0.285, 0.0)),
-            ('RETRO', 'R', 'retrograde', (-0.22, 0.0)),
-            ('AIM', 'W', 'aim', (-0.155, 0.0)),
+            ('PRO', 'F', 'prograde', (-0.29, 0.0)),
+            ('RETRO', 'R', 'retrograde', (-0.23, 0.0)),
+            ('AIM', 'W', 'aim', (-0.17, 0.0)),
             ('ASCENT', 'J', 'ascent', (0.352, 0.01)),
             ('MATCH', 'L', 'match', (0.31, -0.19)),
             ('AUTO', 'C', 'autodock', (0.365, -0.19)))
@@ -201,7 +204,8 @@ GUARD_HOLD = 1.2
 #  the pad and the view's switch. The teleprinter is in the dashboard
 #  (user, 2026-11-16: "The teleprinter should be even less audible and
 #  should be more promenently on the dashboard"): its paper in a window
-#  in the panel's middle (its middle, on the panel; its paper's size).
+#  in the panel's middle (its middle, on the panel; its paper's size: a
+#  Teletype's 8.5 inches across, 2026-11-17).
 TOP = FLOOR + 0.54 + LIFT
 RIGHT_CONSOLE = (seated(0.08, -0.52, 0.5 * (TOP - FLOOR) - 0.002),
                  (0.2, 0.12, 0.5 * (TOP - FLOOR) - 0.002))
@@ -216,16 +220,20 @@ CONSOLE_SWITCHES = (('VIEW', 'V', 'view', seated(0.24, 0.6, 0.0)[:2]),
                     ('MAP', 'M', 'map', seated(0.08, 0.6, 0.0)[:2]))
 CONSOLE_KEY_HALF = (0.03, 0.03)
 PAPER_AT = (0.0, 0.05)
-PAPER_WIDE, PAPER_HIGH = 0.19, 0.24
-#  The sideboard at his right, the tape deck on it and its keys before it
-#  (user, 2026-11-16: "The tape controls should be over by the actual
-#  tape deck"): its middle and half sizes; the deck's keys (name, key,
-#  action, place on its top).
-SIDEBOARD = (seated(0.1, -1.0, 0.5 * (TOP - FLOOR)),
-             (0.32, 0.2, 0.5 * (TOP - FLOOR)))
-DECK_KEYS = (('PLAY', 'P', 'play', seated(-0.06, -0.835, 0.0)[:2]),
-             ('STOP', 'O', 'halt', seated(0.01, -0.835, 0.0)[:2]),
-             ('EJECT', 'I', 'eject', seated(0.08, -0.835, 0.0)[:2]))
+PAPER_WIDE, PAPER_HIGH = 8.5 * 0.0254, 0.24
+#  The sideboard behind him on his right, the tape deck on it facing
+#  forward (toward his chair's back) and its keys before it (user,
+#  2026-11-16: "The tape controls should be over by the actual tape
+#  deck"; 2026-11-17: "move the stereo to behind Asger to the right. This
+#  allows a path for Asger to get up and take a walk": at his right, by
+#  the globe, it closed his way out): its middle and half sizes (its long
+#  side across the cabin); the deck's keys (name, key, action, place on
+#  its top: left to right as one faces it).
+SIDEBOARD = (seated(-1.4, -1.0, 0.5 * (TOP - FLOOR)),
+             (0.2, 0.32, 0.5 * (TOP - FLOOR)))
+DECK_KEYS = (('PLAY', 'P', 'play', seated(-1.265, -1.07, 0.0)[:2]),
+             ('STOP', 'O', 'halt', seated(-1.265, -1.0, 0.0)[:2]),
+             ('EJECT', 'I', 'eject', seated(-1.265, -0.93, 0.0)[:2]))
 #  The horizon (user, 2026-11-16: "The horizon should not be in the
 #  dashboard as such. It should be more like it's own piece of furniture
 #  almost. like a globe"): its ball's middle on a stand at his front
@@ -261,18 +269,19 @@ CAMERA_VIEW = 64.0
 #  to reel"; "it should prolly be off to the right of Asger"): its model
 #  (in 'models', CC-BY: 'models/CREDITS.md'; its frame x right as one
 #  faces it, y up, z out of its face, its foot's middle the origin), how
-#  much of its size, where its origin is (on the sideboard at his right)
-#  and its frame's axes in the vessel's (it faces him: its x his back,
-#  its y up, its z toward him).
+#  much of its size, where its origin is (on the sideboard behind him on
+#  his right) and its frame's axes in the vessel's (it faces forward,
+#  toward his chair: its x his left, its y up, its z ahead).
 TAPE_MODEL = 'Stereo Reel to Reel Tape Deck.glb'
 TAPE_SCALE = 0.6
-TAPE_ORIGIN = (SIDEBOARD[0][0], SIDEBOARD[0][1] - 0.05, TOP + 0.014)
-TAPE_AXES = ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0))
+TAPE_ORIGIN = (SIDEBOARD[0][0] - 0.05, SIDEBOARD[0][1], TOP + 0.014)
+TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
 #  A ray from his eyes looks this far at most, m. The gravity gun reaches
-#  a magic bolt this far, m, pointed at within 'AIM' rad (or its ring
+#  a magic bolt this far, m (the space station's hub is 120 m long: its
+#  bolts are some 30 m apart), pointed at within 'AIM' rad (or its ring
 #  seen from there, 'BOLT_SEEN' m round).
 REACH = 1.6
-GUN_REACH = 25.0
+GUN_REACH = 40.0
 AIM = math.radians(3.0)
 BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -288,6 +297,12 @@ def capsuleRadius(z: float) -> float:
   return RADIUS + share * (0.45 * SIZE - RADIUS)
 
 
+def inCabin(point: tuple) -> bool:
+  """Returns whether 'point' is inside the cabin's walls."""
+  x, y, z = point
+  return FLOOR < z < NOSE and math.hypot(x, y) < capsuleRadius(z) - WALL
+
+
 def panelPoint(right: float, up: float, out: float) -> tuple:
   """Returns the point 'right', 'up', 'out' m from the panel's middle
   along its axes, the vessel's own axes."""
@@ -300,15 +315,38 @@ def _negative(axis: tuple) -> tuple:
   return tuple(-x for x in axis)
 
 
-def _galley() -> tuple:
-  """Returns what he may work away from the dashboard: the rations'
-  crate (look at it within reach and click: he eats one)."""
-  from ._furnishings import rationCrate
-  middle, axes, half = rationCrate()
-  top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))
-  peep = Pushbutton('RCIR', None, top, (0.0, 0.0, -1.0), 0.01,
-                    ('Eat a ration (RCIR)',) * 2)
-  return (Control('RCIR', 'E', 'eat', middle, axes, half, peep),)
+#  What is worked from outside the cabin (the door's key on the walkway;
+#  the rest from inside it).
+OUTSIDE = ('door outside',)
+#  What the door's keys do, as said before they are worked (the window
+#  says it as it is: open or closed, locked or not).
+KEY_PROMPTS = {'door': 'Open or close the door', 'lock': 'Lock the door',
+               'walkway': 'Dismiss the walkway'}
+
+
+def _household() -> tuple:
+  """Returns what he may work away from the dashboard (looked at within
+  reach, E or a click): the rations' crate (he eats one), the daybed
+  (he sleeps till morning, if it is night), the sofa (he sits on it),
+  the door's keys (outside on the walkway: the door; inside by it: the
+  door, its lock, the walkway), the warning placard (a closer look)."""
+  from ._furnishings import bedBox, rationCrate, sofaBox
+  from ._walkwaymeshes import INSIDE_KEYS, KEY_HALF, insideKey
+  from ._walkwaymeshes import outsideKey, placardBox
+  keys = [(name, action, KEY_PROMPTS[action], insideKey(across) + (
+    KEY_HALF,)) for name, _, action, across in INSIDE_KEYS]
+  out = []
+  for name, action, prompt, (middle, axes, half) in [
+      ('RCIR', 'eat', 'Eat a ration (RCIR)', rationCrate()),
+      ('BED', 'sleep', 'Sleep till morning', bedBox()),
+      ('SOFA', 'lounge', 'Chill out on the sofa', sofaBox()),
+      ('DOOR', 'door outside', KEY_PROMPTS['door'], outsideKey()),
+      ('MANUAL', 'manual', 'Read the warning manual', placardBox())] + keys:
+    top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))
+    peep = Pushbutton(name, None, top, (0.0, 0.0, -1.0), 0.01,
+                      (prompt,) * 2)
+    out.append(Control(name, 'E', action, middle, axes, half, peep))
+  return tuple(out)
 
 
 def _controls() -> tuple:
@@ -357,7 +395,7 @@ def _controls() -> tuple:
                 SLIDER_LONG)
   middle = (SLIDER_FROM[0] + 0.5 * SLIDER_LONG, SLIDER_FROM[1],
             SLIDER_FROM[2] + 0.02)
-  out.append(Control('THROTTLE', 'Shift Ctrl', 'throttle', middle, UP,
+  out.append(Control('THROTTLE', '+ \u2212', 'throttle', middle, UP,
                      (0.5 * SLIDER_LONG + 0.02, 0.03, 0.03), peep))
   return tuple(out)
 
@@ -377,9 +415,10 @@ class Cockpit:
   2026-11-17: "when can Asger get up and float around in
   micro-gravity?") his head turns from his body's up and ahead, his eyes
   and figure are his body's, and he reaches what is near his eyes. What
-  he may work away from
-  the dashboard is the 'galley' (the rations' crate: user, 2026-11-17:
-  "To eat, Asger goes to the kitchen"), looked at as the inputs are.
+  he may work away from the dashboard is the 'household' (the rations'
+  crate: user, 2026-11-17: "To eat, Asger goes to the kitchen"; the
+  daybed: "Asger should be able to key_E into bed"), looked at as the
+  inputs are.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -392,7 +431,7 @@ class Cockpit:
   glancing: tuple | None
   controls: tuple
   crewman: Crewman
-  galley: tuple
+  household: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -401,7 +440,7 @@ class Cockpit:
   def __init__(self, ) -> None:
     from ._crewman import Crewman
     self.yaw, self.pitch, self.glancing = 0.0, -0.12, None
-    self.controls, self.galley = _controls(), _galley()
+    self.controls, self.household = _controls(), _household()
     self.crewman = Crewman()
     self._shaker = random.Random(2026)
 
@@ -536,10 +575,15 @@ class Cockpit:
 
   def lookedAt(self, ) -> Control | None:
     """The 'lookedAt' method returns the input his eyes' middle rests on
-    (the nearest within 'REACH'), None if none."""
+    (the nearest within 'REACH'), None if none: those on the cabin's side
+    of its wall his eyes are on ('OUTSIDE': the door's key on the
+    walkway)."""
     way, eye = self.looking()[0], self.eye()
     best, nearest = None, REACH
-    for control in self.controls + self.galley:
+    inside = inCabin(eye)
+    for control in self.controls + self.household:
+      if (control.action in OUTSIDE) == inside:
+        continue
       far = control.hitBy(eye, way)
       if far is not None and far < nearest:
         best, nearest = control, far

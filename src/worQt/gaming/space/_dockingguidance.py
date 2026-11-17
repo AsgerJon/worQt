@@ -98,7 +98,7 @@ class DockingGuidance:
     if vessel.docked:
       return 'docked already'
     if reading['distance'] > REACH:
-      return 'the station is %.0f km off (within %.0f km)' % (
+      return 'Terra Prime is %.0f km off (within %.0f km)' % (
         reading['distance'] / 1e3, REACH / 1e3)
     drift = norm(reading['drift'])
     if drift > DRIFT_MOST:

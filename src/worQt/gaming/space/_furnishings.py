@@ -8,9 +8,9 @@ bookshelf full of books, a kitchen counter with a kettle, a coffee pot
 and mugs, a daybed, a plant, fairy lights along the wall, a rag rug.
 Where the warm lights are: the lamp's, the candles'. Rows of eight
 (place, normal, where on a picture). What is fixed down is solid boxes
-too ('obstacles'); the books, mugs, kettle, coffee pot, pillows and the
-plant are loose things (user, 2026-11-17: "FAFO rules"), their meshes
-apart ('looseThings', 'looseParts').
+too ('obstacles'); the mugs, kettle, coffee pot, pillows and the plant
+are loose things (user, 2026-11-17: "FAFO rules"), their meshes apart
+('looseThings', 'looseParts'); the books are held in by rails.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -27,11 +27,15 @@ from ._shapes import UNTURNED, ballRows, boxRows, cylinderRows
 from ._shapes import discRows, frustumRows, joined, pointAlong, quadRows
 
 #  Each piece of furniture: where it stands (x, y on the floor, m) and
-#  the way its front faces (deg from x toward y: into the room).
+#  the way its front faces (deg from x toward y: into the room). The
+#  bookshelf stood straight behind him; the door is there now (user,
+#  2026-11-17: "bro just fit the door. the furnishings can be fixed in
+#  place later"): it stands 20 deg round the wall, clear of it.
 SOFA = ((0.0, -4.05), 90.0)
 TABLE = ((0.0, -2.9), 90.0)
 LAMP = ((1.6, -3.85), 90.0)
-SHELF = ((-4.05, 0.0), 0.0)
+SHELF = ((4.05 * math.cos(math.radians(200.0)),
+          4.05 * math.sin(math.radians(200.0))), 20.0)
 COUNTER = ((-2.95, -2.85), 44.0)
 BED = ((-3.05, 2.35), -38.0)
 PLANT = ((3.1, -2.45), 140.0)
@@ -52,10 +56,12 @@ TABLE_HIGH = 0.46
 SHADE_HIGH = 1.45
 STRING = ((-60.0, -168.0), 2.1, 0.12, 54)
 #  A round thing's axes (it stands as the vessel does); a mug's radius,
-#  height, m, and mass, kg; how heavy the books' paper is, kg/m³.
+#  height, m, and mass, kg.
 UPRIGHT = UNTURNED
 MUG = (0.042, 0.1, 0.35)
-PAPER = 650.0
+#  The bookshelf's brass rails: how high up its row of books, its share
+#  of the tallest.
+RAIL = 0.6
 
 
 def _frame(facing: float) -> tuple:
@@ -291,7 +297,11 @@ def lampLight() -> tuple:
 
 def _shelf(room: tuple) -> None:
   """The bookshelf against the wall behind him: its sides, back and
-  shelves of oak; rows of books on each shelf, each loose."""
+  shelves of oak; rows of books on each shelf, held in by a brass rail
+  across its front as on a ship's shelves (user, 2026-11-17, of them all
+  falling: "Let's lock that down. It's only funny if it is stuff Asger
+  could have had a reasonable chance of securing before take off"):
+  still, each row a solid box."""
   put, solid, block, loose = room
   f = SHELF
   wide, deep, high = 0.8, 0.16, 1.9
@@ -305,7 +315,7 @@ def _shelf(room: tuple) -> None:
   looks = ('book red', 'book green', 'book blue', 'book ochre',
            'book cream')
   for z, top in zip(shelves[:-1], shelves[1:]):
-    along = -wide + 0.03
+    along, tallest = -wide + 0.03, 0.0
     while along < wide - 0.08:
       thick = books.uniform(0.025, 0.06)
       tall = min(top - z - 0.06, books.uniform(0.2, 0.34))
@@ -313,11 +323,17 @@ def _shelf(room: tuple) -> None:
       toward = books.uniform(0.0, 0.02)
       half = (0.5 * thick - 0.002, books.uniform(0.09, 0.12), 0.5 * tall)
       at = (along + 0.5 * thick, toward, z + 0.015 + 0.5 * tall)
-      loose('book', ((look, _block(f, *at, half)),), _placed(f, *at),
-            half, _frame(f[1]), PAPER * 8.0 * half[0] * half[1] * half[2])
+      put(look, _block(f, *at, half))
+      tallest = max(tallest, tall)
       along += thick
       if books.random() < 0.08:
         along += books.uniform(0.04, 0.12)
+    solid(_placed(f, 0.0, 0.0, z + 0.015 + 0.5 * tallest),
+          (wide - 0.03, 0.14, 0.5 * tallest), _frame(f[1]))
+    put('brass', cylinderRows(_placed(f, -wide + 0.02, deep - 0.012,
+                                      z + RAIL * tallest),
+                              _frame(f[1])[0], 0.006, 2.0 * wide - 0.04,
+                              12))
 
 
 def _counter(room: tuple) -> None:
@@ -383,6 +399,25 @@ def rationCrate() -> tuple:
   high = CRATE[2] + 2.0 * RATION_BOX[2]
   return (_placed(COUNTER, along, toward, high), _frame(COUNTER[1]),
           (CRATE[0], CRATE[1], high))
+
+
+def sofaBox() -> tuple:
+  """Returns the sofa's seat (to be looked at and sat on): its middle,
+  its axes (along, toward its front, up) and half sizes."""
+  return _placed(SOFA, 0.0, 0.0, 0.35), _frame(SOFA[1]), (1.1, 0.42, 0.25)
+
+
+def sofaSeat() -> tuple:
+  """Returns where Asger sits on the sofa: the middle cushion's top's
+  middle, and the way the sofa faces."""
+  return _placed(SOFA, 0.0, 0.05, 0.56), _frame(SOFA[1])[1]
+
+
+def bedBox() -> tuple:
+  """Returns the daybed (to be looked at and slept in): its middle, its
+  axes (along, toward its front, up) and half sizes, frame to
+  blanket."""
+  return _placed(BED, 0.0, 0.0, 0.26), _frame(BED[1]), (1.0, 0.45, 0.26)
 
 
 def _plant(room: tuple) -> None:

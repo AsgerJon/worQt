@@ -162,7 +162,7 @@ class RendezvousGuidance:
     if vessel.docked:
       return 'docked already'
     if vessel.anchor != self.station.parent:
-      return 'the station goes round %s: get there first' % (
+      return 'Terra Prime goes round %s: get there first' % (
         system.bodies[self.station.parent].name)
     conic = vessel.conicOf(system)
     if conic is None or not conic.closed:
@@ -259,7 +259,7 @@ class RendezvousGuidance:
         self.way = self._flattened(velocity, normal)
         return ''
     self.phase = 'off'
-    return 'no crossing of the station\'s plane'
+    return 'no crossing of Terra Prime\'s plane'
 
   def _flattened(self, velocity: tuple, normal: tuple) -> tuple:
     """Returns the push that turns 'velocity' into the plane of
@@ -302,7 +302,7 @@ class RendezvousGuidance:
       best = self._plan(vessel, system, keeper, departures, flights)
     if best is None:
       self.phase = 'off'
-      return 'no transfer to the station found'
+      return 'no transfer to Terra Prime found'
     _, wait, flight, way, self.reach, _ = best
     self.depart = keeper.elapsed + wait
     self.arrival = self.depart + flight

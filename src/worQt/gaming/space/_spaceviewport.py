@@ -29,13 +29,18 @@ from ._cabinpictures import cabinPicturesReady
 from ._bolts import boltGlintRows, boltRingRows, boltRows
 from ._furnishings import furnishings, looseParts
 from ._gunmodel import gunParts
+from ._interiormeshes import interiorMeshes
+from ._kolonihave import gardenMeshes
 from ._stationmeshes import stationMeshes
 from ._stationpictures import stationPicturesReady
 from ._cockpit import BALL_RADIUS, LAMPS, SCALE
 from ._meshes import capRows, padRows, ringRows, rocketParts, sphereRows
-from ._navball import mirroredRows
+from ._navball import Navball, mirroredRows
 from ._scenery import AFTER_PIECES, MARK_KINDS, MECHANISM
 from ._teleprinter import FONT
+from ._turns import aboutAxis, product, rotated
+from ._walkwaymeshes import armParts, armPivot, insideParts, placardRows
+from ._walkwaymeshes import DECK, floodlights, towerParts
 from ._dashpictures import MARK_NAMES
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -141,6 +146,65 @@ STATION_LOOKS = {'hull': (((232, 234, 238), 0.1, 0.45), False),
                  'antennas': (((255, 255, 255), 0.0, 1.0), True),
                  'beacons': (((255, 255, 255), 0.0, 1.0), True)}
 RAINBOW_SLIDES = 1.0
+#  Going aboard (user, 2026-11-17: "all aboard Asger's kolonihave i
+#  rummet!"): the hatch's lid, the elevators' cages; the station's inside
+#  and Asger's kolonihave by look (none shine of their own; lit inside
+#  by the station's own light on its axis, 'habitatLight').
+HATCH_LOOK = ((176, 178, 184), 0.6, 0.35)
+#  Lit from overhead alone (the station's light on its axis) walls stood
+#  black: the inside glows this share of its own colour while docked (a
+#  fill: the light thrown about in it), on a slot of its own.
+INSIDE_FILL = 0.3
+CAR_LOOK = ((214, 196, 120), 0.4, 0.45)
+#  The way in on the pad (user, 2026-11-17: "The door out of the rocket
+#  should be connected to a retractable walk way"): the launch tower, its
+#  walkway, the door, its panels, by look; the ones that shine of their
+#  own (unlit: the lamps, the keys); how see-through the walkway's glass
+#  is.
+WALKWAY_LOOKS = {'tower': ((178, 64, 34), 0.3, 0.6),
+                 'grating': ((70, 72, 76), 0.6, 0.6),
+                 'rail': ((214, 172, 44), 0.2, 0.5),
+                 'lamp body': ((54, 56, 60), 0.5, 0.5),
+                 'lamp': ((255, 246, 222), 0.0, 1.0),
+                 'lift': ((150, 154, 160), 0.6, 0.4),
+                 'tunnel': ((204, 206, 210), 0.3, 0.55),
+                 'glass': ((150, 180, 200), 0.0, 0.1),
+                 'rubber': ((24, 24, 26), 0.0, 0.9),
+                 'panel': ((58, 60, 66), 0.4, 0.5),
+                 'key green': ((90, 255, 110), 0.0, 1.0),
+                 'key red': ((255, 70, 50), 0.0, 1.0),
+                 'key amber': ((255, 170, 50), 0.0, 1.0),
+                 'door': ((214, 216, 220), 0.5, 0.4)}
+WALKWAY_GLOWS = ('lamp', 'key green', 'key red', 'key amber')
+WALKWAY_GLASS = 0.25
+#  Its lights pass through walls (no shadows): the floodlights shine on
+#  the rocket's body below the cabin ('FLOOD_AIM' m under its floor),
+#  and the tower and the walkway glow these shares of their own colour
+#  (lit by their lamps).
+FLOOD_AIM = 16.0
+TOWER_FILL = 0.18
+ARM_FILL = 0.3
+INSIDE_LOOKS = {'inside': ((176, 180, 188), 0.05, 0.7),
+                'deck': ((132, 136, 142), 0.15, 0.75),
+                'path': ((198, 182, 150), 0.0, 1.0),
+                'lawn': ((118, 186, 72), 0.0, 0.95),
+                'hedge': ((26, 66, 34), 0.0, 0.95),
+                'hut red': ((164, 44, 36), 0.0, 0.8),
+                'hut yellow': ((230, 188, 72), 0.0, 0.8),
+                'hut blue': ((70, 108, 156), 0.0, 0.8),
+                'hut white': ((232, 232, 224), 0.0, 0.8),
+                'hut green': ((80, 122, 82), 0.0, 0.8),
+                'roof': ((52, 48, 46), 0.0, 0.9),
+                'flowers red': ((214, 40, 52), 0.0, 0.9),
+                'flowers yellow': ((246, 206, 48), 0.0, 0.9),
+                'flowers violet': ((150, 82, 196), 0.0, 0.9),
+                'pole': ((240, 240, 236), 0.1, 0.5),
+                'flag red': ((200, 16, 46), 0.0, 0.8),
+                'flag white': ((250, 250, 250), 0.0, 0.8),
+                'gnome coat': ((40, 84, 170), 0.0, 0.7),
+                'gnome face': ((240, 190, 160), 0.0, 0.8),
+                'gnome beard': ((248, 248, 248), 0.0, 0.9),
+                'gnome hat': ((220, 30, 36), 0.0, 0.7)}
 #  The magic bolts (user, 2026-11-17: "clearly marked 'magic' bolts"):
 #  their steel, their rings' violet glow (unlit: they shine of their
 #  own), the glint over them.
@@ -191,7 +255,9 @@ class SpaceViewport(QWidget):
     self.box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     self.component, self.problems, self.loaded = None, (), False
     self.furnishedYet, self._kept, self._caps = False, [], []
+    self._beams = []
     self._path, self._slots, self._paper = None, CABIN_SLOT, None
+    self._armSlot, self._quest = 0, None
     self.fps, self._frames, self._since = 0.0, 0, time.perf_counter()
     self.quick.frameSwapped.connect(self._swapped)
     self.setMinimumSize(800, 600)
@@ -268,7 +334,11 @@ class SpaceViewport(QWidget):
     near.extend(self._cabinParts(navball, pictures, pieces))
     self._slots = CABIN_SLOT + len(pieces) + AFTER_PIECES
     near.extend(self._satelliteParts(self._slots, len(system.satellites)))
-    self._slots += len(system.satellites)
+    self._slots += 2 * len(system.satellites)
+    self._armSlot = self._slots
+    near.extend(self._walkwayParts(armParts(), self._armSlot))
+    near.extend(self._walkwayParts(towerParts(), self._armSlot + 1))
+    self._slots += 2
     for slot, points in enumerate(orbits[1:]):
       lines.append({'geometry': self._kept1(Line(points)),
                     'colour': QColor(ORBIT_COLOUR), 'slot': slot})
@@ -287,6 +357,9 @@ class SpaceViewport(QWidget):
     root.setProperty('navPicture', QUrl.fromLocalFile(str(navball))
                      .toString())
     root.setProperty('paperFont', FONT)
+    root.setProperty('paperLayout', _dashboard.paperLayout())
+    root.setProperty('manualPicture', QUrl.fromLocalFile(str(
+      cabinPicturesReady()['manual'])).toString())
     root.setProperty('paperGeometry', self._kept1(Mesh(
       *_dashboard.paperRows())))
     root.setProperty('screenGeometry', self._kept1(Mesh(
@@ -326,9 +399,15 @@ class SpaceViewport(QWidget):
               (ROCKET_SLOT, frame['rocket'] + (0.0,))]
     moving += [(CABIN_SLOT + k, part) for k, part in enumerate(
       cabin['parts'])]
-    first = self._slots - len(frame['satellites'])
+    count = len(frame['satellites'])
+    first = self._armSlot - 2 * count
     moving += [(first + k, satellite + (0.0,)) for k, satellite in
                enumerate(frame['satellites'])]
+    fill = INSIDE_FILL if cabin.get('aboard') else 0.0
+    moving += [(first + count + k, satellite + (fill,)) for k, satellite
+               in enumerate(frame['satellites'])]
+    moving.append((self._armSlot, _armOf(frame['pad'], cabin['swing'])))
+    moving.append((self._armSlot + 1, frame['pad'] + (TOWER_FILL,)))
     for slot, (place, turn, seen, glow) in moving:
       places[slot], turns[slot] = QVector3D(*place), QQuaternion(*turn)
       shown[slot], glows[slot] = bool(seen), float(glow)
@@ -337,6 +416,12 @@ class SpaceViewport(QWidget):
     root.setProperty('nearShown', shown)
     root.setProperty('nearGlows', glows)
     root.setProperty('cabinLight', QVector3D(*cabin['light']))
+    satellites = frame['satellites']
+    root.setProperty('habitatOn', bool(cabin.get('aboard')) and bool(
+      satellites))
+    self._outdoorShown(root, frame['pad'], cabin['outdoor'])
+    if satellites:
+      root.setProperty('habitatLight', QVector3D(*satellites[0][0]))
     root.setProperty('panelLamp', QVector3D(*cabin['lamp']))
     lamp, candles, flicker = cabin['hygge']
     root.setProperty('lampLight', QVector3D(*lamp))
@@ -355,6 +440,15 @@ class SpaceViewport(QWidget):
       root.setProperty('capGeometry', cap)
       root.setProperty('capPicture', QUrl.fromLocalFile(str(self._files[
         system.bodies[anchor].look])).toString())
+    place_, turn_, shown_, core, coils = cabin['beam']
+    if shown_:
+      meshes = (Mesh(*core), Mesh(*coils))
+      self._beams = (self._beams + [meshes])[-KEPT_CAPS:]
+      root.setProperty('beamCore', meshes[0])
+      root.setProperty('beamCoils', meshes[1])
+      root.setProperty('beamPlace', QVector3D(*place_))
+      root.setProperty('beamTurn', QQuaternion(*turn_))
+    root.setProperty('beamShown', bool(shown_))
     root.setProperty('capPlace', QVector3D(*place))
     root.setProperty('capTurn', QQuaternion(*turn))
     root.setProperty('capShown', bool(seen) and bool(self._caps))
@@ -378,7 +472,8 @@ class SpaceViewport(QWidget):
     root.setProperty('lineScales', [float(s) for _, s in lines])
     root.setProperty('marks', [{'x': m['x'], 'y': m['y'],
                                 'text': m['text'],
-                                'colour': QColor(m['colour'])}
+                                'colour': QColor(m['colour']),
+                                'line': m['line']}
                                for m in frame['marks']])
 
   def navballShown(self, frame: dict | None) -> None:
@@ -432,6 +527,50 @@ class SpaceViewport(QWidget):
                        ('hurtShown', hurt), ('eatingShown', eating),
                        ('deathText', death)):
       root.setProperty(key, value)
+
+  def _outdoorShown(self, root: object, pad: tuple,
+                    outdoor: tuple) -> None:
+    """Shows the launch tower's floodlights (on the pad: 'pad' its place,
+    turn and whether it shows) shining on the rocket, and the lamp over
+    its platform and walkway ('outdoor': its place, whether the walkway
+    is out)."""
+    place, turn, shown = pad
+    places, turns = [], []
+    if shown:
+      target = (0.0, 0.0, DECK - FLOOD_AIM)
+      for lamp in floodlights():
+        way = tuple(t - l for t, l in zip(target, lamp))
+        size = math.sqrt(sum(x * x for x in way))
+        places.append(QVector3D(*(p + r for p, r in zip(place, rotated(
+          turn, lamp)))))
+        turns.append(nodeTurnOf(rotated(turn, tuple(x / size for x in way)),
+                                rotated(turn, (0.0, 0.0, 1.0))))
+    root.setProperty('towerFloodPlaces', places)
+    root.setProperty('towerFloodTurns', turns)
+    root.setProperty('outdoorLamp', QVector3D(*outdoor[0]))
+    root.setProperty('outdoorOn', bool(outdoor[1]))
+
+  def questShown(self, rows: list) -> None:
+    """The 'questShown' method shows the quest's list ('Quest.rows'; none:
+    hidden), when it changed."""
+    root = self._root()
+    if root is not None and rows != self._quest:
+      self._quest = rows
+      root.setProperty('questRows', rows)
+
+  def manualShown(self, shown: bool) -> None:
+    """The 'manualShown' method shows the warning manual close up, or
+    puts it back."""
+    root = self._root()
+    if root is not None:
+      root.setProperty('manualShown', bool(shown))
+
+  def sleepShown(self, shade: float) -> None:
+    """The 'sleepShown' method darkens the view by 'shade' (nought to
+    one) as Asger sleeps."""
+    root = self._root()
+    if root is not None:
+      root.setProperty('sleepShade', float(shade))
 
   def cockpitShown(self, inside: bool, prompt: tuple | None,
                    paper: tuple, stamp: str) -> None:
@@ -522,6 +661,10 @@ class SpaceViewport(QWidget):
     for name, rows in furnishings().items():
       out.append(_partOf(kept(Mesh(*rows)), HYGGE_LOOKS[name], ROCKET_SLOT,
                          False, cabin[name] if name in cabin else ''))
+    out.extend(self._walkwayParts(insideParts(), ROCKET_SLOT))
+    out.append(_partOf(kept(Mesh(*placardRows())), ((255, 255, 255), 0.0,
+                                                    0.8), ROCKET_SLOT,
+                       False, cabin['manual']))
     out.append(_partOf(kept(Mesh(*boltRows())), BOLT_LOOK, ROCKET_SLOT,
                        False))
     out.append(_partOf(kept(Mesh(*boltRingRows())), (BOLT_RING, 0.0, 1.0),
@@ -552,13 +695,13 @@ class SpaceViewport(QWidget):
         continue
       look, picture, unlit, emit, opacity = self._pieceLook(piece, labels)
       out.append(_partOf(kept(Mesh(*rows)), look, CABIN_SLOT + k, False,
-                         picture, unlit, opacity, False, emit))
+                         picture, unlit, opacity, piece[0] == 'gun mark',
+                         emit))
     slot = CABIN_SLOT + len(pieces)
     rows, indices = sphereRows(*NAV_SPHERE)
-    rows = mirroredRows(rows)
     rows[:, :3] *= BALL_RADIUS
     out.append(_partOf(kept(Mesh(rows, indices)), BALL_LOOK, slot, False,
-                       navball, False))
+                       str(Navball().globeReady()), False))
     makers = (_dashboard.ringParts, _dashboard.axleParts,
               _dashboard.hubParts)
     for k, (maker, name) in enumerate(zip(makers, MECHANISM_LOOKS)):
@@ -580,17 +723,25 @@ class SpaceViewport(QWidget):
 
   def _satelliteParts(self, first: int, count: int) -> list:
     """Returns the satellites' parts (each the space station's meshes,
-    '_stationmeshes'), each satellite on its slot from 'first'."""
+    '_stationmeshes'), each satellite on its slot from 'first', its
+    inside and its garden ('_interiormeshes', '_kolonihave') on a slot
+    of their own after them (it glows, 'INSIDE_FILL')."""
     rainbow = stationPicturesReady()['rainbow']
+    inside = dict(interiorMeshes())
+    inside.update(gardenMeshes())
     out = []
     for k in range(count):
       for name, rows in stationMeshes().items():
         look, unlit = STATION_LOOKS[name]
         coloured = name in ('antennas', 'beacons')
         out.append(_partOf(self._kept1(Mesh(*rows)), look, first + k,
-                           False, rainbow if coloured else '', unlit, 1.0,
-                           False, None, False,
+                           name in ('hull', 'windows'),
+                           rainbow if coloured else '',
+                           unlit, 1.0, False, None, False,
                            RAINBOW_SLIDES if coloured else 0.0))
+      for name, rows in inside.items():
+        out.append(_partOf(self._kept1(Mesh(*rows)), INSIDE_LOOKS[name],
+                           first + count + k, True))
     return out
 
   def _pieceLook(self, piece: tuple, labels: object) -> tuple:
@@ -631,7 +782,35 @@ class SpaceViewport(QWidget):
     if kind == 'gun':
       look, picture, _, _ = gunParts()[what]
       return look, picture, False, None, 1.0
+    if kind == 'gun mark':
+      return ((255, 255, 255), 0.0, 1.0), str(cabinPicturesReady()[
+        'three']), True, None, 1.0
+    if kind == 'hatch':
+      return HATCH_LOOK, '', False, None, 1.0
+    if kind == 'car':
+      return CAR_LOOK, '', False, None, 1.0
+    if kind == 'door':
+      return WALKWAY_LOOKS['door'], '', False, None, 1.0
+    if kind == 'sbolt':
+      return BOLT_LOOK, '', False, None, 1.0
+    if kind == 'sring':
+      return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
     return looks['black'], '', False, None, 1.0
+
+  def _walkwayParts(self, parts: dict, slot: int) -> list:
+    """Returns the way in's 'parts' (meshes by look) on 'slot': the
+    lamps and keys shining, the glass see-through."""
+    out = []
+    for name, rows in parts.items():
+      look = WALKWAY_LOOKS[name]
+      mesh = self._kept1(Mesh(*rows))
+      if name == 'glass':
+        out.append(_partOf(mesh, look, slot, False, '', True,
+                           WALKWAY_GLASS))
+      else:
+        out.append(_partOf(mesh, look, slot, False, '',
+                           name in WALKWAY_GLOWS))
+    return out
 
   def _deckLook(self, material: int | None) -> tuple:
     """Returns a tape deck material's look, picture ('' none) and how
@@ -674,6 +853,16 @@ class SpaceViewport(QWidget):
     self.loaded = root is not None
     if root is not None:
       root.boardPicked.connect(self.boardPicked)
+
+
+def _armOf(pad: tuple, swing: float) -> tuple:
+  """Returns the walkway's place, turn, whether it shows and its glow,
+  from the pad's ('pad': its place, turn, whether it shows) swung away
+  'swing' rad about its pivot."""
+  place, turn, shown = pad
+  there = tuple(p + r for p, r in zip(place, rotated(turn, armPivot())))
+  return there, product(turn, aboutAxis((0.0, 0.0, 1.0), swing)), (
+    shown), ARM_FILL
 
 
 def _partOf(geometry: object, look: tuple, slot: int, culled: bool,

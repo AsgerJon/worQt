@@ -33,6 +33,18 @@ steps (user: "we just put a factor on each step"). On the ground
 ('GROUND_NEAR') the legs want short steps ('GROUND_STEP'). A step
 longer than 'SNAP_STEP' (time warp) turns the vessel on rails: its
 autopilot's aim at once.
+
+The space station's solids ('_stationsolids': a torus, cylinders,
+capsules in its own axes) meet the hull's balls (user, 2026-11-17: a bad
+approach passed straight through the station): the host says which
+solids are near ('near', a bit each) and where the station is from the
+vessel at the call's start (its middle, velocity, fall, turn and spin:
+small numbers, the vessel's own frame); within a step its place is had
+from those (its middle moving and falling, its turn spinning), each
+ball pressed out of a solid by a stiff spring ('SOLID_OMEGA' for the
+vessel's mass), a damper and friction against the solid's own motion
+(the ring's rim runs at 94 m/s), the steps short ('CONTACT_STEP'); the
+station on rails, as heavy as it is (500 000 t), moves on as it was.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -40,6 +52,7 @@ from __future__ import annotations
 
 import warp as wp
 
+from ._stationsolids import hullReach
 from ._vessel import MASS, SAG
 
 wp.config.log_level = wp.LOG_WARNING
@@ -87,7 +100,8 @@ MODE, HELD, ANCHOR = 24, 25, 29
 AIM_PITCH, AIM_TURN, AIM_HEADING, AIM_TRAVEL = 30, 31, 32, 33
 TOUCHING, STEPS = 34, 35
 RCS, MATCH_SPIN = 36, 39
-STATE = 42
+BUMP = 42
+STATE = 43
 #  The shortest step, s, and the most a launch takes (a guard).
 LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
@@ -97,6 +111,23 @@ LEG_STIFF = _single(9.82 * MASS / 4.0 / SAG)
 LEG_DAMP = _single(3e5 * MASS / 20e3)
 LEG_SLIDE = _single(2e5 * MASS / 20e3)
 LEG_GRIP = _single(0.8)
+#  A ball of the hull pressed into a solid of the station: the spring
+#  (the vessel's mass times 'SOLID_OMEGA' squared: some 0.3 s a bounce),
+#  the damper ('SOLID_DAMPING' of critical), the sliding damper (N s/m a
+#  kg) and the grip; the steps while any solid is near, s. The solids'
+#  kinds (the '_stationsolids' ones); a gradient's step, m.
+SOLID_OMEGA = _single(10.0)
+SOLID_DAMPING = _single(0.3)
+SOLID_SLIDE = _single(10.0)
+SOLID_GRIP = _single(0.5)
+#  The hull reaches this far from the vessel's middle, m (a solid further
+#  from it is skipped for the step: on a single GPU thread each test
+#  counts).
+HULL_REACH = _single(hullReach())
+CONTACT_STEP = _single(1.0 / 240.0)
+TORUS = wp.constant(0)
+CYLINDER = wp.constant(1)
+GRADIENT_STEP = _single(0.01)
 #  The autopilot: rad/s wanted a rad off, the fastest it turns (rad/s),
 #  and how fast the wheels take the vessel to the rate wanted (1/s).
 RATE_GAIN = _single(0.8)
@@ -143,7 +174,12 @@ class Fleet:
   out); its mass, moments of inertia, legs (four a vessel), drag (along,
   across) and wheels' most torques. Scratch: the bodies' places from
   their parents now, and their places and velocities at the span's
-  ends, 'SLOTS' rows a vessel."""
+  ends, 'SLOTS' rows a vessel. The hull's balls (x y z radius, its own
+  axes) and the station's solids (kind, from, to, radius: its own
+  axes), all vessels'; each vessel's near solids ('near', a bit each),
+  and the station from it at the call's start: its middle (from the
+  vessel), velocity, fall (its anchor's pull), turn (its own axes to
+  the ecliptic's) and spin (rad/s, the ecliptic's axes)."""
   states: wp.array2d(dtype=wp.float32)
   masses: wp.array(dtype=wp.float32)
   inertias: wp.array(dtype=wp.vec3)
@@ -151,6 +187,17 @@ class Fleet:
   drags: wp.array(dtype=wp.vec2)
   wheels: wp.array(dtype=wp.vec3)
   offsets: wp.array(dtype=wp.vec3)
+  balls: wp.array(dtype=wp.vec4)
+  solidKinds: wp.array(dtype=wp.int32)
+  solidFrom: wp.array(dtype=wp.vec3)
+  solidTo: wp.array(dtype=wp.vec3)
+  solidRadii: wp.array(dtype=wp.float32)
+  near: wp.array(dtype=wp.int32)
+  solidAt: wp.array(dtype=wp.vec3)
+  solidSpeed: wp.array(dtype=wp.vec3)
+  solidFall: wp.array(dtype=wp.vec3)
+  solidTurn: wp.array(dtype=wp.quat)
+  solidSpin: wp.array(dtype=wp.vec3)
 
 
 @wp.func
@@ -510,6 +557,48 @@ def aimFor(mode: int, p: wp.vec3, v: wp.vec3, ground: wp.vec3,
   return wp.vec4(0.0, 0.0, 0.0, 0.0)
 
 
+@wp.func
+def solidDistance(kind: int, a: wp.vec3, b: wp.vec3, radius: float,
+                  x: wp.vec3) -> float:
+  """Returns how far 'x' is out of a solid of the station (its own
+  axes; less than nought: inside): '_stationsolids.solidDistance'."""
+  if kind == TORUS:
+    flat = wp.sqrt(x[0] * x[0] + x[1] * x[1]) - a[0]
+    return wp.sqrt(flat * flat + x[2] * x[2]) - radius
+  if kind == CYLINDER:
+    across = wp.sqrt(x[0] * x[0] + x[1] * x[1]) - radius
+    along = wp.max(a[2] - x[2], x[2] - b[2])
+    outA = wp.max(across, 0.0)
+    outB = wp.max(along, 0.0)
+    return wp.min(wp.max(across, along), 0.0) + wp.sqrt(outA * outA
+                                                         + outB * outB)
+  ab = b - a
+  long2 = wp.dot(ab, ab)
+  share = float(0.0)
+  if long2 > 0.0:
+    share = wp.clamp(wp.dot(x - a, ab) / long2, 0.0, 1.0)
+  return wp.length(x - (a + ab * share)) - radius
+
+
+@wp.func
+def solidNormal(kind: int, a: wp.vec3, b: wp.vec3, radius: float,
+                x: wp.vec3) -> wp.vec3:
+  """Returns the way out of a solid at 'x' (its own axes): its
+  distance's gradient, by central differences."""
+  h = GRADIENT_STEP
+  g = wp.vec3(
+    solidDistance(kind, a, b, radius, x + wp.vec3(h, 0.0, 0.0))
+    - solidDistance(kind, a, b, radius, x - wp.vec3(h, 0.0, 0.0)),
+    solidDistance(kind, a, b, radius, x + wp.vec3(0.0, h, 0.0))
+    - solidDistance(kind, a, b, radius, x - wp.vec3(0.0, h, 0.0)),
+    solidDistance(kind, a, b, radius, x + wp.vec3(0.0, 0.0, h))
+    - solidDistance(kind, a, b, radius, x - wp.vec3(0.0, 0.0, h)))
+  size = wp.length(g)
+  if size > 0.0:
+    return g / size
+  return wp.vec3(0.0, 0.0, 1.0)
+
+
 @wp.kernel
 def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
           longest: float):
@@ -558,6 +647,16 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   anchorMu = sky.mus[b]
   steps = int(0)
   touching = int(0)
+  bump = float(0.0)
+  near = fleet.near[i]
+  solidAt = fleet.solidAt[i]
+  solidSpeed = fleet.solidSpeed[i]
+  solidFall = fleet.solidFall[i]
+  solidTurn = fleet.solidTurn[i]
+  solidSpin = fleet.solidSpin[i]
+  spinRate = wp.length(solidSpin)
+  stiff = mass * SOLID_OMEGA * SOLID_OMEGA
+  damp = 2.0 * SOLID_DAMPING * mass * SOLID_OMEGA
   far = farPull(sky, fleet, row, b, hi + lo)
   while done < seconds and steps < MOST_STEPS:
     d = (hi - baseHi) + (lo - baseLo)
@@ -567,6 +666,8 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
     dt = wp.min(dt, KEPLER_SHARE * wp.sqrt(r * r * r / anchorMu))
     if height < GROUND_NEAR:
       dt = wp.min(dt, GROUND_STEP)
+    if near != 0:
+      dt = wp.min(dt, CONTACT_STEP)
     dt = wp.max(dt, LEAST_STEP)
     # coast half a step on the anchor's pull
     arc = drifted(hi + lo, vhi + vlo, anchorMu, 0.5 * dt)
@@ -650,6 +751,57 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
             force = force + push2
             torque = torque + wp.cross(arm, push2)
             touching = touching + 1
+    # the hull's balls pressed out of the station's near solids
+    if near != 0:
+      tau = done + 0.5 * dt
+      offset = solidAt + solidSpeed * tau + solidFall * (0.5 * tau * tau)
+      turn = solidTurn
+      if spinRate > 0.0:
+        turn = wp.mul(wp.quat_from_axis_angle(solidSpin / spinRate,
+                                              spinRate * tau), solidTurn)
+      flowing = solidSpeed + solidFall * tau
+      spinWorld = wp.quat_rotate(q, w)
+      middle = wp.quat_rotate_inv(turn, d - offset)
+      for j in range(fleet.solidKinds.shape[0]):
+        if ((near >> j) & 1) == 0:
+          continue
+        kind = fleet.solidKinds[j]
+        sa = fleet.solidFrom[j]
+        sb = fleet.solidTo[j]
+        sr = fleet.solidRadii[j]
+        clear = solidDistance(kind, sa, sb, sr, middle)
+        if clear > HULL_REACH:
+          continue
+        for k in range(fleet.balls.shape[0]):
+          ball = fleet.balls[k]
+          local = wp.vec3(ball[0], ball[1], ball[2])
+          if clear > wp.length(local) + ball[3]:
+            continue
+          arm = wp.quat_rotate(q, local)
+          rel = d + arm - offset
+          own = wp.quat_rotate_inv(turn, rel)
+          gap = solidDistance(kind, sa, sb, sr, own) - ball[3]
+          if gap < 0.0:
+            normal = wp.quat_rotate(turn, solidNormal(kind, sa, sb, sr,
+                                                      own))
+            reach = ball[3] + 0.5 * gap
+            touch = arm - normal * reach
+            there = rel - normal * reach
+            moving = v + wp.cross(spinWorld, touch) - (
+              flowing + wp.cross(solidSpin, there))
+            into = wp.dot(moving, normal)
+            press = -stiff * gap - damp * into
+            if press > 0.0:
+              slide = moving - normal * into
+              rub = slide * (-SOLID_SLIDE * mass)
+              most = SOLID_GRIP * press
+              size = wp.length(rub)
+              if size > most:
+                rub = rub * (most / size)
+              shove = normal * press + rub
+              force = force + shove
+              torque = torque + wp.cross(touch, shove)
+              bump = wp.max(bump, -into)
     # the wheels: the autopilot, each key taking its own axis over
     own = wp.quat_rotate(wp.quat_inverse(q), torque)
     target = aimFor(mode, p, v, ground, height < airTop, spin, aimPitch,
@@ -726,3 +878,4 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   vecPut(states, i, SPIN, w)
   states[i, TOUCHING] = float(touching)
   states[i, STEPS] = float(steps)
+  states[i, BUMP] = bump

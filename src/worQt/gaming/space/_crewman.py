@@ -17,7 +17,7 @@ import math
 from worQt.gaming.sandbox._gait import Gait
 
 from ._aerospike import G0
-from ._cockpit import CUSHION, SCALE, seated
+from ._cockpit import CUSHION, FLOOR, HIPS, LIMBS, SCALE, seated
 from ._turns import aboutAxis, cross, dot, norm, product, quaternionOf
 from ._turns import rotated, unit
 
@@ -52,6 +52,8 @@ RIGHTING = 0.5
 SWING = 0.6
 FLOAT_LEGS, FLOAT_ARMS = -0.35, -0.7
 #  The keys' wishes: ahead, back, left, right.
+#  Off the sofa he stands this far before its seat's middle, m.
+LEAVE = 0.6
 MOVES = {'ahead': (1.0, 0.0), 'back': (-1.0, 0.0), 'left': (0.0, 1.0),
          'right': (0.0, -1.0)}
 
@@ -64,7 +66,9 @@ class Crewman:
   whether it 'touches' anything and the way out of what it touches
   ('ground', summed normals' unit, None: nothing), his 'gait', where the
   gravity gun pulls him ('towTo': before a magic bolt, None: nowhere;
-  'towing', that bolt's index).
+  'towing', that bolt's index), and on the sofa ('lounge': the seat's
+  top middle and the way it faces; None: not on it; user, 2026-11-17:
+  "chill out by sitting in sofa"), sitting as in his chair, still.
   'unbuckled' gets him up, 'satDown' sits him if near enough; 'righted'
   stands him against the pull; 'wantOf' is how his legs want to move for
   the keys held; 'eyeOf' and 'figureOf' where his eyes and limbs are.
@@ -85,13 +89,14 @@ class Crewman:
   gait: Gait
   towTo: tuple | None
   towing: int | None
+  lounge: tuple | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.buckled = True
+    self.buckled, self.lounge = True, None
     self._stood()
     self.gait = Gait()
 
@@ -113,6 +118,31 @@ class Crewman:
     self.buckled = True
     self._stood()
     return True
+
+  @property
+  def sitting(self, ) -> bool:
+    """The 'sitting' property says whether he sits (in his chair or on
+    the sofa): his body is not moved then."""
+    return self.buckled or self.lounge is not None
+
+  def lounged(self, seat: tuple, facing: tuple) -> None:
+    """The 'lounged' method sits him on the sofa ('seat': its top's
+    middle; 'facing': the way it faces), still, his head ahead."""
+    self.buckled, self.lounge = False, (tuple(seat), tuple(facing))
+    self.up, self.ahead = (0.0, 0.0, 1.0), tuple(facing)
+    self.middle = tuple(s + 0.3 * u for s, u in zip(seat, self.up))
+    self.velocity, self.touches = (0.0, 0.0, 0.0), True
+    self.towing, self.towTo = None, None
+
+  def offSofa(self, ) -> None:
+    """The 'offSofa' method stands him up off the sofa, before it,
+    facing the way it does."""
+    seat, facing = self.lounge
+    self.lounge = None
+    soles = (seat[0] + LEAVE * facing[0], seat[1] + LEAVE * facing[1],
+             FLOOR + 0.002)
+    self.middle = tuple(s + MIDDLE * u for s, u in zip(soles, self.up))
+    self.velocity, self.ground = (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)
 
   def towed(self, index: int, hold: tuple) -> None:
     """The 'towed' method has the gravity gun pull him to bolt 'index',
@@ -144,8 +174,12 @@ class Crewman:
 
   def eyeOf(self, yaw: float) -> tuple:
     """The 'eyeOf' method returns his eyes' place, his head turned
-    'yaw', swayed by his stride."""
+    'yaw', swayed by his stride (on the sofa, sitting)."""
     facing = self.facing(yaw)
+    if self.lounge is not None:
+      origin = self._seatedFrom()
+      return tuple(o + 28.0 * SCALE * u + EYES_AHEAD * f for o, u, f in zip(
+        origin, self.up, facing))
     left = cross(self.up, facing)
     sway, rise = self.gait.offset()
     return tuple(s + EYES_UP * u + EYES_AHEAD * f - sway * l + rise * u
@@ -232,6 +266,8 @@ class Crewman:
     skin's 'parts': each part's index, its pivot's place and its turn
     (his body facing 'yaw' from 'ahead'): walking, his legs and arms
     swinging with his stride; floating, hanging loose."""
+    if self.lounge is not None:
+      return self._seatedFigure(parts)
     facing = self.facing(yaw)
     left = cross(self.up, facing)
     body = quaternionOf(tuple((facing[k], left[k], self.up[k])
@@ -256,10 +292,33 @@ class Crewman:
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def _seatedFrom(self, ) -> tuple:
+    """Returns where his figure is laid from sitting on the sofa (as in
+    his chair: his hips on the seat, his soles' line below them)."""
+    seat, facing = self.lounge
+    return tuple(s - 0.05 * f + (HIPS - 12.0 * SCALE) * u for s, f, u in zip(
+      seat, facing, self.up))
+
+  def _seatedFigure(self, parts: tuple) -> tuple:
+    """Returns his figure sitting on the sofa (his chair's pose, turned
+    the way the sofa faces)."""
+    facing = self.lounge[1]
+    left = cross(self.up, facing)
+    body = quaternionOf(tuple((facing[k], left[k], self.up[k])
+                              for k in range(3)))
+    origin = self._seatedFrom()
+    out = []
+    for index, part in enumerate(parts):
+      local = tuple(SCALE * p for p in part[2])
+      place = tuple(o + x for o, x in zip(origin, rotated(body, local)))
+      limb = aboutAxis((0.0, 1.0, 0.0), LIMBS.get(part[0], 0.0))
+      out.append((index, place, product(body, limb)))
+    return tuple(out)
+
   def _stood(self, ) -> None:
     """Stands him behind his chair, still, upright, facing ahead,
     touching the floor."""
-    self.up, self.ahead = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)
+    self.up, self.ahead, self.lounge = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), None
     self.middle = tuple(s + MIDDLE * u for s, u in zip(STAND, self.up))
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)

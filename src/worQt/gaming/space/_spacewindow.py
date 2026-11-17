@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import faulthandler
 import math
+import random
 import sys
 import threading
 import time
@@ -25,22 +26,32 @@ from worQt.gaming.sandbox._speaker import Speaker
 from ._accelerometer import Accelerometer
 from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
-from ._bolts import holdOf, rocketBolts
-from ._cabinmixer import DOCKS, EATS, HURTS, THRUSTING, THUD, THUDS
-from ._cabinmixer import TOLD, TOWING, TOWS
+from ._bolts import holdOf, rocketBolts, stationBolts
+from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
+from ._cabinmixer import THUD, THUDS
+from ._cabinmixer import LAUGHS, TOLD, TOWING, TOWS
 from ._chasecamera import ChaseCamera
-from ._cockpit import EYE, LIMITS, THRUSTS, Cockpit
+from ._cockpit import CUSHION, EYE, LIMITS, THRUSTS, Cockpit
 from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
-from ._crewman import PUSH, SIT
+from ._crewman import MIDDLE, PUSH, SIT
 from ._dashpictures import picturesReady
-from ._furnishings import candleLight
+from ._furnishings import candleLight, sofaSeat
 from ._instruments import Instruments, limitNotch
 from ._navball import Navball
 from ._orrery import Orrery, lengthText, timeText
+from ._approach import closestApproach
+from ._gunbeam import muzzle, strengthOf
+from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
+from ._kolonihave import gardenSolids
+from ._night import MORNING, morningIn, nightIn
+from ._quest import Quest
 from ._rendezvousguidance import RendezvousGuidance
+from ._stationinterior import DECK, HUB_INSIDE, PLANE, cabinInside, roomOf
+from ._stationinterior import shaftWays
 from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
+from ._sleep import Sleep
 from ._spaceviewport import SpaceViewport
 from ._station import SPIN, Station
 from ._teleprinter import ICONS
@@ -48,6 +59,8 @@ from ._timekeeper import Timekeeper
 from ._turns import cross, dot, norm, quaternionOf, rotated, unit
 from ._vessel import MASS, Vessel
 from ._vitals import EATING, Vitals
+from ._walkway import PLATFORM_FAR, Walkway, doorwayInside
+from ._cockpit import FLOOR, inCabin
 
 #  A frame, ms; the longest step a frame takes, s.
 TICK = 16
@@ -59,10 +72,35 @@ LONGEST_REAL = 0.1
 #  needs no Python, so it speaks even when Python is locked); a readying
 #  step taking this long is called stuck on screen and on the console.
 FROZEN = 10.0
+#  The game starts outside (user, 2026-11-17: "Asger must start outside
+#  in the night where we can reasonably spot Terra Prime from the
+#  ground"): at night on the pad (now if it is dark with 'NIGHT_LEFT' s
+#  of it left, else 'INTO_NIGHT' s after the next dusk), Terra Prime
+#  'RISEN' rad of its path short of overhead (over him a minute on),
+#  Asger on the tower's platform facing the walkway. False (the render
+#  and window scripts): in his chair, now, the walkway away.
+START_OUTSIDE = True
+NIGHT_LEFT = 3600.0
+INTO_NIGHT = 3600.0
+RISEN = 0.06
+#  He comes to the pad without his dinner (the quest's fourth step: "Eat
+#  food"): this hungry, points of food.
+SUPPERLESS = 12.0
+#  Launching with the walkway still out, Asger is laughed at (user,
+#  2026-11-17: "have risitas laugh at Asger and then restate the quest
+#  info"), no more often than every 'LAUGH_EVERY' real s.
+LAUGH_EVERY = 5.0
+#  Something this near the doorway (m from it) keeps the door open.
+DOORWAY_CLEAR = 0.35
 STUCK = 60.0
 #  The last readying step's words (the scene furnished on Qt's thread).
 FURNISHING = 'furnishing the cabin (the deck, the room, the dashboard)'
-#  The throttle's keys: how fast Shift and Ctrl open and close it, a s.
+#  The throttle's keys (user, 2026-11-17: "key_SHIFT is reserved to
+#  getting up out of the chair": the throttle left Shift and Ctrl for +
+#  and -; = is + unshifted on a US board): how fast they open and close
+#  it, a s.
+THROTTLE_UP = (Qt.Key.Key_Plus, Qt.Key.Key_Equal)
+THROTTLE_DOWN = (Qt.Key.Key_Minus,)
 THROTTLE_RATE = 0.6
 #  The aim's keys (user, 2026-11-16: "roll-insensitive controls that
 #  work only in the parallel of travel"): W S up and down over the
@@ -90,7 +128,8 @@ NAV_RADIUS = 104.0
 WHEEL_THROTTLE = 0.05
 CLICK_THROTTLE = 0.1
 #  The keys as their caps on the board name them.
-CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Control: 'Ctrl',
+CAPS = {Qt.Key.Key_Shift: 'Shift', Qt.Key.Key_Plus: '+',
+        Qt.Key.Key_Equal: '+', Qt.Key.Key_Minus: '\u2212',
         Qt.Key.Key_Z: 'Z', Qt.Key.Key_X: 'X', Qt.Key.Key_T: 'T',
         Qt.Key.Key_F: 'F', Qt.Key.Key_R: 'R', Qt.Key.Key_W: 'W',
         Qt.Key.Key_S: 'S', Qt.Key.Key_A: 'A', Qt.Key.Key_D: 'D',
@@ -135,6 +174,27 @@ DOCK_SHOWN = 5e3
 MATCH_REACH = 5e4
 #  The readout says how far the station is within this, m.
 STATION_SAID = 2e6
+#  Time is not warped within this of the station's port (its solids met
+#  in short steps; its antennas sweep out to 1.2 km), m.
+WARP_CLEAR = 2e3
+#  Up, looking within this of his chair's cushion, E sits him, rad.
+CHAIR_AIM = math.radians(25.0)
+#  E within this of an elevator's stop's door calls it there, m.
+CALL_REACH = 6.0
+#  The station's rooms as the readout says them.
+ROOMS_SAID = {'hatch': 'the hatch', 'port': 'the docking port',
+              'hub': 'the hub', 'shaft': 'a spoke\'s shaft',
+              'ring': 'the ring\'s deck'}
+#  The gravity gun holding a bolt: its beam turns this fast (rad/s), the
+#  gun shakes this much as it strains (m: user, 2026-11-17, "give the
+#  gravity gun some cool animations, like a laser beam").
+BEAM_TURNS = 9.0
+STRAIN = 0.002
+#  The hatch's lid opens (and closes) most of the way in this, s.
+HATCH_EASE = 0.5
+#  The closest approach to the station is worked out anew this often,
+#  s of real time (some 2 ms each).
+CLOSEST_EVERY = 0.25
 #  The rendezvous's phases as the board and the readout say them.
 RENDEZVOUS_SAID = {'plane': 'to its plane', 'wait': 'waiting',
                    'burn': 'burning', 'coast': 'coasting',
@@ -159,8 +219,9 @@ MOVING = {Qt.Key.Key_W: 'ahead', Qt.Key.Key_S: 'back',
 #  The actions that take the controls from the ascent guidance.
 TAKING = ('full', 'cut', 'hold', 'prograde', 'retrograde', 'aim',
           'throttle', 'pad')
-HINT = ('click the view: look round   wheel: zoom   Esc: let the mouse go'
-        '   click a lamp: do it   V: Asger\'s eyes   B: get up / sit')
+HINT = ('click: look round   wheel: zoom   Esc: free the mouse   click a'
+        ' lamp: do it   V: Asger\'s eyes   Shift: get up   E at the chair:'
+        ' sit')
 MAP_HINT = ('drag: turn   wheel: zoom   click a name: look at it   '
             '⌫: back to the rocket   M: back to flying')
 
@@ -190,17 +251,29 @@ class SpaceWindow(QMainWindow):
     QMainWindow.__init__(self)
     self.setWindowTitle('Space')
     self.began = datetime.now(timezone.utc)
+    if START_OUTSIDE:
+      self.began += timedelta(0, _nightStart(self.began))
     self.system = solarSystemOn(julianOf(self.began))
     self.keeper = Timekeeper(self.system)
-    self.station = Station(self.system)
+    self.station = (Station(self.system, -RISEN) if START_OUTSIDE else
+                    Station(self.system))
+    self.walkway, self.quest = Walkway(START_OUTSIDE), Quest()
+    self._manualOpen, self._laughedAt = False, -LAUGH_EVERY
     self.vessel = Vessel()
     self.guidance = AscentGuidance()
     self.accelerometer, self.world, self._leaping = (Accelerometer(), None,
                                                      False)
     self.vitals, self.bolts, self._tows = Vitals(), rocketBolts(), 0
+    self.sleep = Sleep()
     self.docking = DockingPort(self.station)
     self.autodock, self._docks = DockingGuidance(), 0
+    self._crashes, self._crash, self._bumping = 0, 0.0, False
+    self._closest, self._closestAt, self._closestReal = None, 0.0, 0.0
+    self.elevators = [Elevator() for _ in range(4)]
+    self._stationed, self._hatch, self._garden = False, 0.0, None
+    self._beamSince, self._shaking = 0.0, random.Random(3)
     self.rendezvous = RendezvousGuidance(self.station)
+    self._armed, self._laughs = False, 0
     self._noseCamera, self._pulses, self._reading = False, {}, None
     self._padded()
     self.chase, self.orrery, self.scenery = (ChaseCamera(), Orrery(),
@@ -223,6 +296,7 @@ class SpaceWindow(QMainWindow):
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
     self.timer.timeout.connect(self.tick)
+    self._started()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PySide API   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -313,19 +387,25 @@ class SpaceWindow(QMainWindow):
     keeper, vessel, system = self.keeper, self.vessel, self.system
     self._steered(real)
     self.guidance.acted(vessel, system, keeper)
+    self._launchKept(now)
     vessel.aimKept(system)
+    self._sleepKept(now)
     self._warpKept()
     seconds = keeper.secondsOf(real)
     self._docking()
     if not vessel.docked:
-      self.flight.flown((vessel,), system, keeper.now, seconds)
+      self.flight.flown((vessel,), system, keeper.now, seconds, math.inf,
+                        self.station)
+      self._bumped()
     keeper.ticked(seconds)
     self._dockedOrNot()
+    self._approachKept(now)
     self.accelerometer.measured(vessel, system, seconds, keeper.factor > 1)
     self._cabinMoved(real)
     self._lived(real)
     self.instruments.switched = {'autodock': (self.autodock.on
-                                              or self.rendezvous.on),
+                                              or self.rendezvous.on
+                                              or self._armed),
                                  'camera': self._noseCamera}
     self.instruments.acted(real, vessel, system, keeper, self.guidance,
                            self.mapOpen, self.inside, self._header())
@@ -336,6 +416,8 @@ class SpaceWindow(QMainWindow):
     told[TOWS] = self._tows
     told[THRUSTING] = min(1.0, norm(vessel.rcs) / (RCS_ACCEL * MASS))
     told[DOCKS] = self._docks
+    told[CRASHES], told[CRASH] = self._crashes, self._crash
+    told[LAUGHS] = self._laughs
     self.speaker.heard(tuple(told))
     right, down = self.pointer.moved()
     if right or down:
@@ -366,6 +448,10 @@ class SpaceWindow(QMainWindow):
     viewport.vitalsShown(vitals.health, vitals.food, vitals.hurt,
                          1.0 - vitals.eating / EATING if vitals.eating
                          else 0.0, vitals.cause or '')
+    viewport.sleepShown(self.sleep.shade(now))
+    self._questKept()
+    viewport.questShown(self.quest.rows())
+    viewport.manualShown(self._manualOpen)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -468,6 +554,10 @@ class SpaceWindow(QMainWindow):
     working it); returns whether it was one of the window's."""
     if key in CAPS:
       self._flashed[CAPS[key]] = time.perf_counter()
+    if self._manualOpen:
+      if key in (Qt.Key.Key_E, Qt.Key.Key_Escape):
+        self._manualOpen = False
+      return True
     if key == Qt.Key.Key_Escape:
       self.pointer.letGo()
       return True
@@ -476,8 +566,18 @@ class SpaceWindow(QMainWindow):
       if action in DEAD_KEYS:
         self._acted(action)
       return True
+    if self.sleep.on:
+      return True
     if key == Qt.Key.Key_E and self.inside:
       self._used(False)
+      return True
+    if key == Qt.Key.Key_Shift:
+      crewman = self.cockpit.crewman
+      if crewman.buckled:
+        self._gotUp()
+      elif crewman.lounge is not None:
+        crewman.offSofa()
+        self._noteOf('Asger gets up off the sofa')
       return True
     if not self.cockpit.crewman.buckled:
       return self._upPressed(key)
@@ -487,7 +587,7 @@ class SpaceWindow(QMainWindow):
       self.vessel.aimNudged(self.system, up * AIM_STEP, right * AIM_STEP)
       self._glanced('aim')
       return True
-    if key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):
+    if key in THROTTLE_UP + THROTTLE_DOWN:
       self._taken('throttle')
       self._glanced('throttle')
       return True
@@ -570,7 +670,10 @@ class SpaceWindow(QMainWindow):
     elif action == 'pad':
       if self.mapOpen:
         self.orrery.opened(vessel, system)
+      elif self._aboardWhy():
+        self._noteOf('Not back to the pad: %s' % self._aboardWhy())
       else:
+        vessel.docked = False
         self._padded()
     elif action == 'view':
       self.inside = not self.inside
@@ -585,7 +688,27 @@ class SpaceWindow(QMainWindow):
     elif action in ('match', 'autodock', 'undock'):
       self._docked(action)
     elif action == 'eat':
-      self._noteOf(self.vitals.ate() or 'Asger eats a ration (RCIR)')
+      why = self.vitals.ate()
+      self._noteOf(why or 'Asger eats a ration (RCIR)')
+      if not why:
+        self._questTicked('ate')
+    elif action in ('door', 'door outside'):
+      self._doorWorked()
+    elif action == 'lock':
+      why = self.walkway.locking()
+      self._noteOf(why or ('The door is locked' if self.walkway.locked
+                           else 'The door is unlocked'))
+    elif action == 'walkway':
+      self._dismissed()
+    elif action == 'manual':
+      self._manualOpen = True
+      self._questTicked('read')
+    elif action == 'lounge':
+      self.cockpit.crewman.lounged(*sofaSeat())
+      self._questTicked('lounged')
+      self._noteOf('Asger chills out on the sofa (Shift: get up)')
+    elif action == 'sleep':
+      self._slept()
     elif action == 'play':
       self.instruments.deck.play()
     elif action == 'halt':
@@ -595,14 +718,17 @@ class SpaceWindow(QMainWindow):
 
   def _upPressed(self, key: object) -> bool:
     """Acts on a key pressed while Asger is out of his chair: his legs'
-    keys (held; Space a leap), the view's own keys and B; the dashboard's
-    others he cannot reach from here (said)."""
+    keys (held; Space a leap), the view's own keys and B (Shift: he is
+    up already); the dashboard's others he cannot reach from here
+    (said)."""
     if key in MOVING:
       return True
     if key == Qt.Key.Key_Space:
       self._leaping = True
       return True
-    if key in (Qt.Key.Key_Shift, Qt.Key.Key_Control) or key in ROLLING:
+    if key in THROTTLE_UP + THROTTLE_DOWN or key in ROLLING:
+      return True
+    if key == Qt.Key.Key_Shift:
       return True
     action = KEY_ACTIONS.get(key)
     if action is None:
@@ -610,8 +736,8 @@ class SpaceWindow(QMainWindow):
     if action in UP_KEYS:
       self._acted(action)
     else:
-      self._noteOf('Asger is out of his chair: B sits him down (or reach'
-                   ' the input and click it)')
+      self._noteOf('Asger is out of his chair: E at the chair sits him'
+                   ' down (or reach the input and click it)')
     return True
 
   def _buckled(self, ) -> None:
@@ -623,14 +749,208 @@ class SpaceWindow(QMainWindow):
       cockpit.strappedIn()
       self._noteOf('Asger wakes in his chair')
     elif cockpit.crewman.buckled:
-      cockpit.gotUp()
-      self._noteOf('Asger is up: W A S D, Space, B to sit again; click a'
-                   ' glowing bolt: the gun pulls him there')
+      self._gotUp()
     elif cockpit.satDown():
       self._noteOf('Asger sits')
     else:
       self._noteOf('Too far from the chair (%.1f m): within %.0f m'
                    % (cockpit.crewman.seatFar(), SIT))
+
+  def _started(self, ) -> None:
+    """Starts the game: outside (user, 2026-11-17: "Asger must start
+    outside in the night where we can reasonably spot Terra Prime from
+    the ground"), Asger up on the tower's platform facing the walkway,
+    looking up a little, told the first step; else in his chair, the
+    walkway's steps done."""
+    if not START_OUTSIDE:
+      for name in ('aboard', 'locked', 'dismissed'):
+        self.quest.ticked(name)
+      return
+    cockpit = self.cockpit
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    crewman.placed((PLATFORM_FAR + 1.2, 0.0, FLOOR + 0.002 + MIDDLE),
+                   (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)
+    cockpit.yaw, cockpit.pitch = 0.0, 0.35
+    self.vitals.food = SUPPERLESS
+    self._noteOf('Night on the pad, Terra Prime passing over: look up. '
+                 'Then: %s' % self.quest.textOf(self.quest.current))
+
+  def _promptOf(self, control: object) -> str:
+    """Returns what working 'control' does now (the door's keys as the
+    door is: open or shut, locked or not)."""
+    walkway = self.walkway
+    if control.action in ('door', 'door outside'):
+      return 'Close the door' if walkway.wanted else 'Open the door'
+    if control.action == 'lock':
+      return 'Unlock the door' if walkway.locked else 'Lock the door'
+    return control.peep.prompt()
+
+  def _doorWorked(self, ) -> None:
+    """Opens the door, or closes it if nothing is in the doorway
+    (said)."""
+    walkway = self.walkway
+    if walkway.wanted:
+      if self._inDoorway():
+        self._noteOf('Something is in the doorway')
+        return
+      walkway.closed()
+      self._noteOf('The door slides shut')
+      return
+    why = walkway.opened()
+    self._noteOf(('The door stays shut: %s' % why) if why else
+                 'The door slides open')
+
+  def _inDoorway(self, ) -> bool:
+    """Returns whether Asger or something loose is in the doorway."""
+    crewman = self.cockpit.crewman
+    points = [place for place, _ in self.world.shown()]
+    if not crewman.sitting:
+      points += [crewman.middle, crewman.soles()]
+    return any(doorwayInside(point) > -DOORWAY_CLEAR for point in points)
+
+  def _dismissed(self, ) -> None:
+    """Sends the walkway away if Asger and everything loose are in the
+    cabin (said)."""
+    crewman = self.cockpit.crewman
+    if not crewman.sitting and not inCabin(crewman.middle):
+      self._noteOf('Asger is out on the walkway')
+      return
+    if any(not inCabin(place) for place, _ in self.world.shown()):
+      self._noteOf('Something loose is out on the walkway')
+      return
+    why = self.walkway.dismissed()
+    self._noteOf(why or 'The walkway swings back to the tower')
+
+  def _launchKept(self, now: float) -> None:
+    """On the ground with the walkway still out, the engine stays shut
+    and the ascent guidance stops: Risitas laughs at Asger (user,
+    2026-11-17: "have risitas laugh at Asger and then restate the quest
+    info"), and the next step is said again."""
+    vessel = self.vessel
+    if not vessel.touching or self.walkway.away:
+      return
+    if vessel.engine.throttle <= 0.0 and not self.guidance.on:
+      return
+    vessel.engine.throttled(0.0)
+    if self.guidance.on:
+      self.guidance.stopped(vessel)
+    if now - self._laughedAt < LAUGH_EVERY:
+      return
+    self._laughedAt, self._laughs = now, self._laughs + 1
+    current = self.quest.current
+    self._noteOf('Risitas laughs at Asger: the walkway is still out. %s'
+                 % ('Next: %s' % self.quest.textOf(current) if current
+                    else ''))
+
+  def _questKept(self, ) -> None:
+    """Ticks off the quest's steps done this frame (said)."""
+    quest, vessel = self.quest, self.vessel
+    crewman = self.cockpit.crewman
+    done = quest.done
+    checks = (
+      ('aboard', not crewman.sitting and inCabin(crewman.middle)),
+      ('locked', self.walkway.locked and 'aboard' in done),
+      ('dismissed', not self.walkway.attached),
+      ('seated', crewman.buckled and 'aboard' in done),
+      ('armed', self._armed or self.rendezvous.on),
+      ('launched', not vessel.touching and 'launched' not in done
+       and vessel.heightOver(self.system) > 30.0),
+      ('orbit', 'launched' in done and 'orbit' not in done
+       and self._inOrbit()),
+      ('docked', vessel.docked))
+    for name, met in checks:
+      if met and name not in done:
+        self._questTicked(name)
+    if vessel.docked and not crewman.sitting:
+      room = roomOf(crewman.middle, shaftWays(self.docking.relative))
+      if room == 'hub':
+        self._questTicked('hub')
+      elif room == 'ring':
+        self._questTicked('deck')
+
+  def _questTicked(self, name: str) -> None:
+    """Ticks off quest step 'name' (or a part of one), saying it and the
+    next if that finished it."""
+    quest = self.quest
+    step = name if name not in ('ate', 'lounged') else 'rested'
+    if not quest.ticked(name):
+      return
+    current = quest.current
+    done = quest.textOf(step)
+    self._noteOf('Done: %s%s %s' % (done, '' if done.endswith('!') else
+                                    '.', ('Next: %s' % quest.textOf(
+      current)) if current else 'Welcome to Asger\'s kolonihave i '
+                                'rummet!'))
+
+  def _slept(self, ) -> None:
+    """Puts Asger to bed till morning if it is night where the rocket
+    is (user, 2026-11-17: "Asger should be able to key_E into bed to
+    advance the time to morning if it is dark, otherwise it should say
+    like in Minecraft, 'you can only sleep at night'"), said either way;
+    not while the rocket may not be left to itself ('_sleepWhy')."""
+    why = self._sleepWhy()
+    if why:
+      self._noteOf('You may not sleep now: %s' % why)
+      return
+    wait = morningIn(self.system, self.vessel, self.keeper.now)
+    if wait is None:
+      self._noteOf('You can only sleep at night')
+      return
+    self.sleep.lay(time.perf_counter(), wait, self.keeper.elapsed)
+    self._noteOf('Asger goes to bed')
+
+  def _sleepWhy(self, ) -> str:
+    """Returns why Asger may not sleep now ('' he may): on the ground,
+    the engine burning; off it, whatever stops a warp; the automatic
+    systems flying."""
+    vessel = self.vessel
+    if self.autodock.on or self.rendezvous.on or self.guidance.on:
+      return 'the automatic systems are flying'
+    if vessel.touching:
+      return 'the engine burns' if vessel.engine.throttle > 0.0 else ''
+    return self._noWarp()
+
+  def _sleepKept(self, now: float) -> None:
+    """Keeps Asger's sleep: the screen dark, time is sent on to the
+    morning (leapt on the ground, the rocket carried round with it;
+    warped off it); there (or the warp ended), he wakes, said."""
+    sleep, keeper, vessel = self.sleep, self.keeper, self.vessel
+    if not sleep.on or sleep.woke is not None:
+      return
+    if sleep.due(now):
+      sleep.sent = True
+      if vessel.touching:
+        vessel.carried(self.system, sleep.wait)
+        keeper.leapt(sleep.wait)
+        self.accelerometer.reset()
+      else:
+        keeper.aim(sleep.wait)
+      return
+    if sleep.sent and keeper.aimed is None:
+      sleep.waking(now)
+      slept = max(0.0, keeper.elapsed - (sleep.until - sleep.wait))
+      self._noteOf('Good morning! Asger slept %d h %02d min' % (
+        slept // 3600.0, (slept % 3600.0) // 60.0))
+
+  def _gotUp(self, ) -> None:
+    """Gets Asger up out of his chair (user, 2026-11-17: Shift), said."""
+    self.cockpit.gotUp()
+    self._noteOf('Asger is up: W A S D, Space; E at the chair sits him;'
+                 ' click a glowing bolt: the gun pulls him there')
+
+  def _chairAimed(self, ) -> bool:
+    """Returns whether Asger, up, looks at his chair within 'SIT' of it
+    (E or a click sits him there: user, 2026-11-17, "Asger needs a way to
+    get in an out of the seat")."""
+    cockpit = self.cockpit
+    crewman = cockpit.crewman
+    if crewman.buckled or crewman.seatFar() > SIT:
+      return False
+    eye = cockpit.eye()
+    toward = unit(tuple(c - e for c, e in zip(CUSHION[0], eye)))
+    return dot(toward, cockpit.looking()[0]) > math.cos(CHAIR_AIM)
 
   def _limited(self, down: bool) -> None:
     """Moves the engine's limiter a notch down (or up), said."""
@@ -644,9 +964,9 @@ class SpaceWindow(QMainWindow):
 
   def _lived(self, real: float) -> None:
     """Lives Asger 'real' s on, pulled as hard as the cabin pulls where
-    he is (in his chair: at his eyes), hurt by what he met hard out of
-    it (user, 2026-11-17: falls); says it if that killed him (the gun
-    lets him go)."""
+    he is (in his chair: at his eyes, and the chair keeps the pull from
+    hurting him), hurt by what he met hard out of it (user, 2026-11-17:
+    falls); says it if that killed him (the gun lets him go)."""
     crewman = self.cockpit.crewman
     alive = self.vitals.cause is None
     if crewman.buckled:
@@ -654,7 +974,7 @@ class SpaceWindow(QMainWindow):
     else:
       pull = self.accelerometer.pullAt(crewman.middle, crewman.velocity)
       self.vitals.fell(self.world.landed)
-    self.vitals.lived(real, norm(pull) / G0)
+    self.vitals.lived(real, norm(pull) / G0, crewman.buckled)
     if alive and self.vitals.cause is not None:
       crewman.letGo()
       self._noteOf('Asger died: %s' % self.vitals.cause)
@@ -682,7 +1002,77 @@ class SpaceWindow(QMainWindow):
         leap = crewman.leapOf(pull)
       want = (wanted, walking, wanting, leap, sure)
     self._leaping = False
+    self._aboard(real)
+    self.walkway.moved(real)
+    self.world.walked(self.walkway.outside)
     self.world.stepped(real, accelerometer, crewman, want)
+
+  def _aboard(self, real: float) -> None:
+    """Docked, joins the space station's rooms to the cabin's world (its
+    elevators' cages where they are as the frame begins, the world moving
+    them through it) and moves its elevators 'real' s on; undocked, takes
+    them away again."""
+    docked = self.vessel.docked
+    self._hatch += ((1.0 if docked else 0.0) - self._hatch) * min(
+      1.0, real / HATCH_EASE)
+    if docked:
+      relative = self.docking.relative
+      ways = shaftWays(relative)
+      if self._garden is None or self._garden[0] != relative:
+        self._garden = relative, gardenSolids(relative)
+      self.world.stationed(True, ways, tuple(
+        box for elevator, way in zip(self.elevators, ways)
+        for box in elevator.boxesOf(way)) + self._garden[1])
+      for elevator in self.elevators:
+        elevator.moved(real)
+      self.bolts = rocketBolts() + stationBolts(ways, tuple(
+        elevator.floor for elevator in self.elevators))
+    elif self._stationed:
+      self.world.stationed(False, (), ())
+      self.bolts = rocketBolts()
+      if (self.cockpit.crewman.towing or 0) >= len(self.bolts):
+        self.cockpit.crewman.letGo()
+    self._stationed = docked
+
+  def _elevatorOf(self, ) -> tuple | None:
+    """Returns what E does with an elevator for Asger (docked, up): the
+    elevator and its stop to send it to, and what it is said to do:
+    standing in its cage, the other stop; at a stop's door with the cage
+    away, that stop; None: nothing."""
+    crewman = self.cockpit.crewman
+    if not self.vessel.docked or crewman.buckled:
+      return None
+    middle = crewman.middle
+    ways = shaftWays(self.docking.relative)
+    for elevator, way in zip(self.elevators, ways):
+      if elevator.holds(way, middle):
+        if elevator.target is not None:
+          return None
+        if elevator.atHub:
+          return elevator, DECK_STOP, 'Ride the elevator down to the deck'
+        return elevator, HUB_STOP, 'Ride the elevator up to the hub'
+    for elevator, way in zip(self.elevators, ways):
+      for stop, door in ((HUB_STOP, HUB_INSIDE - 1.0),
+                         (DECK_STOP, DECK - 1.0)):
+        there = (door * way[0], door * way[1], PLANE)
+        if (math.dist(middle, there) < CALL_REACH
+                and abs(elevator.floor - stop) > ARRIVED
+                and elevator.target != stop):
+          return elevator, stop, 'Call the elevator'
+    return None
+
+  def _aboardWhy(self, ) -> str:
+    """Returns why the rocket may not leave the station ('' it may):
+    Asger, or something loose, aboard it (out of the cabin)."""
+    if not self.vessel.docked:
+      return ''
+    crewman = self.cockpit.crewman
+    if not crewman.buckled and cabinInside(crewman.middle) < 0.0:
+      return 'Asger is aboard Terra Prime'
+    for place, _ in self.world.shown():
+      if cabinInside(place) < 0.0:
+        return 'something loose is aboard Terra Prime'
+    return ''
 
   def _dash(self, ) -> dict:
     """Returns what the cabin shows now: the instruments', the loose
@@ -695,9 +1085,31 @@ class SpaceWindow(QMainWindow):
     right = cross(look, up)
     frame = quaternionOf(tuple((right[k], up[k], -look[k])
                                for k in range(3)))
-    dash['gun'] = (not cockpit.crewman.buckled and self.vitals.cause is None,
-                   cockpit.eye(), frame)
+    held = not cockpit.crewman.buckled and self.vitals.cause is None
+    eye = cockpit.eye()
+    towing = cockpit.crewman.towing if held else None
+    beam = (False,)
+    if towing is not None:
+      since = time.perf_counter() - self._beamSince
+      eye = tuple(e + STRAIN * self._shaking.uniform(-1.0, 1.0)
+                  for e in eye)
+      start = tuple(e + m for e, m in zip(eye, rotated(frame, muzzle())))
+      beam = (True, start, self.bolts[towing][0], BEAM_TURNS * since,
+              strengthOf(since))
+    dash['gun'] = (held, eye, frame)
+    dash['beam'] = beam
     dash['nose'] = self._noseCamera
+    dash['hatch'] = self._hatch
+    dash['door'], dash['swing'] = self.walkway.door, self.walkway.swing
+    dash['sbolts'] = self.bolts[len(rocketBolts()):]
+    dash['aboard'] = self.vessel.docked
+    cars = []
+    if self.vessel.docked:
+      for elevator, way in zip(self.elevators, shaftWays(
+          self.docking.relative)):
+        cars += [(middle, turn, middle != AWAY)
+                 for middle, _, turn, _ in elevator.boxesOf(way)]
+    dash['cars'] = cars
     pull = self.accelerometer.pullAt(candleLight(), (0.0, 0.0, 0.0))
     dash['weight'] = norm(pull) / G0
     return dash
@@ -727,7 +1139,7 @@ class SpaceWindow(QMainWindow):
     reach, the gravity gun: pointed at a magic bolt it pulls him there
     (user, 2026-11-17: "The gravity gun can pull Asger towards them"), a
     right click lets him go; dead, nothing."""
-    if self.vitals.cause is not None:
+    if self.vitals.cause is not None or self.sleep.on:
       return
     action = self._looked()
     if action:
@@ -739,10 +1151,21 @@ class SpaceWindow(QMainWindow):
     if back:
       crewman.letGo()
       return
+    lift = self._elevatorOf()
+    if lift is not None:
+      elevator, stop, _ = lift
+      elevator.sent(stop)
+      return
+    if self._chairAimed():
+      self._buckled()
+      return
     aimed = self.cockpit.boltAimed(self.bolts)
     if aimed is not None:
       crewman.towed(aimed, holdOf(self.bolts[aimed]))
       self._tows += 1
+      self._beamSince = time.perf_counter()
+      self._noteOf('The gun tries to pick up the bolt; it will not budge,'
+                   ' so it pulls Asger instead')
 
   def _prompt(self, ) -> tuple | None:
     """Returns what Asger's eyes are on to work (its key and what working
@@ -753,9 +1176,14 @@ class SpaceWindow(QMainWindow):
       return None
     looked = self.cockpit.lookedAt()
     if looked is not None:
-      return looked.key, looked.peep.prompt()
+      return looked.key, self._promptOf(looked)
+    lift = self._elevatorOf()
+    if lift is not None:
+      return 'E', lift[2]
+    if self._chairAimed():
+      return 'E', 'Sit down'
     if self.cockpit.boltAimed(self.bolts) is not None:
-      return 'Click', 'Pull to the magic bolt'
+      return 'Click', 'Pick up the magic bolt'
     if self.cockpit.crewman.towing is not None:
       return 'Space', 'Push off the bolt (right click: let go)'
     return None
@@ -771,9 +1199,9 @@ class SpaceWindow(QMainWindow):
         vessel.rcs = (0.0, 0.0, 0.0)
       return
     self._thrusted(now)
-    if Qt.Key.Key_Shift in held:
+    if any(key in held for key in THROTTLE_UP):
       engine.throttled(engine.throttle + THROTTLE_RATE * real)
-    if Qt.Key.Key_Control in held:
+    if any(key in held for key in THROTTLE_DOWN):
       engine.throttled(engine.throttle - THROTTLE_RATE * real)
     roll = sum(sign for key, sign in ROLLING.items() if key in held)
     vessel.steered(0.0, 0.0, roll)
@@ -821,6 +1249,10 @@ class SpaceWindow(QMainWindow):
       if not vessel.docked:
         self._noteOf('Not docked')
         return
+      why = self._aboardWhy()
+      if why:
+        self._noteOf('No undocking: %s' % why)
+        return
       self.docking.released(vessel, self.system, now)
       self.accelerometer.reset()
       self._noteOf('Undocked: pushed off at 0.3 m/s')
@@ -828,29 +1260,56 @@ class SpaceWindow(QMainWindow):
       if pilot.mode == 'match':
         pilot.engaged('off', vessel.turn)
       elif vessel.docked:
-        self._noteOf('Docked: the station turns you')
+        self._noteOf('Docked: Terra Prime turns you')
       elif reading['distance'] > MATCH_REACH:
-        self._noteOf('No match: the station is %.0f km off (within %.0f'
+        self._noteOf('No match: Terra Prime is %.0f km off (within %.0f'
                      ' km)' % (reading['distance'] / 1e3,
                                MATCH_REACH / 1e3))
       else:
         self.docking.aligned(vessel, now)
         pilot.matched(self.docking.turnAt(now), tuple(
           SPIN * a for a in reading['axis']))
-    elif self.autodock.on or self.rendezvous.on:
+    elif self.autodock.on or self.rendezvous.on or self._armed:
       self.autodock.stopped(vessel)
       self.rendezvous.stopped(vessel)
+      self._armed = False
       self.keeper.realtime()
-      self._noteOf('Auto docking off')
-    elif reading['distance'] > REACH and not vessel.docked:
-      why = self.rendezvous.started(vessel, self.system, self.keeper)
-      if why:
-        self._noteOf('No auto docking: %s' % why)
-      else:
-        self._noteOf('Auto docking: to the station, the burn in %s' % (
-          timeText(self.rendezvous.depart - self.keeper.elapsed)))
+      self._noteOf('Rendezvous and docking off')
+    elif vessel.docked:
+      self._noteOf('Docked already')
+    elif reading['distance'] > REACH and not self._inOrbit():
+      self._armed = True
+      self._noteOf('Rendezvous and docking armed: once in orbit, the'
+                   ' engine shut, to Terra Prime and docked')
+    elif reading['distance'] > REACH:
+      self._rendezvoused()
     else:
       self._autodocked(reading)
+
+  def _inOrbit(self, ) -> bool:
+    """Returns whether the rocket is in orbit round Terra Prime's planet
+    as the rendezvous asks (its path closed, its periapsis over the air),
+    its engine shut and the ascent guidance done: step 1 over."""
+    vessel = self.vessel
+    if self.guidance.on or vessel.engine.throttle > 0.0 or vessel.touching:
+      return False
+    if vessel.anchor != self.station.parent:
+      return False
+    conic = vessel.conicOf(self.system)
+    body = self.system.bodies[vessel.anchor]
+    top = body.air.top if body.air is not None else 0.0
+    return conic is not None and conic.closed and (
+      conic.periapsis - body.radius > top)
+
+  def _rendezvoused(self, ) -> None:
+    """Starts the rendezvous with Terra Prime (step 2), said; or says
+    why not."""
+    why = self.rendezvous.started(self.vessel, self.system, self.keeper)
+    if why:
+      self._noteOf('No rendezvous: %s' % why)
+    else:
+      self._noteOf('Rendezvous: to Terra Prime, the burn in %s' % (
+        timeText(self.rendezvous.depart - self.keeper.elapsed)))
 
   def _autodocked(self, reading: dict) -> None:
     """Starts the automatic docking from where the rocket is ('reading':
@@ -862,7 +1321,7 @@ class SpaceWindow(QMainWindow):
       self._noteOf('No auto docking: %s' % why)
     else:
       self._noseCamera = True
-      self._noteOf('Auto docking: closing in on the station')
+      self._noteOf('Auto docking: closing in on Terra Prime')
 
   def _docking(self, ) -> None:
     """Before the frame's flight: the automatic docking flies (or MATCH
@@ -873,6 +1332,13 @@ class SpaceWindow(QMainWindow):
         vessel.engine.throttled(0.0)
         self._noteOf('Docked: undock first (Del)')
       return
+    if self._armed and self._inOrbit():
+      self._armed = False
+      reading = self.docking.readingOf(vessel, self.system, now)
+      if reading['distance'] > REACH:
+        self._rendezvoused()
+      else:
+        self._autodocked(reading)
     if self.rendezvous.on:
       self.rendezvous.acted(vessel, self.system, self.keeper)
     reading = self.docking.readingOf(vessel, self.system, now)
@@ -886,6 +1352,35 @@ class SpaceWindow(QMainWindow):
     elif vessel.autopilot.mode == 'match':
       vessel.autopilot.matched(self.docking.turnAt(now), tuple(
         SPIN * a for a in reading['axis']))
+
+  def _approachKept(self, now: float) -> None:
+    """Works out the closest approach to the station anew every
+    'CLOSEST_EVERY' s of real time (a try-hard's aid: the map marks it,
+    the readout says it), its time left kept each frame."""
+    keeper = self.keeper
+    if now - self._closestReal >= CLOSEST_EVERY:
+      self._closest = closestApproach(self.vessel, self.system,
+                                      self.station, keeper.now)
+      self._closestAt, self._closestReal = keeper.elapsed, now
+    closest = self._closest
+    if closest is not None:
+      passed = keeper.elapsed - self._closestAt
+      closest = (closest[0] - passed,) + closest[1:]
+      if closest[0] < 0.0:
+        closest = None
+    self.orrery.closest = closest
+
+  def _bumped(self, ) -> None:
+    """Counts a hit on the station as the hull first meets it (said,
+    how hard; heard), its hardest kept for the sound."""
+    bump = self.vessel.bumped
+    if bump > 0.0 and not self._bumping:
+      self._crashes += 1
+      self._crash = bump
+      self._noteOf('Hit Terra Prime at %.1f m/s' % bump)
+    elif bump > self._crash and self._bumping:
+      self._crash = bump
+    self._bumping = bump > 0.0
 
   def _dockedOrNot(self, ) -> None:
     """After the frame's flight: docked, the station carries the rocket;
@@ -903,7 +1398,7 @@ class SpaceWindow(QMainWindow):
       self.autodock.stopped(vessel)
       self.accelerometer.reset()
       self._docks += 1
-      self._noteOf('Docked to the station')
+      self._noteOf('Docked to Terra Prime')
 
   def _rendezvousText(self, ) -> str:
     """Returns the readout's line of the rendezvous: its phase, and how
@@ -938,7 +1433,8 @@ class SpaceWindow(QMainWindow):
 
   def _noWarp(self, ) -> str:
     """Returns why time may not be warped now ('' it may): in the air,
-    on the ground, the engine burning."""
+    on the ground, the engine or the thrusters firing, near the station
+    (within 'WARP_CLEAR' of its port, not docked)."""
     vessel = self.vessel
     body = self.system.bodies[vessel.anchor]
     if vessel.touching:
@@ -947,6 +1443,9 @@ class SpaceWindow(QMainWindow):
       return 'the engine burns'
     if any(vessel.rcs):
       return 'the docking thrusters fire'
+    if not vessel.docked and self._reading is not None and (
+        self._reading['distance'] < WARP_CLEAR):
+      return 'within %s of Terra Prime' % lengthText(WARP_CLEAR)
     if body.air is not None and vessel.heightOver(self.system) < (
         body.air.top):
       return 'in the air (above %s)' % lengthText(body.air.top)
@@ -1002,7 +1501,8 @@ class SpaceWindow(QMainWindow):
             'match': self.vessel.autopilot.mode == 'match',
             'docking': ('docked' if self.vessel.docked else
                         RENDEZVOUS_SAID[self.rendezvous.phase]
-                        if self.rendezvous.on else self.autodock.phase),
+                        if self.rendezvous.on else 'armed'
+                        if self._armed else self.autodock.phase),
             'nose': self._noseCamera,
             'thrusting': any(self.vessel.rcs),
             'up': not self.cockpit.crewman.buckled}
@@ -1077,9 +1577,23 @@ class SpaceWindow(QMainWindow):
                                             if peri is not None else ''))
     reading = self._reading
     if reading is not None and reading['distance'] < STATION_SAID:
-      lines.append('Station    %-12s %s' % (lengthText(
+      lines.append('Terra Prime %-11s %s' % (lengthText(
         reading['distance']), 'docked' if vessel.docked else
         'drifting %s/s' % lengthText(norm(reading['drift']))))
+    crewman = self.cockpit.crewman
+    if vessel.docked and not crewman.buckled:
+      room = roomOf(crewman.middle, shaftWays(self.docking.relative))
+      if room and room != 'cabin':
+        pull = norm(self.accelerometer.pullAt(crewman.middle,
+                                              crewman.velocity))
+        lines.append('Aboard     %s, pulled %.2f g' % (ROOMS_SAID[room],
+                                                       pull / G0))
+    closest = self.orrery.closest
+    if closest is not None and (closest[1] < STATION_SAID or (
+        reading is not None and reading['distance'] < STATION_SAID)):
+      lines.append('Closest    %-12s in %s, passing at %s/s' % (
+        lengthText(closest[1]), timeText(closest[0]),
+        lengthText(closest[2])))
     pilot = vessel.autopilot
     if pilot.mode == 'aim':
       off = ('off the path %+.0f°' % math.degrees(pilot.turn)
@@ -1099,3 +1613,22 @@ class SpaceWindow(QMainWindow):
     if self.note and time.perf_counter() - self._noted < NOTE_LASTS:
       lines.append(self.note)
     return '\n'.join(lines)
+
+
+def _nightStart(now: datetime) -> float:
+  """Returns how long after 'now' the game starts outside: nought if it
+  is night on the pad with 'NIGHT_LEFT' s of it left; else 'INTO_NIGHT'
+  s after the next dusk there."""
+  from ._vessel import LEGS
+  system = solarSystemOn(julianOf(now))
+  vessel = Vessel()
+  vessel.stood(system, system.named('Terra'), PAD[0], PAD[1], 0.0)
+  vessel.touching = len(LEGS)
+  dusk = nightIn(system, vessel, 0.0)
+  if dusk == 0.0:
+    morning = morningIn(system, vessel, 0.0)
+    if morning - MORNING >= NIGHT_LEFT:
+      return 0.0
+    vessel.carried(system, morning)
+    dusk = morning + nightIn(system, vessel, morning)
+  return dusk + INTO_NIGHT

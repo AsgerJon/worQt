@@ -25,7 +25,7 @@ from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 
 from ._cockpit import BAT_LONG, BALL_RADIUS, CONSOLE_AXES
 from ._cockpit import CONSOLE_KEY_HALF, CONSOLE_SWITCHES, DIAL_RADIUS
-from ._cockpit import DIALS, EYE, FLOOR, FRAME, GLASS, GLOBE_AT
+from ._cockpit import DIALS, EYE, FLOOR, FRAME, GLASS, GLOBE_AT, NOSE
 from ._cockpit import GLOBE_AXES
 from ._cockpit import GUARD_KNOB, GUARD_SWITCH, KEY_HALF, LAMP_RADIUS
 from ._cockpit import LAMPS, LEGEND_HALF, LEGEND_UP, MONITOR_OUT
@@ -34,7 +34,12 @@ from ._cockpit import PAPER_HIGH, PAPER_WIDE, SCREEN_AT, SCREEN_HALF
 from ._cockpit import SIDEBOARD, SLIDER_FROM, SLIDER_LONG, SWITCHES, TOP
 from ._cockpit import panelPoint
 from ._deckmodel import movingParts
-from ._gunmodel import gunParts
+from ._elevator import PLATE_HALVES
+from ._stationinterior import HATCH
+from ._teleprinter import LINE, PITCH, WIDTH
+from ._gunmodel import gunParts, sideMark
+from ._walkwaymeshes import leafRows
+from ._bolts import STATION_BOLTS, boltPieceRows, ringPieceRows
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
@@ -71,9 +76,16 @@ LAMP_COLOURS = {'ENGINE': (255, 160, 40), 'AIR': (255, 160, 40),
 LEGENDS = tuple(name for name, _, _, _ in SWITCHES) + tuple(
   name for name, _, _, _ in CONSOLE_SWITCHES)
 #  The teleprinter's typehead's size (m: across, up, out), how far before
-#  the paper it runs.
-HEAD_HALF = (0.007, 0.009, 0.006)
+#  the paper it runs. Its paper's picture: how many pixels across, how
+#  high the line typed stands over the paper's foot (m), the font's
+#  advance (em: JetBrains Mono's), the green bars' lines (each three
+#  lines, three apart, as on a Teletype's green bar paper).
+HEAD_HALF = (0.006, 0.004, 0.006)
 HEAD_OUT = 0.008
+PAPER_PIXELS = 1024
+PAPER_FOOT = 0.008
+ADVANCE = 0.6
+BAND = 3
 #  The globe's stand: its foot's radius and height, its pillar's radius,
 #  its fixed ring's width and depth (round the glass), m.
 FOOT = (0.2, 0.03)
@@ -87,6 +99,11 @@ LIGHTS = {'flames': flamesRows, 'flames round': roundFlamesRows,
 #  it a sort of enchantment glint, as it is kinda... magic"), by their
 #  actions.
 ENCHANTED = ('warp',)
+#  The hatch's lid hinges on its rim, just under the ceiling, opening
+#  down 'HATCH_OPEN' rad; the space station's elevators (cages).
+HATCH_HINGE = (HATCH, 0.0, NOSE - 0.035)
+HATCH_OPEN = math.radians(100.0)
+CARS = 4
 #  The guards' walls' thickness, m.
 GUARD_WALL = 0.0022
 #  The closed circuit monitor's curves (user, 2026-11-17: "it is too
@@ -129,7 +146,13 @@ def pieces(controls: tuple) -> tuple:
   'flames round', 'shade', 'bulbs'), each loose thing's mesh of a look
   ('loose', its index in '_furnishings.looseParts'), each part of the
   gravity gun in his hands ('gun', its index in '_gunmodel.gunParts':
-  about his eyes, in their frame)."""
+  about his eyes, in their frame; 'gun mark': the 3 on its side), the
+  hatch's lid in the ceiling
+  ('hatch': open docked to the space station), the station's elevators'
+  cages' plates ('car', six a cage: '_elevator.PLATE_HALVES'), the
+  door's leaf ('door': it slides round into the wall, '_walkway'), the
+  space station's magic bolts, docked ('sbolt', 'sring': each its steel
+  and its ring, '_bolts.stationBolts')."""
   out = [('control', control) for control in controls]
   out += [('needle', k) for k in range(len(DIALS))]
   out += [('lamp', k) for k in range(len(LAMPS))]
@@ -143,6 +166,12 @@ def pieces(controls: tuple) -> tuple:
   out += [('flames', 0), ('flames round', 0), ('shade', 0), ('bulbs', 0)]
   out += [('loose', k) for k in range(len(looseParts()))]
   out += [('gun', k) for k in range(len(gunParts()))]
+  out += [('gun mark', 0)]
+  out += [('hatch', 0)]
+  out += [('car', k) for k in range(CARS * len(PLATE_HALVES))]
+  out += [('door', 0)]
+  out += [(kind, k) for k in range(STATION_BOLTS)
+          for kind in ('sbolt', 'sring')]
   return tuple(out)
 
 
@@ -197,11 +226,23 @@ def legendAxes(index: int) -> tuple:
 
 def headPlace(column: float) -> tuple:
   """Returns where the typehead is at 'column' of the line (nought to
-  one along the paper): before the paper's last line, in the panel."""
+  one along it): before the line typed, in the panel."""
   u, v = PAPER_AT
-  return panelPoint(u - 0.5 * PAPER_WIDE + column * PAPER_WIDE,
-                    v - 0.5 * PAPER_HIGH + 0.016,
+  return panelPoint(u - 0.5 * WIDTH * PITCH + column * WIDTH * PITCH,
+                    v - 0.5 * PAPER_HIGH + PAPER_FOOT + 0.3 * LINE,
                     0.5 * PANEL_THICK + HEAD_OUT)
+
+
+def paperLayout() -> dict:
+  """Returns the teleprinter's paper's picture's layout, pixels: its
+  'width' and 'height', the font's size ('font'), a line's ('line'),
+  where the lines begin ('margin', from the left), the line typed's
+  foot ('foot', up from the bottom), the green bars ('band', lines)."""
+  scale = PAPER_PIXELS / PAPER_WIDE
+  return {'width': PAPER_PIXELS, 'height': round(PAPER_HIGH * scale),
+          'font': PITCH / ADVANCE * scale, 'line': LINE * scale,
+          'margin': 0.5 * (PAPER_WIDE - WIDTH * PITCH) * scale,
+          'foot': PAPER_FOOT * scale, 'band': BAND}
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -459,6 +500,23 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'gun':
     part = gunParts()[what]
     return part[2], part[3]
+  if kind == 'gun mark':
+    middle, half = sideMark()
+    return quadRows(middle, ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0),
+                             (-1.0, 0.0, 0.0)), (half, half))
+  if kind == 'hatch':
+    rows, faces = cylinderRows((0.0, 0.0, NOSE - 0.06), (0.0, 0.0, 1.0),
+                               HATCH - 0.03, 0.05, 32)
+    return rowsAbout(rows, HATCH_HINGE), faces
+  if kind == 'car':
+    return boxRows((0.0, 0.0, 0.0), PLATE_HALVES[what % len(PLATE_HALVES)],
+                   UNTURNED)
+  if kind == 'door':
+    return leafRows()
+  if kind == 'sbolt':
+    return boltPieceRows()
+  if kind == 'sring':
+    return ringPieceRows()
   if kind == 'bug':
     right, up, out = PANEL_AXES
     centre = dialCentre(ALTIMETER)
@@ -491,8 +549,10 @@ def pivotOf(piece: tuple) -> tuple:
     return headPlace(0.0)
   if kind == 'loose':
     return looseThings()[looseParts()[what][0]][1]
-  if kind == 'gun':
+  if kind in ('gun', 'gun mark'):
     return EYE
+  if kind == 'hatch':
+    return HATCH_HINGE
   return 0.0, 0.0, 0.0
 
 

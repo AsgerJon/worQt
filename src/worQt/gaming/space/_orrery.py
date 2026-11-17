@@ -31,6 +31,13 @@ TURN = 0.005
 STEEPEST = 1.5
 #  A moon's mark this many pixels or nearer its planet's is not shown.
 CROWDED = 14.0
+#  A mark's label (14 px monospace, 8 px right of its dot): its line's
+#  height and a letter's width, px; a label that would cover an earlier
+#  one goes to the nearest free line ('line': down, then up), at most
+#  'LINES' lines off (else it stays on its dot's).
+LINE = 16.0
+LETTER = 8.5
+LINES = 3
 #  A mark's colours.
 BODY_COLOUR = '#cfd8e6'
 VESSEL_COLOUR = '#7dff9a'
@@ -38,6 +45,10 @@ VESSEL_COLOUR = '#7dff9a'
 #  not looked at by a click).
 SATELLITE_COLOUR = '#ff8be0'
 SATELLITE_MARK = -3
+#  The closest approach's marks (the rocket then, the station then): not
+#  clickable.
+APPROACH_COLOUR = '#8fd3ff'
+APPROACH_MARK = -4
 APSIS_COLOUR = '#ffd36b'
 #  The vessel's path: points along it; a hyperbola drawn out this many
 #  times its periapsis.
@@ -51,7 +62,11 @@ class Orrery:
   or -1 the vessel), how far it is from it ('distance', m), and round
   it ('yaw', 'pitch', rad, about the ecliptic's north). Everything is
   reckoned from the body the vessel is kept from (float64) and handed on
-  from the eye, scaled so the eye is 'SPAN' units from its focus.
+  from the eye, scaled so the eye is 'SPAN' units from its focus. The
+  vessel's next closest approach to the space station ('closest', as
+  '_approach.closestApproach' says it, its time left kept by the
+  window; None: none) is marked: where the rocket and the station will
+  be then.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -63,6 +78,7 @@ class Orrery:
   distance: float
   yaw: float
   pitch: float
+  closest: tuple | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -71,6 +87,7 @@ class Orrery:
   def __init__(self, ) -> None:
     self.focus, self.distance = -1, 3e7
     self.yaw, self.pitch = -0.5 * math.pi, 0.7
+    self.closest = None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -167,7 +184,8 @@ class Orrery:
       if middle is None or math.dist((mark['x'], mark['y']),
                                      middle) >= CROWDED:
         out.append(mark)
-    return out
+    return _uncrowded(out + self._approached(eye, forward, up, wide,
+                                             high))
 
   def pathOf(self, vessel: Vessel, system: SolarSystem) -> list:
     """The 'pathOf' method returns points along the vessel's path round
@@ -221,6 +239,45 @@ class Orrery:
         name, lengthText(distance - radius), timeText(time)),
                   'colour': APSIS_COLOUR, 'index': -2})
     return out
+
+
+  def _approached(self, eye: tuple, forward: tuple, up: tuple,
+                  wide: float, high: float) -> list:
+    """Returns the marks of the closest approach (none without one):
+    the rocket then, how near and how long till it; the station then."""
+    if self.closest is None:
+      return []
+    wait, gap, _, place, there = self.closest
+    out = []
+    for at, text in ((place, 'Closest %s  in %s' % (lengthText(gap),
+                                                    timeText(wait))),
+                     (there, 'Terra Prime then')):
+      shown = self.screenOf(at, eye, forward, up, wide, high)
+      if shown is None or (out and math.dist(shown, (
+          out[0]['x'], out[0]['y'])) < CROWDED):
+        continue
+      out.append({'x': shown[0], 'y': shown[1], 'text': text,
+                  'colour': APPROACH_COLOUR, 'index': APPROACH_MARK})
+    return out
+
+
+def _uncrowded(marks: list) -> list:
+  """Returns 'marks', each given the line its label sits on by its
+  dot ('line', lines down; up is less than nought): the nearest that
+  covers no earlier label (down first), its dot's own if none is."""
+  boxes = []
+  tries = [0] + [k * way for k in range(1, LINES + 1) for way in (1, -1)]
+  for mark in marks:
+    wide = LETTER * len(mark['text'])
+    mark['line'] = 0
+    for line in tries:
+      top = mark['y'] + LINE * line
+      if not any(abs(top - y) < LINE - 2.0 and mark['x'] < x + w
+                 and x < mark['x'] + wide for x, y, w in boxes):
+        mark['line'] = line
+        break
+    boxes.append((mark['x'], mark['y'] + LINE * mark['line'], wide))
+  return marks
 
 
 def lengthText(metres: float) -> str:

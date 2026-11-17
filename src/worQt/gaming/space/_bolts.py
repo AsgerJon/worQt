@@ -20,9 +20,10 @@ from ._shapes import cylinderRows, discRows, joined, ringRows
 
 #  The rocket's bolts: on the floor (x, y), on the ceiling (x, y), on the
 #  wall (deg round from x toward y, m over the floor): a few everywhere,
-#  clear of the furniture, the windows and the fairy lights.
+#  clear of the furniture, the windows, the fairy lights and the hatch in
+#  the ceiling's middle (going aboard the station).
 FLOOR_BOLTS = ((0.0, 0.0), (2.2, -0.6), (-1.6, -1.2), (-1.4, 1.6))
-CEILING_BOLTS = ((0.0, 0.0), (1.0, 0.4), (-0.7, -0.8))
+CEILING_BOLTS = ((-0.2, 1.2), (1.0, 0.4), (-0.7, -0.8))
 WALL_BOLTS = ((0.0, 3.0), (72.0, 3.0), (144.0, 3.0), (-144.0, 3.0),
               (-72.0, 3.0), (36.0, 6.5), (180.0, 6.5), (-108.0, 6.5))
 #  A bolt: its plate's radius, its head's radius and height, its ring's
@@ -30,6 +31,16 @@ WALL_BOLTS = ((0.0, 3.0), (72.0, 3.0), (144.0, 3.0), (-144.0, 3.0),
 #  middle, m (on the floor he stands on it, under the ceiling he hangs
 #  from it).
 PLATE = 0.08
+#  The station's bolts ('stationBolts'): how far up the port's wall from
+#  the rocket's nose, how far out on the hub's end wall from its axis,
+#  how far short of the shafts' mouths along the hub's wall, m; how many
+#  (two, four, four, four); how much bigger than the rocket's they are
+#  drawn (seen across the hub).
+PORT_ALONG = 4.0
+HUB_END = 20.0
+HUB_SHORT = 30.0
+STATION_BOLTS = 14
+STATION_SIZE = 4.0
 HEAD = (0.035, 0.025)
 RING = (0.095, 0.125)
 HOLD = 0.95
@@ -51,6 +62,33 @@ def rocketBolts() -> tuple:
     c, s = math.cos(a), math.sin(a)
     out.append(((radius * c, radius * s, z), (-c * lean, -s * lean,
                                               slope * lean)))
+  return tuple(out)
+
+
+def stationBolts(ways: tuple, floors: tuple) -> tuple:
+  """Returns the space station's bolts, docked (user, 2026-11-17: "12
+  use bolts to enter Terra Prime docking"), in the docked rocket's own
+  axes ('ways': its shafts' ways out; 'floors': its elevators' cages'
+  floors from the axis): two on the docking port's wall a little past
+  the hatch, four on the hub's end wall round the port's mouth, four on
+  the hub's wall short of the shafts' mouths, one on each cage's floor
+  (the gun pulls him into the cage): each in the gun's reach of one
+  before it; each its place and the way it faces."""
+  from ._stationinterior import HUB_INSIDE, HUB_LOW, PLANE, PORT_INSIDE
+  from ._stationinterior import PORT_LOW
+  out = []
+  for way in (ways[0], ways[2]):
+    out.append(((PORT_INSIDE * way[0], PORT_INSIDE * way[1],
+                 PORT_LOW + PORT_ALONG), tuple(-w for w in way)))
+  for way in ways:
+    out.append(((HUB_END * way[0], HUB_END * way[1], HUB_LOW),
+                (0.0, 0.0, 1.0)))
+  for way in ways:
+    out.append(((HUB_INSIDE * way[0], HUB_INSIDE * way[1],
+                 PLANE - HUB_SHORT), tuple(-w for w in way)))
+  for way, floor in zip(ways, floors):
+    out.append(((floor * way[0], floor * way[1], PLANE),
+                tuple(-w for w in way)))
   return tuple(out)
 
 
@@ -105,3 +143,24 @@ def boltGlintRows() -> tuple:
     parts.append(discRows(lifted, axesOf(way), RING[1], 32,
                           (0.0, 0.0, 1.0, 1.0)))
   return joined(parts)
+
+
+def boltPieceRows() -> tuple:
+  """Returns one of the station's bolts' steel about its place, facing
+  up: a plate and a six-sided head ('STATION_SIZE' times the rocket's;
+  placed each frame)."""
+  axes = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+  big = STATION_SIZE
+  lifted = (0.0, 0.0, 0.003 * big)
+  return joined([discRows(lifted, axes, big * PLATE, 24, None),
+                 cylinderRows(lifted, (0.0, 0.0, 1.0), big * HEAD[0],
+                              big * HEAD[1], 6)])
+
+
+def ringPieceRows() -> tuple:
+  """Returns one of the station's bolts' glowing ring about its place,
+  facing up."""
+  axes = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+  big = STATION_SIZE
+  return ringRows((0.0, 0.0, 0.002 * big), axes, big * RING[0],
+                  big * RING[1], 0.003 * big)

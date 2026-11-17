@@ -5,11 +5,14 @@ do the thing ... But where we also provide an automated system for the
 rest of. Same with docking"): the reading of the nose to the port, the
 latch (catching only slow, straight, turning with the station), riding
 docked with the station, undocking pushed off; the automatic docking
-flown by the flight (the CPU here) from 1.5 km off to the latch.
+flown by the flight (the CPU here) from 1.5 km off to the latch,
+meeting the station's solids (never bumping them).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
+
+import math
 
 from worQt.gaming.space._dockingguidance import HOLD_OUT, HURRY, REACH
 from worQt.gaming.space._dockingguidance import DockingGuidance
@@ -119,7 +122,8 @@ class TestDocking(SpaceTest):
       if reading['distance'] < 20.0:
         fastest = max(fastest, reading['closing'])
       guidance.acted(vessel, port, reading, t)
-      flight.flown((vessel,), system, t, STEP)
+      flight.flown((vessel,), system, t, STEP, math.inf, station)
+      self.assertEqual(vessel.bumped, 0.0)
       t += STEP
     self.assertLess(t, LONGEST, 'not docked: %r' % {
       k: v for k, v in reading.items() if isinstance(v, float)})

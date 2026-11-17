@@ -2,7 +2,13 @@
 Navball is the artificial horizon (user, 2026-11-16: "we need an
 artificial horizon"): a ball of sky over ground turned as the vessel
 sees its horizon, its nose in the middle, marks where it travels, where
-it came from and where its autopilot aims.
+it came from and where its autopilot aims (the board's, bottom right).
+The cabin's globe is honest instead (user, 2026-11-17: "The globus
+shaped artificial horizon is 'dishonest'. Right now, the north pole
+should point up as we are still parked at the pad"): a ball held level
+with the horizon where the rocket is, its pole up, its north north, the
+marks where they truly are ('held', 'ways'); its own picture, the
+letters reading right from outside ('globeReady').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -25,6 +31,11 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 WIDE, HIGH = 2048, 1024
 SKY, GROUND = '#2f6fb8', '#7a4a22'
 LINE, HORIZON = '#e8eef6', '#ffffff'
+#  Its pictures' version (a change paints them anew); its numbers' and
+#  letters' size, pixels (they were 30 and 56).
+VERSION = 2
+NUMBERS = 52
+LETTERS = 80
 #  Its marks: along the path, against it, the aim.
 PROGRADE, RETROGRADE, AIM = 'prograde', 'retrograde', 'aim'
 
@@ -50,13 +61,15 @@ class Navball:
 
   #  Public Variables
   picture: Path
+  globe: Path
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.picture = cacheFolder() / 'navball.png'
+    self.picture = cacheFolder() / ('navball-%d.png' % VERSION)
+    self.globe = cacheFolder() / ('globe-%d.png' % VERSION)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -66,13 +79,13 @@ class Navball:
     """The 'pictureReady' method paints the ball's picture if it is not
     kept yet (Qt's painter: its numbers are letters) and returns its
     file."""
-    if self.picture.exists():
-      return self.picture
-    self.picture.parent.mkdir(parents=True, exist_ok=True)
-    image = _painted()
-    if not image.save(str(self.picture)):
-      raise OSError('the navball could not be kept in %s' % self.picture)
-    return self.picture
+    return _kept(self.picture, True)
+
+  def globeReady(self, ) -> Path:
+    """The 'globeReady' method paints the cabin's globe's picture (its
+    letters reading right from outside) if it is not kept yet and
+    returns its file."""
+    return _kept(self.globe, False)
 
   def frameOf(self, vessel: Vessel, system: SolarSystem,
               radius: float) -> dict:
@@ -81,7 +94,9 @@ class Navball:
     pixels from its middle, right and down, for a ball 'radius' pixels
     round; only those on its near side), the nose's 'pitch' and
     'heading' (deg) and which path it shows ('kind': 'orbit' or
-    'surface')."""
+    'surface'); the honest globe's turn ('held': the horizon's axes, east
+    north up, to the vessel's own) and its marks' ways ('ways': by kind,
+    unit vectors in the vessel's own axes)."""
     up, north, east = _horizonOf(vessel, system)
     frame = tuple((east[k], north[k], up[k]) for k in range(3))
     turn = vessel.turn
@@ -101,10 +116,18 @@ class Navball:
     if vessel.autopilot.mode == 'aim':
       marks.append(self._markOf(turn, vessel.aimDirection(system), radius,
                                 AIM))
+    held = product((turn[0], -turn[1], -turn[2], -turn[3]),
+                   quaternionOf(frame))
+    ways = {}
+    if norm(path) > 1.0:
+      ways[PROGRADE] = unrotated(turn, unit(path))
+      ways[RETROGRADE] = tuple(-x for x in ways[PROGRADE])
+    if vessel.autopilot.mode == 'aim':
+      ways[AIM] = unrotated(turn, vessel.aimDirection(system))
     pitch, heading = vessel.noseAngles(system)
     return {'turn': seen, 'marks': [m for m in marks if m is not None],
             'pitch': math.degrees(pitch), 'heading': math.degrees(heading),
-            'kind': kind}
+            'kind': kind, 'held': held, 'ways': ways}
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -132,10 +155,25 @@ def _horizonOf(vessel: Vessel, system: SolarSystem) -> tuple:
   return up, cross(up, east), east
 
 
-def _painted() -> object:
+def _kept(path: Path, mirrored: bool) -> Path:
+  """Returns 'path', the picture painted there first if it is not
+  kept yet ('mirrored': its letters for a ball drawn mirrored)."""
+  if path.exists():
+    return path
+  path.parent.mkdir(parents=True, exist_ok=True)
+  image = _painted(mirrored)
+  if not image.save(str(path)):
+    raise OSError('the horizon\'s picture could not be kept in %s' % path)
+  return path
+
+
+def _painted(mirrored: bool) -> object:
   """Returns the ball's picture: sky over ground, a line every 10
   degrees of pitch (numbered every 30), the headings every 30 degrees
-  (N E S W lettered), its seam on the west."""
+  (N E S W lettered), its seam on the west; its letters 'mirrored' (for
+  a ball drawn mirrored, seen as from inside) or not (seen from
+  outside: the cabin's globe), large (user, 2026-11-17: "enlarge the
+  font of the numbers on the horizon")."""
   from PySide6.QtCore import QPointF, QRectF, Qt
   from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
   image = QImage(WIDE, HIGH, QImage.Format.Format_RGB32)
@@ -150,11 +188,11 @@ def _painted() -> object:
 
   def written(x: float, y: float, wide: float, high: float,
               text: str) -> None:
-    """Writes 'text' centred in the box at 'x', 'y' mirrored about its
-    middle: the ball is drawn mirrored, so it reads right."""
+    """Writes 'text' centred in the box at 'x', 'y' (mirrored about its
+    middle for a ball drawn mirrored: it reads right)."""
     painter.save()
     painter.translate(x + 0.5 * wide, y + 0.5 * high)
-    painter.scale(-1.0, 1.0)
+    painter.scale(-1.0 if mirrored else 1.0, 1.0)
     painter.drawText(QRectF(-0.5 * wide, -0.5 * high, wide, high),
                      Qt.AlignmentFlag.AlignCenter, text)
     painter.restore()
@@ -173,19 +211,22 @@ def _painted() -> object:
     painter.setPen(QPen(QColor(LINE), 4 if pitch % 30 == 0 else 2))
     painter.drawLine(QPointF(0, rowOf(pitch)), QPointF(WIDE, rowOf(pitch)))
     if pitch % 30 == 0:
-      font.setPixelSize(30)
+      font.setPixelSize(NUMBERS)
       painter.setFont(font)
       for heading in range(0, 360, 90):
         x = columnOf(heading + 45.0)
-        written(x - 40, rowOf(pitch) - 38, 80, 34, '%+d' % pitch)
+        written(x - 70, rowOf(pitch) - NUMBERS - 10, 140, NUMBERS + 6,
+                '%+d' % pitch)
   for heading in range(0, 360, 30):
     x = columnOf(heading)
     painter.setPen(QPen(QColor(LINE), 3))
     painter.drawLine(QPointF(x, rowOf(80)), QPointF(x, rowOf(-80)))
     letter = {0: 'N', 90: 'E', 180: 'S', 270: 'W'}.get(heading)
-    font.setPixelSize(56 if letter else 30)
+    size = LETTERS if letter else NUMBERS
+    font.setPixelSize(size)
     painter.setFont(font)
-    written(x - 60, rowOf(0) - 70, 120, 64, letter or '%03d' % heading)
+    written(x - 100, rowOf(0) - size - 14, 200, size + 8,
+            letter or '%03d' % heading)
   painter.setPen(QPen(QColor(HORIZON), 8))
   painter.drawLine(QPointF(0, rowOf(0)), QPointF(WIDE, rowOf(0)))
   painter.end()

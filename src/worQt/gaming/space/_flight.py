@@ -2,7 +2,10 @@
 Flight moves vessels through a solar system on a device of Warp's (the
 GPU in the game, the CPU in the tests): their states taken there,
 '_flight_kernels.flown' launched, taken back; then each kept from the
-body it is now near.
+body it is now near. Given the space station, each vessel meets its
+solids: the station from the vessel at the frame's start, and which
+of its solids could be met within the frame ('NEAR_MARGIN' over the
+hull's reach and the frame's closing), however it turns.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -14,10 +17,11 @@ from typing import TYPE_CHECKING
 
 import numpy
 
-from ._turns import norm
+from ._turns import norm, quaternionOf
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
+  from ._station import Station
   from ._vessel import Vessel
 
 
@@ -31,6 +35,11 @@ def preloadedFlight(device: str) -> float:
   wp.init()
   wp.load_module(_flight_kernels, device)
   return time.perf_counter() - began
+
+
+#  A solid is near a vessel within the hull's reach, this, and how far
+#  they close in the frame, m.
+NEAR_MARGIN = 10.0
 
 
 class Flight:
@@ -67,23 +76,26 @@ class Flight:
     self._sky, self._skyOf = None, None
     self._fleet, self._fleetKey = None, None
     self.lastSteps, self.lastMs = 0, 0.0
+    self._near = numpy.zeros(0, numpy.int32)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def flown(self, vessels: tuple, system: SolarSystem, start: float,
-            seconds: float, longest: float = math.inf) -> None:
+            seconds: float, longest: float = math.inf,
+            station: Station = None) -> None:
     """The 'flown' method moves 'vessels' 'seconds' s on through
     'system' from its time 'start' (s since its last leap), no step
-    longer than 'longest' s, and hands each to the body it is then near.
-    """
+    longer than 'longest' s, meeting 'station's solids (if given), and
+    hands each to the body it is then near."""
     if seconds <= 0.0 or not vessels:
       return
     began = time.perf_counter()
     wp = self.wp
     sky = self._skyFor(system)
     fleet = self._fleetOf(vessels, system)
+    self._stationFor(fleet, vessels, system, station, start, seconds)
     wp.launch(self.kernels.flown, len(vessels), [
       sky, fleet, float(start), float(seconds),
       float(min(longest, 1e30))], [], [], [], self.device)
@@ -189,7 +201,74 @@ class Flight:
     fleet.wheels = self._sent([WHEELS] * count, wp.vec3)
     fleet.offsets = wp.zeros(count * bodies * kernels.SLOTS, wp.vec3,
                              device)
+    from ._stationsolids import hullBalls, stationSolids
+    solids = stationSolids()
+    fleet.balls = self._sent(hullBalls(), wp.vec4)
+    fleet.solidKinds = self._sent([s[0] for s in solids], wp.int32)
+    fleet.solidFrom = self._sent([s[1] for s in solids], wp.vec3)
+    fleet.solidTo = self._sent([s[2] for s in solids], wp.vec3)
+    fleet.solidRadii = self._sent([s[3] for s in solids], wp.float32)
+    fleet.near = wp.zeros(count, wp.int32, device)
+    fleet.solidAt = wp.zeros(count, wp.vec3, device)
+    fleet.solidSpeed = wp.zeros(count, wp.vec3, device)
+    fleet.solidFall = wp.zeros(count, wp.vec3, device)
+    fleet.solidTurn = self._sent([(0.0, 0.0, 0.0, 1.0)] * count, wp.quat)
+    fleet.solidSpin = wp.zeros(count, wp.vec3, device)
+    self._near = numpy.zeros(count, numpy.int32)
     return fleet
+
+  def _stationFor(self, fleet: object, vessels: tuple,
+                  system: SolarSystem, station: Station, start: float,
+                  seconds: float) -> None:
+    """Tells the kernel where 'station' is from each vessel at 'start'
+    and which of its solids it could meet within 'seconds' s (none
+    without a station): a vessel's near solids are those its middle is
+    within the hull's reach, 'NEAR_MARGIN' and the frame's closing of,
+    however the station turns ('sweptDistance')."""
+    from ._stationsolids import hullReach, stationSolids, sweptDistance
+    near = numpy.zeros(len(vessels), numpy.int32)
+    if station is None:
+      if self._near.any():
+        fleet.near.assign(near)
+        self._near = near
+      return
+    solids = stationSolids()
+    at, speeds, falls, turns, spins = [], [], [], [], []
+    rows = station.turnAt(start)
+    turn = _warpQuat(quaternionOf(rows))
+    axis = tuple(row[2] for row in rows)
+    spin = tuple(station.body.spin * a for a in axis)
+    parent = system.bodies[station.parent]
+    middle, velocity = station.stateAt(start)
+    r = norm(middle)
+    fall = tuple(-parent.mu * m / r ** 3 for m in middle)
+    for k, vessel in enumerate(vessels):
+      there, moving = system.relative(station.parent, vessel.anchor,
+                                      start)
+      offset = tuple(a + m - p for a, m, p in zip(there, middle,
+                                                  vessel.place))
+      speed = tuple(a + v for a, v in zip(moving, velocity))
+      at.append(offset)
+      speeds.append(speed)
+      falls.append(fall)
+      turns.append(turn)
+      spins.append(spin)
+      if vessel.docked:
+        continue
+      own = tuple(-sum(rows[i][j] * offset[i] for i in range(3))
+                  for j in range(3))
+      closing = norm(tuple(v - s for v, s in zip(vessel.velocity, speed)))
+      reach = hullReach() + NEAR_MARGIN + closing * seconds
+      for j, solid in enumerate(solids):
+        if sweptDistance(solid, own) < reach:
+          near[k] |= 1 << j
+    fleet.near.assign(near)
+    self._near = near
+    fleet.solidAt.assign(numpy.asarray(at, numpy.float32))
+    fleet.solidSpeed.assign(numpy.asarray(speeds, numpy.float32))
+    fleet.solidFall.assign(numpy.asarray(falls, numpy.float32))
+    fleet.solidTurn.assign(numpy.asarray(turns, numpy.float32))
+    fleet.solidSpin.assign(numpy.asarray(spins, numpy.float32))
 
   def _taken(self, vessels: tuple, fleet: object) -> None:
     """Takes the vessels' states back from the device, all at once; the
@@ -207,6 +286,7 @@ class Flight:
                     tuple(speed.tolist()), (w, x, y, z),
                     tuple(row[k.SPIN:k.SPIN + 3].tolist()))
       vessel.touching = int(row[k.TOUCHING])
+      vessel.bumped = float(row[k.BUMP])
       steps = max(steps, int(row[k.STEPS]))
     self.lastSteps = steps
 

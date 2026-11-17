@@ -5,8 +5,12 @@ loose things too): in the vessel's own axes, which move and turn, so
 each body feels what is felt there (the vessel's push, its turning).
 
 Two launches a small step: 'pressed' (a thread a point) finds where
-each body's points meet the cabin (its floor, its cone of a wall, its
-ceiling), the solids fixed in it and the other bodies' boxes, and pushes
+each body's points meet the rooms' walls (the cabin's floor, cone of a
+wall and ceiling; docked to the space station also the hatch through
+the nose, the port, the hub, the four shafts and the ring's tube over
+its deck: 'roomGap', each room how far inside it, the rooms joined as
+deep as the deepest: '_stationinterior'), the solids in them (some
+moving: the elevators' cages) and the other bodies' boxes, and pushes
 (a spring and a damper along the meeting's normal, as stiff as its
 body's share of 'OMEGA', rubbing along it no harder than 'GRIP' of the
 push), the push's other half onto the other body; 'moved' (a thread a
@@ -30,6 +34,8 @@ from __future__ import annotations
 import warp as wp
 
 from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius
+from . import _stationinterior as rooms
+from . import _walkway as walkway
 
 wp.config.log_level = wp.LOG_WARNING
 wp.set_module_options({'enable_backward': False})
@@ -50,6 +56,37 @@ _SLOPE = (capsuleRadius(NOSE) - capsuleRadius(FLOOR)) / (NOSE - FLOOR)
 CABIN_LOW = _single(_LOW)
 CABIN_SLOPE = _single(_SLOPE)
 CABIN_LEAN = _single(1.0 / (1.0 + _SLOPE * _SLOPE) ** 0.5)
+#  Docked: the hatch, the port, the hub (radius, from, to up the axis),
+#  the shafts (radius, from), the ring (its tube's middle from the axis,
+#  its radius inside), the deck (from the axis), the station's plane up
+#  the axis ('_stationinterior').
+HATCH = _single(rooms.HATCH)
+HATCH_LOW = _single(rooms.HATCH_LOW)
+HATCH_HIGH = _single(rooms.HATCH_HIGH)
+PORT_INSIDE = _single(rooms.PORT_INSIDE)
+PORT_LOW = _single(rooms.PORT_LOW)
+PORT_HIGH = _single(rooms.PORT_HIGH)
+HUB_INSIDE = _single(rooms.HUB_INSIDE)
+HUB_LOW = _single(rooms.HUB_LOW)
+HUB_HIGH = _single(rooms.HUB_HIGH)
+SHAFT_INSIDE = _single(rooms.SHAFT_INSIDE)
+SHAFT_FROM = _single(rooms.SHAFT_FROM)
+TUBE_MIDDLE = _single(rooms.TUBE_MIDDLE)
+TUBE_INSIDE = _single(rooms.TUBE_INSIDE)
+DECK = _single(rooms.DECK)
+PLANE = _single(rooms.PLANE)
+#  On the pad (user, 2026-11-17: "The door out of the rocket should be
+#  connected to a retractable walk way"; '_walkway'): the hull's skin at
+#  the floor (its radius; it narrows as the wall does), the walkway's
+#  tunnel and the tower's platform (each a box: its low and high
+#  corners), the doorway through the wall (a box).
+HULL_LOW = _single(capsuleRadius(FLOOR))
+TUNNEL_LOW = wp.constant(wp.vec3(*walkway.TUNNEL[0]))
+TUNNEL_HIGH = wp.constant(wp.vec3(*walkway.TUNNEL[1]))
+PLATFORM_LOW = wp.constant(wp.vec3(*walkway.PLATFORM[0]))
+PLATFORM_HIGH = wp.constant(wp.vec3(*walkway.PLATFORM[1]))
+DOORWAY_LOW = wp.constant(wp.vec3(*walkway.DOORWAY[0]))
+DOORWAY_HIGH = wp.constant(wp.vec3(*walkway.DOORWAY[1]))
 #  A meeting's spring: four of them carry a body at 'OMEGA' rad/s (its
 #  mass by them sinks g / OMEGA² under g: 0.16 mm at one g, 0.8 mm at
 #  five), damped 'DAMPING' of critical; rubbing at most 'GRIP' of the
@@ -103,6 +140,133 @@ def meetingPush(depth: float, normal: wp.vec3, moving: wp.vec3,
     rub = wp.min(grip * push, heft * OMEGA * 0.25 * speed)
     out = out - sliding * (rub / speed)
   return out
+
+
+@wp.func
+def deeper(best: wp.vec4, inside: float, normal: wp.vec3) -> wp.vec4:
+  """Returns 'best' or the room face 'inside' its 'normal' (into the
+  room), whichever is deeper inside."""
+  if inside > best[3]:
+    return wp.vec4(normal[0], normal[1], normal[2], inside)
+  return best
+
+
+@wp.func
+def shallower(best: wp.vec4, inside: float, normal: wp.vec3) -> wp.vec4:
+  """Returns 'best' or the face 'inside' its 'normal', whichever is
+  less inside (a room is inside as far as its nearest face)."""
+  if inside < best[3]:
+    return wp.vec4(normal[0], normal[1], normal[2], inside)
+  return best
+
+
+@wp.func
+def roundRoom(point: wp.vec3, radius: float, low: float,
+              high: float) -> wp.vec4:
+  """Returns how far 'point' is inside a round room on the axis (its
+  'radius', from 'low' to 'high' up it) and the way into it from its
+  nearest face."""
+  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
+  inward = wp.vec3(0.0, 0.0, 1.0)
+  if across > 1.0e-6:
+    inward = wp.vec3(-point[0] / across, -point[1] / across, 0.0)
+  room = wp.vec4(inward[0], inward[1], inward[2], radius - across)
+  room = shallower(room, point[2] - low, wp.vec3(0.0, 0.0, 1.0))
+  return shallower(room, high - point[2], wp.vec3(0.0, 0.0, -1.0))
+
+
+@wp.func
+def boxRoom(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
+  """Returns how far 'point' is inside the box room from 'low' to
+  'high' (its nearest face) and the way into it from that face."""
+  room = wp.vec4(1.0, 0.0, 0.0, point[0] - low[0])
+  room = shallower(room, high[0] - point[0], wp.vec3(-1.0, 0.0, 0.0))
+  room = shallower(room, point[1] - low[1], wp.vec3(0.0, 1.0, 0.0))
+  room = shallower(room, high[1] - point[1], wp.vec3(0.0, -1.0, 0.0))
+  room = shallower(room, point[2] - low[2], wp.vec3(0.0, 0.0, 1.0))
+  return shallower(room, high[2] - point[2], wp.vec3(0.0, 0.0, -1.0))
+
+
+@wp.func
+def outsideRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
+  """Returns 'best' or the rooms outside the rocket on the pad if
+  deeper: 'outside' one, the walkway's tunnel (outside the hull's skin)
+  and the tower's platform; two, the doorway."""
+  if outside % 2 == 1:
+    across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
+    outward = wp.vec3(1.0, 0.0, 0.0)
+    if across > 1.0e-6:
+      outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
+    skin = HULL_LOW + CABIN_SLOPE * wp.clamp(point[2] - CABIN_FLOOR, 0.0,
+                                             CABIN_TOP - CABIN_FLOOR)
+    tunnel = boxRoom(point, TUNNEL_LOW, TUNNEL_HIGH)
+    tunnel = shallower(tunnel, (across - skin) * CABIN_LEAN, wp.vec3(
+      outward[0] * CABIN_LEAN, outward[1] * CABIN_LEAN,
+      -CABIN_SLOPE * CABIN_LEAN))
+    best = deeper(best, tunnel[3], wp.vec3(tunnel[0], tunnel[1],
+                                           tunnel[2]))
+    room = boxRoom(point, PLATFORM_LOW, PLATFORM_HIGH)
+    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  if outside >= 2:
+    room = boxRoom(point, DOORWAY_LOW, DOORWAY_HIGH)
+    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  return best
+
+
+@wp.func
+def roomGap(point: wp.vec3, docked: int, outside: int,
+            ways: wp.array(dtype=wp.vec3)) -> wp.vec4:
+  """Returns how far 'point' is inside the rooms (the cabin; docked
+  also the hatch, the port, the hub, the shafts out along 'ways', the
+  ring; on the pad the walkway's and the doorway as 'outside' says
+  ('outsideRooms'): as deep as the room it is deepest in; less than
+  nought: in a wall) and the way into them from the nearest face (x y
+  z, then the depth)."""
+  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
+  outward = wp.vec3(1.0, 0.0, 0.0)
+  if across > 1.0e-6:
+    outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
+  inner = CABIN_LOW + CABIN_SLOPE * wp.clamp(point[2] - CABIN_FLOOR, 0.0,
+                                             CABIN_TOP - CABIN_FLOOR)
+  wall = wp.vec3(-outward[0] * CABIN_LEAN, -outward[1] * CABIN_LEAN,
+                 CABIN_SLOPE * CABIN_LEAN)
+  cabin = wp.vec4(wall[0], wall[1], wall[2], (inner - across) * CABIN_LEAN)
+  cabin = shallower(cabin, point[2] - CABIN_FLOOR, wp.vec3(0.0, 0.0, 1.0))
+  cabin = shallower(cabin, CABIN_TOP - point[2], wp.vec3(0.0, 0.0, -1.0))
+  if outside != 0:
+    cabin = outsideRooms(point, cabin, outside)
+  if docked == 0:
+    return cabin
+  best = cabin
+  room = roundRoom(point, HATCH, HATCH_LOW, HATCH_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = roundRoom(point, PORT_INSIDE, PORT_LOW, PORT_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = roundRoom(point, HUB_INSIDE, HUB_LOW, HUB_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  floor = -outward
+  tube = wp.vec3(outward[0] * (across - TUBE_MIDDLE),
+                 outward[1] * (across - TUBE_MIDDLE), point[2] - PLANE)
+  size = wp.length(tube)
+  inward = -outward
+  if size > 1.0e-6:
+    inward = -tube / size
+  room = wp.vec4(inward[0], inward[1], inward[2], TUBE_INSIDE - size)
+  room = shallower(room, DECK - across, floor)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  for k in range(ways.shape[0]):
+    way = ways[k]
+    out = wp.clamp(point[0] * way[0] + point[1] * way[1], SHAFT_FROM,
+                   DECK)
+    off = point - wp.vec3(out * way[0], out * way[1], PLANE)
+    size = wp.length(off)
+    inward = floor
+    if size > 1.0e-6:
+      inward = -off / size
+    room = wp.vec4(inward[0], inward[1], inward[2], SHAFT_INSIDE - size)
+    room = shallower(room, DECK - across, floor)
+    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  return best
 
 
 @wp.func
@@ -176,15 +340,22 @@ def pressed(places: wp.array(dtype=wp.vec3),
             solidMiddles: wp.array(dtype=wp.vec3),
             solidTurns: wp.array(dtype=wp.quat),
             solidHalves: wp.array(dtype=wp.vec3),
+            solidVelocities: wp.array(dtype=wp.vec3),
+            ways: wp.array(dtype=wp.vec3),
             touched: wp.array(dtype=wp.int32),
             pushes: wp.array(dtype=wp.vec3),
             twists: wp.array(dtype=wp.vec3),
             asger: wp.array(dtype=wp.vec3),
             thuds: wp.array(dtype=wp.float32),
             landing: wp.array(dtype=wp.float32),
-            up: wp.vec3, present: int, legs: int):
+            up: wp.vec3, present: int, legs: int, docked: int,
+            outside: int, elapsed: float):
   """Pushes each point (a thread a point) out of what it is in: the
-  floor, the ceiling, the wall, the solids, the other bodies' boxes
+  rooms' walls ('roomGap'; 'docked': the station's rooms too, its shafts
+  out along 'ways'; 'outside': the walkway's), the solids (where they
+  were at the frame's start, moved on at their velocities 'elapsed' s
+  since: an elevator's cage at 30 m/s left still a frame long had him
+  0.4 m into its plates), the other bodies' boxes
   (their share pushed back); counts Asger's meetings ('asger' 0: their
   count in x, 1: their normals summed: he touches what is within 'NEAR'
   of him; his legs or the gun at work ('legs'), they hold him, not the
@@ -214,30 +385,10 @@ def pressed(places: wp.array(dtype=wp.vec3),
   touching = int(0)
   push = wp.vec3(0.0, 0.0, 0.0)
   normals = wp.vec3(0.0, 0.0, 0.0)
-  depth = radius - (point[2] - CABIN_FLOOR)
+  room = roomGap(point, docked, outside, ways)
+  depth = radius - room[3]
   if depth > 0.0:
-    normal = wp.vec3(0.0, 0.0, 1.0)
-    touching = thudOf(depth, wp.dot(moving, normal), before, heft,
-                       thuds, body, landing)
-    normals = normals + normal
-    if depth > margin:
-      push = push + meetingPush(depth - margin, normal, moving, heft, grip)
-  depth = radius - (CABIN_TOP - point[2])
-  if depth > 0.0:
-    normal = wp.vec3(0.0, 0.0, -1.0)
-    touching = thudOf(depth, wp.dot(moving, normal), before, heft,
-                       thuds, body, landing)
-    normals = normals + normal
-    if depth > margin:
-      push = push + meetingPush(depth - margin, normal, moving, heft, grip)
-  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
-  inner = CABIN_LOW + CABIN_SLOPE * wp.clamp(point[2] - CABIN_FLOOR, 0.0,
-                                             CABIN_TOP - CABIN_FLOOR)
-  depth = radius - (inner - across) * CABIN_LEAN
-  if depth > 0.0 and across > 1.0e-6:
-    normal = wp.vec3(-point[0] / across * CABIN_LEAN,
-                     -point[1] / across * CABIN_LEAN,
-                     CABIN_SLOPE * CABIN_LEAN)
+    normal = wp.vec3(room[0], room[1], room[2])
     touching = thudOf(depth, wp.dot(moving, normal), before, heft,
                        thuds, body, landing)
     normals = normals + normal
@@ -245,16 +396,18 @@ def pressed(places: wp.array(dtype=wp.vec3),
       push = push + meetingPush(depth - margin, normal, moving, heft, grip)
   for j in range(solidMiddles.shape[0]):
     half = solidHalves[j]
-    if wp.length(point - solidMiddles[j]) < wp.length(half) + radius:
-      met = boxDepth(point, radius, solidMiddles[j], solidTurns[j], half)
+    there = solidMiddles[j] + solidVelocities[j] * elapsed
+    if wp.length(point - there) < wp.length(half) + radius:
+      met = boxDepth(point, radius, there, solidTurns[j], half)
       if met[3] > 0.0:
         normal = wp.vec3(met[0], met[1], met[2])
-        touching = thudOf(met[3], wp.dot(moving, normal), before, heft,
+        relative = moving - solidVelocities[j]
+        touching = thudOf(met[3], wp.dot(relative, normal), before, heft,
                           thuds, body, landing)
         normals = normals + normal
         if met[3] > margin:
-          push = push + meetingPush(met[3] - margin, normal, moving, heft,
-                                    grip)
+          push = push + meetingPush(met[3] - margin, normal, relative,
+                                    heft, grip)
   for other in range(1, places.shape[0]):
     if other != body:
       half = halves[other]

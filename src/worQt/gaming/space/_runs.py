@@ -37,6 +37,11 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_station',
                'tests.test_space.test_docking',
                'tests.test_space.test_rendezvous',
+               'tests.test_space.test_collision',
+               'tests.test_space.test_approach',
+               'tests.test_space.test_aboard',
+               'tests.test_space.test_night',
+               'tests.test_space.test_walkway',
                'tests.test_sandbox.test_peepkinds')
 
 
@@ -51,10 +56,11 @@ def spaceTests() -> int:
 def spaceShow() -> int:
   """The 'spaceShow' function opens the space window inside gamescope
   (the mouse kept in the window): the creative rocket on Terra's pad,
-  the solar system as it stands today. Shift opens the throttle, Z at
-  once; T holds the turn; A D, W S, Q E steer; M the map; , and . warp
-  (above the air, the engine shut); Y and U the engine's limit (g); B
-  gets Asger up (W A S D, Space) and sits him again (dead: wakes him);
+  the solar system as it stands today. + opens the throttle (- closes
+  it), Z at once; T holds the turn; A D, W S, Q E steer; M the map; , and
+  . warp (above the air, the engine shut); Y and U the engine's limit
+  (g); Shift gets Asger up (W A S D, Space), E looking at his chair sits
+  him again (B either; dead: wakes him);
   he eats at the rations' crate by the kitchen (look, click); C (AUTO)
   docks to the station, from any orbit round Terra (the rendezvous
   first), L matches its turning, the arrows and PgUp PgDn fire the

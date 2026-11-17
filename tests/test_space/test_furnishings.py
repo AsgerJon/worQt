@@ -69,8 +69,10 @@ class TestFurnishings(SpaceTest):
       self.assertIn(name, meshes)
       self.assertGreater(len(meshes[name][0]), 0, name)
     looks = {look for _, look, _, _ in looseParts()}
-    for look in ('book red', 'leaf', 'ceramic', 'rust', 'black'):
+    for look in ('leaf', 'ceramic', 'rust', 'black'):
       self.assertIn(look, looks)
+    self.assertIn('book red', meshes)
+    self.assertIn('brass', meshes)
     for light in (lampLight(), candleLight()):
       self.assertGreater(light[2], FLOOR + 0.3)
       self.assertLess(math.hypot(light[0], light[1]), capsuleRadius(
@@ -102,3 +104,12 @@ class TestFurnishings(SpaceTest):
           local = [sum(o * t for o, t in zip(off, way)) for way in turned]
           into = min(h - abs(x) for h, x in zip(size, local))
           self.assertLess(into, 1e-6, (name, box, corner))
+
+  def test_books_held(self) -> None:
+    """The books are none of the loose things (user, 2026-11-17: "Let's
+    lock that down. It's only funny if it is stuff Asger could have had
+    a reasonable chance of securing before take off"); what he could
+    have put away still is."""
+    names = {name for name, _, _, _, _ in looseThings()}
+    self.assertNotIn('book', names)
+    self.assertTrue(names >= {'mug', 'kettle'}, names)
