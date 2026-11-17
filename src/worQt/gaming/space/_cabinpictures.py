@@ -19,7 +19,7 @@ import random
 from ._looks import cacheFolder
 
 #  The pictures' version (a change paints them anew) and sizes, pixels.
-VERSION = 12
+VERSION = 13
 #  The gravity gun's 3's picture's size, pixels.
 THREE_SIZE = 256
 MANUAL_SIZE = (1024, 1448)

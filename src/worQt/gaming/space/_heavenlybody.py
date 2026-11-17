@@ -133,6 +133,19 @@ class HeavenlyBody:
       self.conic = self.conic.after(seconds)
     self.angle = self.angleAt(seconds)
 
+  def restored(self, conic: Conic | None, angle: float,
+               pole: tuple) -> None:
+    """The 'restored' method puts the body where a saved game had it
+    ('_savegame'): on 'conic' (None: Sol's), turned 'angle' about
+    'pole'."""
+    if (self.parent is None) != (conic is None):
+      raise ValueError('%s: a body goes round its parent, Sol round '
+                       'nothing' % self.name)
+    size = math.sqrt(sum(x * x for x in pole))
+    self.conic, self.angle = conic, float(angle) % TAU
+    self.pole = tuple(float(x) / size for x in pole)
+    self.tilt = _tiltOf(self.pole)
+
 
 def _tiltOf(pole: tuple) -> tuple:
   """Returns the turn taking a body's unturned axes to the ecliptic's:

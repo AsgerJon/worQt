@@ -46,6 +46,8 @@ from ._orrery import Orrery, lengthText, timeText
 from ._approach import closestApproach
 from ._gunbeam import muzzle, strengthOf
 from ._gravgun import GravGun
+from ._savegame import QUICK, SaveGame, keptOf, keptTo, savesFolder
+from ._savegame import skyOf, skyTo
 from ._sight import inSight
 from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
 from ._kolonihave import gardenSolids
@@ -113,6 +115,8 @@ LIFT_CALL = 2.5
 #  Something this near the doorway (m from it) keeps the door open.
 DOORWAY_CLEAR = 0.35
 STUCK = 60.0
+#  Why nothing is saved or loaded while the game readies.
+READYING = 'the game is still readying'
 #  The last readying step's words (the scene furnished on Qt's thread).
 FURNISHING = 'furnishing the cabin (the deck, the room, the dashboard)'
 #  The throttle's keys (user, 2026-11-17: "key_SHIFT is reserved to
@@ -270,7 +274,8 @@ TAKING = ('full', 'cut', 'hold', 'prograde', 'retrograde', 'aim',
           'throttle', 'pad')
 HINT = ('click: look round   wheel: zoom   Esc: free the mouse   click a'
         ' lamp: do it   Tab: Asger\'s eyes   Shift: get up (up: crouch)'
-        '   E: use (nothing to use: inventory)   1-9: hotbar')
+        '   E: use (nothing to use: inventory)   1-9: hotbar   F5: save'
+        '   F9: load')
 MAP_HINT = ('drag: turn   wheel: zoom   click a name: look at it   '
             '⌫: back to the rocket   M: back to flying')
 
@@ -394,6 +399,7 @@ class SpaceWindow(QMainWindow):
     if kind == QEvent.Type.FocusOut:
       self.held.clear()
       self.pointer.letGo()
+      self._heldReleased()
       return False
     if kind == QEvent.Type.MouseButtonPress and (
         not self.pointer.taken) and self.viewport.takesClick(
@@ -653,6 +659,12 @@ class SpaceWindow(QMainWindow):
     working it); returns whether it was one of the window's."""
     if key in CAPS:
       self._flashed[CAPS[key]] = time.perf_counter()
+    if key == Qt.Key.Key_F5:
+      self._quickSaved()
+      return True
+    if key == Qt.Key.Key_F9:
+      self._quickLoaded()
+      return True
     if key == Qt.Key.Key_E:
       if self._manualOpen:
         self._manualOpen = False
@@ -1243,7 +1255,7 @@ class SpaceWindow(QMainWindow):
     return max(depth, walkwayInside(point), groundsInside(
       point, lift.atTop, lift.atFoot))
 
-  def _seen(self, eye: tuple, there: tuple) -> bool:
+  def _inSight(self, eye: tuple, there: tuple) -> bool:
     """Returns whether nothing is in the way from 'eye' to 'there' (the
     vessel's own axes): the rooms all the way, no solid (what the
     Grav-Gun sees through: user, 2026-11-17, "the fucking gravity gun
@@ -1470,8 +1482,11 @@ class SpaceWindow(QMainWindow):
     return False
 
   def _heldReleased(self, ) -> None:
-    """The right button let go: the telescope lowered."""
+    """The right button let go: the telescope lowered, the Grav-Gun's
+    field ended unless it holds what came near."""
     self._scoping = False
+    if self.gravgun.letUp():
+      self._noteOf('Grav-Gun: field off')
 
   def _inventoryOpened(self, ) -> None:
     """Opens the inventory (E): the mouse let go to click its slots,
@@ -1509,9 +1524,12 @@ class SpaceWindow(QMainWindow):
     the Grav-Gun in his hand (user, 2026-11-17: "when aimed at an
     interactable object, right click starts a force acting between the
     gun and its holder and the interactable object that increases in
-    magnitude with distance"): its field on what it points at (a magic
-    bolt, a loose thing), or off again. Returns whether it did
-    anything."""
+    magnitude with distance"; 2026-11-18: "gravgun pulls only when right
+    click held, until the item is picked up or the gun is near the bolt.
+    Then the connection stays and another rightclick releases it"):
+    holding, it lets go; else its field on what it points at (a magic
+    bolt, a loose thing), pulling while the button is held
+    ('_heldReleased'). Returns whether it did anything."""
     if self.vitals.cause is not None or self.sleep.on:
       return False
     crewman, gun = self.cockpit.crewman, self.gravgun
@@ -1519,15 +1537,15 @@ class SpaceWindow(QMainWindow):
       return False
     if gun.target is not None:
       gun.released()
-      self._noteOf('Grav-Gun: field off')
+      self._noteOf('Grav-Gun: let go')
       return True
     aimed = self._gunAimed()
     if aimed is None:
       return False
     gun.gripped(aimed)
     self._beamSince = time.perf_counter()
-    self._noteOf('Grav-Gun: field on %s (right click: off, left click: '
-                 'pulse)' % self._gunTargetSaid(aimed))
+    self._noteOf('Grav-Gun: pulling %s (hold the right button)'
+                 % self._gunTargetSaid(aimed))
     return True
 
   def _gunPulsed(self, ) -> None:
@@ -1552,10 +1570,10 @@ class SpaceWindow(QMainWindow):
     cockpit = self.cockpit
     things = [(place, half) for (place, _), (_, _, half, _, _) in zip(
       self.world.shown(), looseThings())]
-    thing = cockpit.looseAimed(things, self._seen)
+    thing = cockpit.looseAimed(things, self._inSight)
     if thing is not None:
       return 'loose', thing
-    bolt = cockpit.boltAimed(self.bolts, self._seen)
+    bolt = cockpit.boltAimed(self.bolts, self._inSight)
     return None if bolt is None else ('bolt', bolt)
 
   def _gunTargetAt(self, target: tuple) -> tuple:
@@ -1579,9 +1597,9 @@ class SpaceWindow(QMainWindow):
     cabin's world takes it: its force on Asger over his mass, the loose
     thing it acts on (None: a bolt, held by the hull) and the force on
     that the other way over its mass (the vessel's own axes); None: no
-    push. Its field ends put away, out of his hand, him in his chair or
-    dead, its bolt gone (undocked), or something come between (it acts
-    through nothing)."""
+    push. Its field (or hold) ends put away, out of his hand, him in his
+    chair or dead, its bolt gone (undocked), or something come between
+    (it acts through nothing); what comes near it holds (said once)."""
     gun = self.gravgun
     acting = gun.acting
     if acting is None:
@@ -1595,18 +1613,46 @@ class SpaceWindow(QMainWindow):
       return None
     there = self._gunTargetAt(acting)
     eye = self.cockpit.eye()
-    if not self._seen(eye, there):
+    if not self._inSight(eye, there):
       gun.released()
       self._noteOf('Grav-Gun: something came between, the field broke')
       return None
     start = tuple(e + m for e, m in zip(eye, rotated(
       self._eyesFrame(), muzzle())))
-    force = gun.pushOf(start, there, real)
+    look, _ = self.cockpit.looking()
+    moving = tuple(t - v for t, v in zip(self._gunTargetMoving(acting),
+                                         crewman.velocity))
+    heft = HEFT
+    if kind == 'loose':
+      mass = looseThings()[index][4]
+      heft = HEFT * mass / (HEFT + mass)
+    held = gun.holding
+    force = gun.pushOf(start, look, crewman.middle, there, moving, heft,
+                       real)
+    if gun.holding and not held:
+      self._noteOf('Grav-Gun: holding %s (right click: let go, left '
+                   'click: pulse)' % self._gunTargetSaid(acting))
     onAsger = tuple(f / HEFT for f in force)
     if kind == 'bolt':
       return onAsger, None, (0.0, 0.0, 0.0)
-    heft = looseThings()[index][4]
-    return onAsger, index, tuple(-f / heft for f in force)
+    mass = looseThings()[index][4]
+    return onAsger, index, tuple(-f / mass for f in force)
+
+  def _gunTargetMoving(self, target: tuple) -> tuple:
+    """Returns how fast the Grav-Gun's 'target' moves now (the vessel's
+    own axes, m/s): a loose thing as the world moved it; a bolt still,
+    but one on an elevator's cage floor (docked: the last of the
+    station's bolts, one a cage, '_bolts.stationBolts') at its cage's
+    speed."""
+    kind, index = target
+    if kind == 'loose':
+      return self.world.movingOf(index)
+    cage = index - (len(self.bolts) - len(self.elevators))
+    if not self.vessel.docked or cage < 0:
+      return 0.0, 0.0, 0.0
+    way = shaftWays(self.docking.relative)[cage]
+    speed = self.elevators[cage].speed
+    return tuple(speed * w for w in way)
 
   def _eyesFrame(self, ) -> tuple:
     """Returns the turn (w x y z) of his eyes' frame (right, up, back)
@@ -1637,13 +1683,16 @@ class SpaceWindow(QMainWindow):
     held = self.inventory.held
     if held == 'gravgun' and not crewman.sitting:
       gun = self.gravgun
+      if gun.holding:
+        return 'Right / left click', 'Grav-Gun: let go of / pulse at %s' % (
+          self._gunTargetSaid(gun.target))
       if gun.target is not None:
-        return 'Right / left click', 'Grav-Gun: field off / pulse at %s' % (
+        return 'Right button', 'Grav-Gun: pulling %s (let go: off)' % (
           self._gunTargetSaid(gun.target))
       aimed = self._gunAimed()
       if aimed is not None:
-        return 'Right / left click', 'Grav-Gun: field on / pulse at %s' % (
-          self._gunTargetSaid(aimed))
+        return ('Right button / left click', 'Grav-Gun: pull / pulse at %s'
+                % self._gunTargetSaid(aimed))
     if held == 'telescope' and not self._scoping:
       return 'Right button', 'Hold to look through the telescope'
     if held == 'commando':
@@ -1970,6 +2019,126 @@ class SpaceWindow(QMainWindow):
     """Shows 'text' a few seconds (and types it, inside)."""
     self.note, self._noted = text, time.perf_counter()
     self.instruments.printer.said(text)
+
+  def _quickSaved(self, ) -> None:
+    """F5 (user, 2026-11-18: "Also implement the save load system now";
+    Kerbal's quick save): the game as it is now written to the quick
+    save ('_savegame', in 'savesFolder'), the last one replaced; refused
+    while it readies, Asger asleep or dead (said why); a file that
+    cannot be written is said (on screen and on the console)."""
+    why = self._saveWhy()
+    if why:
+      self._noteOf('Cannot save: %s' % why)
+      return
+    if self._inventoryOpen:
+      self._inventoryShut()
+    path = savesFolder() / QUICK
+    try:
+      SaveGame(self._gameState()).written(path)
+    except OSError as error:
+      print('[space] could not save to %s: %s' % (path, error), flush=True)
+      self._noteOf('Could not save: %s' % error)
+      return
+    print('[space] saved to %s' % path, flush=True)
+    self._noteOf('Saved (F9 loads it)')
+
+  def _quickLoaded(self, ) -> None:
+    """F9: the quick save read and the game put back as it was then
+    (from this session or another); refused while it readies or with no
+    quick save (said); one that cannot be read is said."""
+    if self._saveWhy() == READYING:
+      self._noteOf('Cannot load: %s' % READYING)
+      return
+    path = savesFolder() / QUICK
+    if not path.exists():
+      self._noteOf('No quick save yet (F5 saves)')
+      return
+    try:
+      save = SaveGame.read(path)
+    except (OSError, ValueError, KeyError) as error:
+      print('[space] could not read %s: %s' % (path, error), flush=True)
+      self._noteOf('Could not load: %s' % error)
+      return
+    self._gameRestored(save.state)
+    print('[space] loaded %s' % path, flush=True)
+    self._noteOf('Loaded the quick save of %s' % save.saved.astimezone(
+    ).strftime('%Y-%m-%d %H:%M'))
+
+  def _saveWhy(self, ) -> str:
+    """Returns why the game may not be saved now ('' it may)."""
+    if (self.flight is None or self.world is None
+            or not self.viewport.furnishedYet):
+      return READYING
+    if self.sleep.on:
+      return 'Asger is asleep'
+    if self.vitals.cause is not None:
+      return 'Asger is dead'
+    return ''
+
+  def _gameState(self, ) -> dict:
+    """Returns the game's state as a save keeps it: when it began, the
+    sky, time, the rocket, its guidances and autopilot, Asger (his
+    place, his look, his vitals, his inventory), the quest, the walkway,
+    the lifts, the instruments (the printer's paper, the log, the tape),
+    the loose things, what the Grav-Gun holds, the view and the CCTV's
+    feed. What is worked out anew each frame is not kept."""
+    gun = self.gravgun
+    return {'began': self.began.isoformat(), 'sky': skyOf(self.system),
+            'keeper': keptOf(self.keeper), 'vessel': keptOf(self.vessel),
+            'ascent': keptOf(self.guidance),
+            'rendezvous': keptOf(self.rendezvous),
+            'docking': keptOf(self.autodock),
+            'port': keptOf(self.docking),
+            'autoflight': keptOf(self.autoflight),
+            'cockpit': keptOf(self.cockpit), 'vitals': keptOf(self.vitals),
+            'inventory': keptOf(self.inventory),
+            'quest': keptOf(self.quest), 'walkway': keptOf(self.walkway),
+            'towerLift': keptOf(self.towerLift),
+            'elevators': [keptOf(e) for e in self.elevators],
+            'instruments': keptOf(self.instruments),
+            'world': self.world.kept(),
+            'gun': keptOf(gun) if gun.holding else None,
+            'inside': self.inside, 'noseCamera': self._noseCamera}
+
+  def _gameRestored(self, state: dict) -> None:
+    """Puts the game back as 'state' ('_gameState') had it, in real time;
+    what the window works out as it goes (the station's rooms and solids,
+    the tower's, the bolts, the hatch, the closest approach, the tubes)
+    worked out anew; asleep, the manual or the inventory open, the
+    telescope raised: no more."""
+    if len(state['elevators']) != len(self.elevators):
+      raise ValueError('the save has %d elevators, the station %d' % (
+        len(state['elevators']), len(self.elevators)))
+    self.began = datetime.fromisoformat(state['began'])
+    skyTo(self.system, state['sky'])
+    keptTo(self.keeper, state['keeper'])
+    self.keeper.realtime()
+    for thing, name in ((self.vessel, 'vessel'), (self.guidance, 'ascent'),
+                        (self.rendezvous, 'rendezvous'),
+                        (self.autodock, 'docking'), (self.docking, 'port'),
+                        (self.autoflight, 'autoflight'),
+                        (self.cockpit, 'cockpit'), (self.vitals, 'vitals'),
+                        (self.inventory, 'inventory'),
+                        (self.quest, 'quest'), (self.walkway, 'walkway'),
+                        (self.towerLift, 'towerLift'),
+                        (self.instruments, 'instruments')):
+      keptTo(thing, state[name])
+    for elevator, kept in zip(self.elevators, state['elevators']):
+      keptTo(elevator, kept)
+    self.world.keptFrom(state['world'])
+    self.gravgun.released()
+    if state['gun'] is not None:
+      keptTo(self.gravgun, state['gun'])
+    self.inside, self._noseCamera = state['inside'], state['noseCamera']
+    if self._inventoryOpen:
+      self._inventoryShut()
+    self.sleep, self._manualOpen = Sleep(), False
+    self._scoping, self._leaping, self.cockpit.glancing = False, False, None
+    self._towered, self._stationed, self._garden = False, False, None
+    self.bolts = rocketBolts()
+    self._hatch = 1.0 if self.vessel.docked else 0.0
+    self._closest, self._tubes = None, None
+    self.viewport.orbitsRedrawn(self.scenery.orbitsOf(self.system))
 
   def _boardOf(self, now: float) -> dict:
     """Returns what the control board shows: the throttle, the

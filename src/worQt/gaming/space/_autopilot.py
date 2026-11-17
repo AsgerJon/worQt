@@ -41,6 +41,9 @@ class Autopilot:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('mode', 'held', 'spin', 'pitch', 'turn', 'heading', 'travel')
+
   #  Public Variables
   mode: str
   held: tuple

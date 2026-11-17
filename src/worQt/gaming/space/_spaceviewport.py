@@ -274,6 +274,7 @@ class SpaceViewport(QWidget):
     self.box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     self.component, self.problems, self.loaded = None, (), False
     self.furnishedYet, self._kept, self._caps = False, [], []
+    self._orbits = []
     self._beams = []
     self._path, self._slots, self._paper = None, CABIN_SLOT, None
     self._readout = None
@@ -360,8 +361,10 @@ class SpaceViewport(QWidget):
     near.extend(self._walkwayParts(armParts(), self._armSlot))
     near.extend(self._walkwayParts(towerParts(), self._armSlot + 1))
     self._slots += 2
+    self._orbits = []
     for slot, points in enumerate(orbits[1:]):
-      lines.append({'geometry': self._kept1(Line(points)),
+      self._orbits.append(self._kept1(Line(points)))
+      lines.append({'geometry': self._orbits[-1],
                     'colour': QColor(ORBIT_COLOUR), 'slot': slot})
     self._path = self._kept1(Line([(0.0, 0.0, 0.0)] * 2))
     lines.append({'geometry': self._path, 'colour': QColor(PATH_COLOUR),
@@ -483,6 +486,18 @@ class SpaceViewport(QWidget):
     root.setProperty('capPlace', QVector3D(*place))
     root.setProperty('capTurn', QQuaternion(*turn))
     root.setProperty('capShown', bool(seen) and bool(self._caps))
+
+  def orbitsRedrawn(self, orbits: list) -> None:
+    """The 'orbitsRedrawn' method draws each body's path anew ('orbits'
+    as 'furnished' took them: a saved game's sky put back); before it is
+    furnished, nothing."""
+    if not self.furnishedYet:
+      return
+    if len(orbits) - 1 != len(self._orbits):
+      raise ValueError('%d paths to draw, %d drawn' % (
+        len(orbits) - 1, len(self._orbits)))
+    for line, points in zip(self._orbits, orbits[1:]):
+      line.pointed(points)
 
   def mapShown(self, frame: dict) -> None:
     """The 'mapShown' method shows a frame of the map

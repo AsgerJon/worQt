@@ -45,6 +45,9 @@ class Inventory:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('slots', 'selected')
+
   #  Public Variables
   slots: list
   selected: int

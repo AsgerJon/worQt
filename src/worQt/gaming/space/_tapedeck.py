@@ -60,6 +60,9 @@ class TapeDeck:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('playing', 'announced', 'leading', 'played', 'cheered', 'reels')
+
   #  Public Variables
   playing: bool
   announced: bool

@@ -94,6 +94,10 @@ class Crewman:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('buckled', 'lounge', 'crouching', 'up', 'ahead', 'middle',
+           'velocity', 'touches', 'ground', 'crouched', 'rising', 'floor')
+
   #  Public Variables
   buckled: bool
   middle: tuple

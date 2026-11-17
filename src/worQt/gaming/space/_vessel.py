@@ -96,6 +96,11 @@ class Vessel:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields, its parts.
+  SAVED = ('steer', 'anchor', 'place', 'velocity', 'turn', 'spin',
+           'touching', 'rcs', 'docked', 'bumped', 'felt', 'spinning', 'jolt')
+  PARTS = ('engine', 'autopilot')
+
   #  Public Variables
   engine: Aerospike
   autopilot: Autopilot

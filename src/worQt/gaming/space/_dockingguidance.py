@@ -77,6 +77,9 @@ class DockingGuidance:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('phase',)
+
   #  Public Variables
   phase: str
 

@@ -59,6 +59,9 @@ class DockingPort:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('relative',)
+
   #  Public Variables
   station: Station
   relative: tuple | None

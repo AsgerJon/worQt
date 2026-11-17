@@ -101,6 +101,9 @@ class AscentGuidance:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('target', 'phase', 'rounding', '_fall', '_last', '_topping')
+
   #  Public Variables
   target: float
   phase: str

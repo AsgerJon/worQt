@@ -32,6 +32,9 @@ class Aerospike:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('throttle', 'most', 'lit')
+
   #  Public Variables
   thrust: float
   isp: float

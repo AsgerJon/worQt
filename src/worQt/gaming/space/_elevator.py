@@ -58,6 +58,9 @@ class Elevator:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('floor', 'speed', 'target')
+
   #  Public Variables
   floor: float
   speed: float

@@ -117,7 +117,8 @@ class CabinWorld:
     vec3, quat = wp.vec3, wp.quat
     self.places = self._sent(self._places, vec3)
     self.turns = self._sent(_warpQuats(self._turns), quat)
-    self.velocities = self._sent(numpy.zeros((len(masses), 3)), vec3)
+    self._velocities = numpy.zeros((len(masses), 3))
+    self.velocities = self._sent(self._velocities, vec3)
     self.spins = self._sent(numpy.zeros((len(masses), 3)), vec3)
     self.masses = self._sent(masses, wp.float32)
     self.halves = self._sent(halves, vec3)
@@ -278,6 +279,44 @@ class CabinWorld:
                    1 - 2 * (x * x + y * y)], 1)], 2)
     return self._middles[keep], self._halves[keep], axes
 
+  def movingOf(self, index: int) -> tuple:
+    """The 'movingOf' method returns how fast loose thing 'index' (as
+    'shown' counts them) moved as the last frame ended, m/s (the
+    vessel's own axes)."""
+    return tuple(self._velocities[index + 1].tolist())
+
+  def kept(self, ) -> dict:
+    """The 'kept' method returns what a saved game keeps of the loose
+    things ('_savegame'): each body's place, turn (w x y z), velocity and
+    spin, the vessel's own axes."""
+    return {'places': self._places.tolist(),
+            'turns': self._turns.tolist(),
+            'velocities': self.velocities.numpy().astype(
+              numpy.float64).tolist(),
+            'spins': self.spins.numpy().astype(numpy.float64).tolist()}
+
+  def keptFrom(self, kept: dict) -> None:
+    """The 'keptFrom' method puts the loose things back as 'kept' had
+    them (a saved game), Asger's box sent anew with the next step (if he
+    is up then), the station's and the tower's solids put away (the
+    window puts them back as it finds itself)."""
+    count = len(self._places)
+    shapes = {name: numpy.asarray(kept[name], numpy.float64)
+              for name in ('places', 'turns', 'velocities', 'spins')}
+    for name, values in shapes.items():
+      if len(values) != count:
+        raise ValueError('the save has %d loose bodies, the cabin %d'
+                         % (len(values), count))
+    self._places, self._turns = shapes['places'], shapes['turns']
+    self._velocities = shapes['velocities']
+    self.places.assign(self._places.astype(numpy.float32))
+    self.turns.assign(_warpQuats(self._turns).astype(numpy.float32))
+    self.velocities.assign(self._velocities.astype(numpy.float32))
+    self.spins.assign(shapes['spins'].astype(numpy.float32))
+    self.stationed(False, (), ())
+    self._asgerAway()
+    self._present = 0
+
   def shown(self, ) -> tuple:
     """The 'shown' method returns each loose thing's place (its middle,
     the vessel's own axes) and turn from how it rests (w x y z)."""
@@ -342,6 +381,7 @@ class CabinWorld:
     """Takes the bodies back from the device: the loose things' places
     and turns, Asger's body (if he is up), the thuds."""
     self._places = self.places.numpy().astype(numpy.float64)
+    self._velocities = self.velocities.numpy().astype(numpy.float64)
     x, y, z, w = self.turns.numpy().astype(numpy.float64).T
     self._turns = numpy.stack([w, x, y, z], 1)
     self.landed = 0.0

@@ -600,6 +600,10 @@ class Cockpit:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields, its parts.
+  SAVED = ('yaw', 'pitch')
+  PARTS = ('crewman',)
+
   #  Public Variables
   yaw: float
   pitch: float
@@ -684,9 +688,10 @@ class Cockpit:
   def looseAimed(self, things: tuple, seen: object = None) -> int | None:
     """The 'looseAimed' method returns the loose thing (its index in
     'things': each its middle and its half sizes) the Grav-Gun points at
-    out of his chair: the nearest whose round (its half sizes' length)
-    his eyes' middle passes through, within 'GUN_REACH', in sight
-    ('seen', as 'boltAimed'); None if none (or he sits)."""
+    out of his chair: the nearest whose round (its half sizes' length,
+    or as wide as 'AIM' is there, as a bolt's: a mug 8 m off is half a
+    degree across) his eyes' middle passes through, within 'GUN_REACH',
+    in sight ('seen', as 'boltAimed'); None if none (or he sits)."""
     if self.crewman.sitting:
       return None
     eye, look = self.eye(), self.looking()[0]
@@ -696,7 +701,8 @@ class Cockpit:
       along = sum(o * l for o, l in zip(off, look))
       if along <= 0.0 or along > GUN_REACH:
         continue
-      round_ = math.sqrt(sum(h * h for h in half))
+      round_ = max(math.sqrt(sum(h * h for h in half)),
+                   along * math.tan(AIM))
       aside = math.sqrt(max(0.0, sum(o * o for o in off) - along * along))
       if aside <= round_ and along < nearest:
         if seen is None or seen(eye, middle):

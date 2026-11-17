@@ -21,12 +21,14 @@ ITEMS = (
    'world.'),
   ('THE GRAV-GUN', 'Officially the Zero Point Energy Field Manipulator, if '
    'you really want to. Point it at a magic bolt or at anything loose and '
-   'right click: a field pulls the two of you together, the harder the '
-   'further apart. A bolt will not budge, so it pulls YOU. A mug comes to '
-   'you. Right click again: the field is off.'),
+   'hold the right button: a field pulls the two of you together, the '
+   'harder the further apart. A bolt will not budge, so it pulls YOU. A '
+   'mug comes to you. Let go early and the field is off. Once the gun is '
+   'near the bolt, or the mug is in your hands, it holds on by itself: '
+   'right click again to let go.'),
   ('THE PULSE', 'Left click sends a pulse the other way, ten times as '
    'hard: you push off the bolt, the mug flies. The pulse ends the '
-   'field.'),
+   'field and the hold.'),
   ('NEVER UNDER GRAVITY', 'Never use the gun where things fall: on Terra, '
    'on the pad, or with the engine burning. A pulse throws you, and then '
    'you fall. Falls past 1.5 Asger heights hurt. Twelve Asger heights, '

@@ -86,6 +86,10 @@ class Vitals:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('health', 'food', 'cause', 'hurt', 'eating', 'bite', 'took',
+           'reminded')
+
   #  Public Variables
   health: float
   food: float

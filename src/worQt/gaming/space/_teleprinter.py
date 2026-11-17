@@ -49,6 +49,9 @@ class Teleprinter:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('printed', 'typing', 'done', 'queue', '_resting')
+
   #  Public Variables
   printed: list
   typing: str | None

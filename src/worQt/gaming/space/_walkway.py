@@ -110,6 +110,9 @@ class Walkway:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('attached', 'back', 'swing', 'door', 'wanted', 'locked')
+
   #  Public Variables
   attached: bool
   back: float

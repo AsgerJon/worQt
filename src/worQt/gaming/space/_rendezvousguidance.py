@@ -117,6 +117,10 @@ class RendezvousGuidance:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('phase', 'depart', 'arrival', 'checked', 'way', 'hops', 'reach',
+           'side')
+
   #  Public Variables
   station: Station
   transfers: Transfers | None

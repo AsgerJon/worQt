@@ -47,6 +47,9 @@ class Autoflight:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('mode', 'engaged')
+
   #  Public Variables
   mode: str
   engaged: bool

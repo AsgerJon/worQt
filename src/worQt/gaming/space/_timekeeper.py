@@ -42,6 +42,9 @@ class Timekeeper:
   #  NAMESPACE  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  #  What a saved game keeps of it ('_savegame'): its fields.
+  SAVED = ('now', 'steps', 'leaps', 'elapsed')
+
   #  Public Variables
   system: SolarSystem
   now: float
