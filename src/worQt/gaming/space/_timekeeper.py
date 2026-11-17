@@ -50,6 +50,7 @@ class Timekeeper:
   elapsed: float
   factor: int
   aimed: float | None
+  stopsAt: float | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -58,6 +59,7 @@ class Timekeeper:
   def __init__(self, system: SolarSystem) -> None:
     self.system, self.now, self.steps, self.leaps = system, 0.0, 0, 0
     self.elapsed, self.factor, self.aimed = 0.0, 1, None
+    self.stopsAt = None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -76,7 +78,17 @@ class Timekeeper:
 
   def realtime(self, ) -> None:
     """The 'realtime' method runs time as it is, warping to nothing."""
-    self.factor, self.aimed = 1, None
+    self.factor, self.aimed, self.stopsAt = 1, None, None
+
+  def stopAt(self, seconds: float) -> None:
+    """The 'stopAt' method has a warp (if he warps: user, 2026-11-17,
+    "Warp should not be automatic!") stop 'seconds' s from now, eased off
+    to land on it; it never warps faster than he does."""
+    if seconds <= 0.0:
+      self.realtime()
+      return
+    self.stopsAt = self.elapsed + float(seconds)
+    self._capped()
 
   def aim(self, seconds: float) -> None:
     """The 'aim' method warps to 'seconds' s from now ('secondsOf'
@@ -104,6 +116,8 @@ class Timekeeper:
     seconds = real * self.factor
     if self.aimed is not None:
       seconds = min(seconds, max(0.0, self.aimed - self.elapsed))
+    if self.stopsAt is not None:
+      seconds = min(seconds, max(0.0, self.stopsAt - self.elapsed))
     return seconds
 
   def ticked(self, seconds: float) -> bool:
@@ -116,6 +130,8 @@ class Timekeeper:
     self.steps += 1
     if self.aimed is not None:
       self._aimedFactor()
+    if self.stopsAt is not None:
+      self._capped()
     if self.steps % LEAP:
       return False
     self.system.fold(self.now)
@@ -125,6 +141,16 @@ class Timekeeper:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def _capped(self, ) -> None:
+    """Lowers the warp (never raises it) to leave at least 'AIM_FRAMES'
+    frames to the moment it stops at; there, real time."""
+    left = self.stopsAt - self.elapsed
+    if left <= 1e-9:
+      self.realtime()
+      return
+    fitting = [w for w in WARPS if w * AIM_FRAME * AIM_FRAMES <= left]
+    self.factor = min(self.factor, fitting[-1] if fitting else 1)
 
   def _aimedFactor(self, ) -> None:
     """Sets the warp for the moment warped to: the fastest leaving

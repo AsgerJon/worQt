@@ -245,9 +245,9 @@ class Scenery:
       """Returns 'local' (the vessel's own axes) from the eye."""
       return tuple(a + b for a, b in zip(place, rotated(turn, local)))
 
-    parts = []
+    parts, seen = [], dict(dash, inside=inside)
     for piece in self.cabinPieces(cockpit):
-      parts.append(self._pieceAt(piece, dash, there, turn))
+      parts.append(self._pieceAt(piece, seen, there, turn))
     centre = ballCentre()
     panel = quaternionOf(tuple((GLOBE_AXES[0][k], GLOBE_AXES[1][k],
                                 GLOBE_AXES[2][k]) for k in range(3)))
@@ -280,6 +280,9 @@ class Scenery:
             'camera': self._cameraOf(there, turn, dash['nose']),
             'aboard': dash.get('aboard', False),
             'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
+            'hand': (bool(dash['gun'][0]) and inside, tuple(
+              dash['gun'][3]) if len(dash['gun']) > 3 else (0.0, 0.0,
+                                                           0.0)),
             'swing': (dash.get('back', BACK), dash.get('swing',
                                                         SWING_AWAY)),
             'outdoor': (there(hallLight()), dash.get('swing', SWING_AWAY)
@@ -364,8 +367,9 @@ class Scenery:
       place, held = dash['loose'][looseParts()[what][0]]
       return there(place), product(turn, held), True, 0.0
     if kind in ('gun', 'gun mark'):
-      shown, eye, held = dash['gun']
-      return there(eye), product(turn, held), shown, 0.0
+      shown, eye, held = dash['gun'][:3]
+      return there(eye), product(turn, held), shown and not dash.get(
+        'inside', False), 0.0
     if kind == 'hatch':
       return there(HATCH_HINGE), product(turn, aboutAxis(
         (0.0, 1.0, 0.0), -HATCH_OPEN * dash.get('hatch', 0.0))), True, 0.0

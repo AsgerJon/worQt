@@ -58,6 +58,14 @@ Item {
   //  looked at close (E: "with E you get a better view at it. Like in
   //  RDR2"), its picture
   property var questRows: []
+  //  The gravity gun in his hands, drawn over the world from his eyes
+  //  (user, 2026-11-17: "the gravgun cuts in to walls and textures when
+  //  you are cloes to the wall"): its parts (each {geometry, colour,
+  //  metal, rough, picture, unlit, masked}, his eyes' frame), whether it
+  //  shows (up, his eyes), its shake (straining at a bolt)
+  property var handParts: []
+  property bool handShown: false
+  property vector3d handShake: Qt.vector3d(0, 0, 0)
   property bool manualShown: false
   property string manualPicture: ""
   property vector3d cabinLight: Qt.vector3d(0, 0, 0)
@@ -863,6 +871,60 @@ Item {
                 font.bold: true
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  View3D {
+    id: handView
+    anchors.fill: parent
+    visible: root.handShown && !root.mapOpen
+    environment: SceneEnvironment {
+      backgroundMode: SceneEnvironment.Transparent
+      antialiasingMode: SceneEnvironment.MSAA
+    }
+    camera: handCamera
+    PerspectiveCamera {
+      id: handCamera
+      fieldOfView: nearCamera.fieldOfView
+      clipNear: 0.01
+      clipFar: 10
+    }
+    DirectionalLight {
+      eulerRotation.x: -40
+      eulerRotation.y: 25
+      brightness: 1.1
+      color: "#fff3e4"
+    }
+    DirectionalLight {
+      eulerRotation.x: 30
+      eulerRotation.y: 160
+      brightness: 0.35
+    }
+    Node {
+      position: root.handShake
+      Repeater3D {
+        model: root.handParts
+        delegate: Model {
+          required property var modelData
+          geometry: modelData.geometry
+          materials: PrincipledMaterial {
+            baseColor: modelData.colour
+            baseColorMap: modelData.picture !== "" ? handPicture : null
+            property Texture handPicture: Texture {
+              source: modelData.picture
+              generateMipmaps: true
+              mipFilter: Texture.Linear
+            }
+            metalness: modelData.metal
+            roughness: modelData.rough
+            lighting: modelData.unlit ? PrincipledMaterial.NoLighting
+                                      : PrincipledMaterial.FragmentLighting
+            alphaMode: modelData.masked ? PrincipledMaterial.Mask
+                                        : PrincipledMaterial.Opaque
+            cullMode: Material.NoCulling
           }
         }
       }

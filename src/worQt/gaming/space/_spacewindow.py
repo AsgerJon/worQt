@@ -48,7 +48,7 @@ from ._night import MORNING, morningIn, nightIn
 from ._quest import Quest
 from ._rendezvousguidance import RendezvousGuidance
 from ._stationinterior import DECK, HUB_INSIDE, PLANE, cabinInside, roomOf
-from ._stationinterior import shaftWays
+from ._stationinterior import roomsInside, shaftWays
 from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
 from ._sleep import Sleep
@@ -59,8 +59,9 @@ from ._timekeeper import Timekeeper
 from ._turns import cross, dot, norm, quaternionOf, rotated, unit
 from ._vessel import MASS, Vessel
 from ._vitals import Vitals
-from ._walkway import Walkway, doorwayInside
-from ._launchtower import LIFT_FOOT, LIFT_TOP, START, towerSolids
+from ._walkway import Walkway, doorwayInside, walkwayInside
+from ._launchtower import LIFT_FOOT, LIFT_TOP, START, groundsInside
+from ._launchtower import towerSolids
 from ._towerlift import FOOT, TOP, TowerLift
 from ._cockpit import FLOOR, inCabin
 
@@ -1089,6 +1090,24 @@ class SpaceWindow(QMainWindow):
         self.cockpit.crewman.letGo()
     self._stationed = docked
 
+  def _open(self, point: tuple) -> bool:
+    """Returns whether 'point' is in the rooms Asger may be in now (the
+    cabin; docked, the station's; on the pad, the walkway's, the launch
+    tower's and the doorway if open): what the gravity gun sees
+    through."""
+    docked = self.vessel.docked
+    ways = shaftWays(self.docking.relative) if docked else ()
+    if roomsInside(point, docked, ways) > 0.0:
+      return True
+    walkway = self.walkway
+    if walkway.passable and doorwayInside(point) > 0.0:
+      return True
+    if docked or not walkway.attached:
+      return False
+    lift = self.towerLift
+    return walkwayInside(point) > 0.0 or groundsInside(
+      point, lift.atTop, lift.atFoot) > 0.0
+
   def _towerKept(self, real: float) -> None:
     """On the pad with the walkway out, the launch tower's solids (its
     stairs, its legs, the rocket's legs) and its lift's car (moved on
@@ -1183,15 +1202,16 @@ class SpaceWindow(QMainWindow):
     held = not cockpit.crewman.buckled and self.vitals.cause is None
     eye = cockpit.eye()
     towing = cockpit.crewman.towing if held else None
-    beam = (False,)
+    beam, shake = (False,), (0.0, 0.0, 0.0)
     if towing is not None:
       since = time.perf_counter() - self._beamSince
-      eye = tuple(e + STRAIN * self._shaking.uniform(-1.0, 1.0)
-                  for e in eye)
+      shake = tuple(STRAIN * self._shaking.uniform(-1.0, 1.0)
+                    for _ in range(3))
+      eye = tuple(e + s for e, s in zip(eye, rotated(frame, shake)))
       start = tuple(e + m for e, m in zip(eye, rotated(frame, muzzle())))
       beam = (True, start, self.bolts[towing][0], BEAM_TURNS * since,
               strengthOf(since))
-    dash['gun'] = (held, eye, frame)
+    dash['gun'] = (held, eye, frame, shake)
     dash['beam'] = beam
     dash['nose'] = self._noseCamera
     dash['hatch'] = self._hatch
@@ -1271,7 +1291,7 @@ class SpaceWindow(QMainWindow):
       crewman.letGo()
       self._noteOf('Asger lets go of the bolt')
       return True
-    aimed = self.cockpit.boltAimed(self.bolts)
+    aimed = self.cockpit.boltAimed(self.bolts, self._open)
     if aimed is None:
       return False
     crewman.towed(aimed, holdOf(self.bolts[aimed]))
@@ -1307,7 +1327,7 @@ class SpaceWindow(QMainWindow):
     crewman = self.cockpit.crewman
     if crewman.towing is not None and not crewman.attached:
       return 'Right button', 'Hold on: the gun pulls Asger to the bolt'
-    if self.cockpit.boltAimed(self.bolts) is not None:
+    if self.cockpit.boltAimed(self.bolts, self._open) is not None:
       return 'Right button', 'Hold to pick up the magic bolt'
     if crewman.towing is not None:
       return 'Space', 'Push off the bolt (right click: let go)'
@@ -1472,8 +1492,6 @@ class SpaceWindow(QMainWindow):
       self._autodocked(reading)
     if self.autodock.on:
       self.autodock.acted(vessel, self.docking, reading, now)
-      if self.keeper.aimed is None:
-        self.keeper.factor = self.autodock.hurried(reading)
     elif vessel.autopilot.mode == 'match':
       vessel.autopilot.matched(self.docking.turnAt(now), tuple(
         SPIN * a for a in reading['axis']))
@@ -1577,11 +1595,10 @@ class SpaceWindow(QMainWindow):
     return ''
 
   def _warpKept(self, ) -> None:
-    """Ends the warp the moment it may not go on, saying why (the
-    automatic docking and rendezvous keep the warp they ask for: the
-    docking hurries time while its thrusters fire)."""
-    if self.autodock.on or self.rendezvous.on:
-      return
+    """Ends the warp the moment it may not go on, saying why (warp is
+    his alone: user, 2026-11-17, "Warp should not be automatic!"; the
+    automatic systems only stop it before they act, 'Timekeeper.
+    stopAt')."""
     if self.keeper.factor > 1:
       why = self._noWarp()
       if why:

@@ -30,6 +30,20 @@ class SpaceTest(BaseTest):
     """Returns the solar system on 'TODAY'."""
     return solarSystemOn(TODAY)
 
+  def warpedByHand(self, keeper: object, vessel: object,
+                   system: object) -> None:
+    """Warps time as fast as it goes whenever a player may (user,
+    2026-11-17: "Warp should not be automatic!": the guidance only stops
+    his warp before it acts): the engine and the thrusters quiet, above
+    the air."""
+    from worQt.gaming.space._timekeeper import WARPS
+    body = system.bodies[vessel.anchor]
+    high = body.air is None or vessel.heightOver(system) > body.air.top
+    if vessel.engine.throttle == 0.0 and not any(vessel.rcs) and high:
+      keeper.factor = WARPS[-1]
+      if keeper.stopsAt is not None:
+        keeper.stopAt(keeper.stopsAt - keeper.elapsed)
+
   def flightOf(self, ) -> Flight:
     """Returns the flight on the CPU."""
     return Flight('cpu')

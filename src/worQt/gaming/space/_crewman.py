@@ -22,11 +22,14 @@ from ._turns import aboutAxis, cross, dot, norm, product, quaternionOf
 from ._turns import rotated, unit
 
 #  His body: its middle this far over his soles, m (the kernel's balls
-#  along his up from it: 'BALLS', each how far along and its radius); his
-#  eyes this far up and ahead of his soles, m; his mass, kg.
+#  along his up from it: 'BALLS', each how far along and its radius:
+#  slim, 32 cm across at most, user, 2026-11-17: "we need to be more
+#  forgiving about how much space Asger needs"; the lowest touching his
+#  soles, the highest his crown); his eyes this far up and ahead of his
+#  soles, m; his mass, kg.
 MIDDLE = 0.9
-BALLS = ((-0.72, 0.18), (-0.4, 0.17), (0.0, 0.22), (0.4, 0.21),
-         (0.72, 0.14))
+BALLS = ((-0.75, 0.15), (-0.42, 0.14), (0.0, 0.16), (0.4, 0.16),
+         (0.74, 0.12))
 EYES_UP = 28.0 * SCALE
 EYES_AHEAD = 4.0 * SCALE + 0.02
 HEFT = 80.0

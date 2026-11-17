@@ -90,3 +90,20 @@ class TestTimekeeper(SpaceTest):
     self.assertEqual(keeper.factor, 1)
     keeper.ticked(keeper.secondsOf(FRAME))
     self.assertAlmostEqual(keeper.elapsed, target + FRAME, 6)
+
+  def test_stop(self) -> None:
+    """A stop asked for (an automatic system's: user, 2026-11-17, "Warp
+    should not be automatic!") never warps time itself; his warp eases
+    off to land on it, then runs real time."""
+    keeper = Timekeeper(self.systemOf())
+    keeper.stopAt(3600.0)
+    self.assertEqual(keeper.factor, 1)
+    self.assertAlmostEqual(keeper.secondsOf(1.0), 1.0)
+    keeper.factor = WARPS[-1]
+    frames = 0
+    while keeper.stopsAt is not None and frames < 10000:
+      keeper.ticked(keeper.secondsOf(1.0 / 60.0))
+      frames += 1
+    self.assertAlmostEqual(keeper.elapsed, 3600.0, 3)
+    self.assertEqual(keeper.factor, 1)
+    self.assertLess(frames, 200)

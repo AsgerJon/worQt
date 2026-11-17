@@ -282,6 +282,10 @@ TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
 #  seen from there, 'BOLT_SEEN' m round).
 REACH = 1.6
 GUN_REACH = 40.0
+#  The gun sees a bolt if the way to it runs through the rooms, looked at
+#  every 'SIGHT_STEP' m, up to 'SIGHT_SHORT' m before the bolt, m.
+SIGHT_STEP = 0.15
+SIGHT_SHORT = 0.2
 AIM = math.radians(3.0)
 BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -295,6 +299,18 @@ def capsuleRadius(z: float) -> float:
   own axes), m."""
   share = min(1.0, max(0.0, (z - FLOOR) / (NOSE - FLOOR)))
   return RADIUS + share * (0.45 * SIZE - RADIUS)
+
+
+def _inSight(eye: tuple, off: tuple, far: float, open_: object) -> bool:
+  """Returns whether the way from 'eye' along 'off' ('far' m long) to a
+  bolt runs through the rooms ('open_'), up to 'SIGHT_SHORT' m before
+  it (the bolt is on a wall)."""
+  count = int((far - SIGHT_SHORT) // SIGHT_STEP)
+  for k in range(1, count + 1):
+    share = k * SIGHT_STEP / far
+    if not open_(tuple(e + share * o for e, o in zip(eye, off))):
+      return False
+  return True
 
 
 def inCabin(point: tuple) -> bool:
@@ -488,13 +504,16 @@ class Cockpit:
       -1.0, min(1.0, look[2])))))
     return True
 
-  def boltAimed(self, bolts: tuple) -> int | None:
+  def boltAimed(self, bolts: tuple, open_: object = None) -> int | None:
     """The 'boltAimed' method returns the magic bolt (its index in
     'bolts': each its place and the way it faces) the gravity gun points
-    at out of his chair: within 'GUN_REACH' of his eyes, facing him,
-    nearest to his eyes' middle within 'AIM' or its ring; None if
-    none (or he sits)."""
-    if self.crewman.buckled:
+    at out of his chair: within 'GUN_REACH' of his eyes, facing him, in
+    sight (user, 2026-11-17: "the gravgun should not be able to grab
+    bolts through walls": 'open_' says whether a point is in the rooms,
+    every 'SIGHT_STEP' m from his eyes to before the bolt; None: no
+    walls), nearest to his eyes' middle within 'AIM' or its ring; None
+    if none (or he sits)."""
+    if self.crewman.sitting:
       return None
     eye, look = self.eye(), self.looking()[0]
     best, least = None, math.inf
@@ -507,7 +526,8 @@ class Cockpit:
       along = sum(o * l for o, l in zip(off, look)) / far
       angle = math.acos(max(-1.0, min(1.0, along)))
       if angle <= max(AIM, math.atan(BOLT_SEEN / far)) and angle < least:
-        best, least = k, angle
+        if open_ is None or _inSight(eye, off, far, open_):
+          best, least = k, angle
     return best
 
   def strappedIn(self, ) -> None:

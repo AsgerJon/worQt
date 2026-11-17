@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 
-from worQt.gaming.space._dockingguidance import HOLD_OUT, HURRY, REACH
+from worQt.gaming.space._dockingguidance import REACH
 from worQt.gaming.space._dockingguidance import DockingGuidance
 from worQt.gaming.space._dockingport import NOSE_PORT, PUSH_OFF
 from worQt.gaming.space._dockingport import DockingPort
@@ -88,20 +88,6 @@ class TestDocking(SpaceTest):
       vessel, system, 0.0), 0.0)
     self.assertIn('off', why)
     self.assertFalse(guidance.on)
-
-  def test_hurried(self) -> None:
-    """Far from where it heads it hurries time ('HURRY'); at the point
-    out on the axis, and the last metres in, real time."""
-    system, station, port, vessel = self._near(1500.0, 0.0)
-    guidance = DockingGuidance()
-    reading = port.readingOf(vessel, system, 0.0)
-    guidance.started(vessel, port, reading, 0.0)
-    self.assertEqual(guidance.hurried(reading), HURRY)
-    there = tuple(HOLD_OUT * a for a in reading['axis'])
-    self.assertEqual(guidance.hurried(dict(reading, offset=there)), 1)
-    guidance.phase = 'final'
-    self.assertEqual(guidance.hurried(dict(reading, along=50.0)), HURRY)
-    self.assertEqual(guidance.hurried(dict(reading, along=5.0)), 1)
 
   def test_auto(self) -> None:
     """From 1.5 km off the port, off its axis and drifting, the

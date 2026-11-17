@@ -59,7 +59,8 @@ CLIMB_GAIN = 0.1
 LAUNCH_HEADING = 90.0
 #  Coasting, the apoapsis is topped up in the air when it sags this far
 #  under the target, m; the round burn starts half its time before the
-#  apoapsis, and time is warped to 'WARP_LEAD' s before that.
+#  apoapsis; a warp of his stops 'WARP_LEAD' s before that (user,
+#  2026-11-17: "Warp should not be automatic!": it never warps itself).
 SAGGED = 500.0
 WARP_LEAD = 10.0
 #  The round burn ends once the periapsis is this near the target (m),
@@ -239,8 +240,10 @@ class AscentGuidance:
       keeper.realtime()
       self.phase = 'round'
       return
-    if keeper.aimed is None and left > WARP_LEAD + 1.0:
-      keeper.aim(left - WARP_LEAD)
+    if left > WARP_LEAD + 1.0:
+      keeper.stopAt(left - WARP_LEAD)
+    else:
+      keeper.realtime()
 
   def _rounded(self, vessel: Vessel, system: SolarSystem,
                body: object) -> None:

@@ -177,3 +177,24 @@ class TestBolts(SpaceTest):
     crewman.letGo()
     self.assertFalse(crewman.attached)
     self.assertIsNone(crewman.towTo)
+
+  def test_walls(self) -> None:
+    """The gun takes no bolt through a wall (user, 2026-11-17: "the
+    gravgun should not be able to grab bolts through walls"): one beyond
+    the cabin's wall, facing him, is aimed at only if nothing is in the
+    way."""
+    from worQt.gaming.space._cockpit import inCabin
+    from worQt.gaming.space._crewman import MIDDLE
+    cockpit = Cockpit()
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    crewman.placed((-3.0, 0.0, FLOOR + 0.002 + MIDDLE), (0.0, 0.0, 0.0), 0,
+                   (0.0, 0.0, 0.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (-1.0, 0.0, 0.0)
+    eye = cockpit.eye()
+    bolt = ((-7.0, 0.0, eye[2]), (1.0, 0.0, 0.0))
+    cockpit.yaw, cockpit.pitch = 0.0, 0.0
+    self.assertEqual(cockpit.boltAimed((bolt,)), 0)
+    self.assertIsNone(cockpit.boltAimed((bolt,), inCabin))
+    inside = ((-4.0, 0.0, eye[2]), (1.0, 0.0, 0.0))
+    self.assertEqual(cockpit.boltAimed((inside,), inCabin), 0)

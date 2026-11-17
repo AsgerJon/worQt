@@ -53,6 +53,7 @@ from __future__ import annotations
 import warp as wp
 
 from ._stationsolids import hullReach
+from ._station import REACH as STATION_REACH
 from ._vessel import MASS, SAG
 
 wp.config.log_level = wp.LOG_WARNING
@@ -125,6 +126,18 @@ SOLID_GRIP = _single(0.5)
 #  counts).
 HULL_REACH = _single(hullReach())
 CONTACT_STEP = _single(1.0 / 240.0)
+#  Whether the station is near is decided each step where it truly is
+#  (on its circle round its planet: user, 2026-11-17, "When I tried to
+#  hit the auto docking thing game crashed": warped 100 000 times, a
+#  frame of 28 minutes took contact steps throughout, 400 000 of them,
+#  the station judged near from the frame's start): within
+#  'STATION_CLEAR' m of its middle (its reach, the hull's, a margin) the
+#  contact steps; further, the steps no longer than its closing leaves
+#  clear. A frame no longer than 'SHORT_FRAME' s has the station's place
+#  as it moves from the frame's start (small numbers: mm); a longer, from
+#  its circle (big numbers: a metre or so).
+STATION_CLEAR = _single(STATION_REACH + hullReach() + 100.0)
+SHORT_FRAME = _single(2.0)
 TORUS = wp.constant(0)
 CYLINDER = wp.constant(1)
 GRADIENT_STEP = _single(0.01)
@@ -198,6 +211,8 @@ class Fleet:
   solidFall: wp.array(dtype=wp.vec3)
   solidTurn: wp.array(dtype=wp.quat)
   solidSpin: wp.array(dtype=wp.vec3)
+  stationAt: wp.array(dtype=wp.vec3)
+  stationVel: wp.array(dtype=wp.vec3)
 
 
 @wp.func
@@ -655,6 +670,11 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   solidTurn = fleet.solidTurn[i]
   solidSpin = fleet.solidSpin[i]
   spinRate = wp.length(solidSpin)
+  stationAt = fleet.stationAt[i]
+  stationVel = fleet.stationVel[i]
+  circling = wp.length(stationVel) / wp.max(wp.length(stationAt), 1.0)
+  startAt = baseHi + baseLo
+  contact = int(0)
   stiff = mass * SOLID_OMEGA * SOLID_OMEGA
   damp = 2.0 * SOLID_DAMPING * mass * SOLID_OMEGA
   far = farPull(sky, fleet, row, b, hi + lo)
@@ -666,8 +686,21 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
     dt = wp.min(dt, KEPLER_SHARE * wp.sqrt(r * r * r / anchorMu))
     if height < GROUND_NEAR:
       dt = wp.min(dt, GROUND_STEP)
+    contact = int(0)
     if near != 0:
-      dt = wp.min(dt, CONTACT_STEP)
+      turned = circling * done
+      there = stationAt * wp.cos(turned) + stationVel * (
+        wp.sin(turned) / wp.max(circling, 1.0e-9))
+      going = stationVel * wp.cos(turned) - stationAt * (
+        circling * wp.sin(turned))
+      apart = wp.length(there - (hi + lo))
+      if apart > STATION_CLEAR:
+        closing = wp.max(wp.length(going - (vhi + vlo)), 1.0)
+        dt = wp.min(dt, wp.max(CONTACT_STEP, (apart - STATION_CLEAR)
+                                / closing))
+      else:
+        dt = wp.min(dt, CONTACT_STEP)
+        contact = 1
     dt = wp.max(dt, LEAST_STEP)
     # coast half a step on the anchor's pull
     arc = drifted(hi + lo, vhi + vlo, anchorMu, 0.5 * dt)
@@ -752,14 +785,20 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
             torque = torque + wp.cross(arm, push2)
             touching = touching + 1
     # the hull's balls pressed out of the station's near solids
-    if near != 0:
+    if contact != 0:
       tau = done + 0.5 * dt
       offset = solidAt + solidSpeed * tau + solidFall * (0.5 * tau * tau)
+      flowing = solidSpeed + solidFall * tau
+      if seconds > SHORT_FRAME:
+        turned = circling * tau
+        offset = stationAt * wp.cos(turned) + stationVel * (
+          wp.sin(turned) / wp.max(circling, 1.0e-9)) - startAt
+        flowing = stationVel * wp.cos(turned) - stationAt * (
+          circling * wp.sin(turned))
       turn = solidTurn
       if spinRate > 0.0:
         turn = wp.mul(wp.quat_from_axis_angle(solidSpin / spinRate,
                                               spinRate * tau), solidTurn)
-      flowing = solidSpeed + solidFall * tau
       spinWorld = wp.quat_rotate(q, w)
       middle = wp.quat_rotate_inv(turn, d - offset)
       for j in range(fleet.solidKinds.shape[0]):

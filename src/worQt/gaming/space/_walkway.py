@@ -8,10 +8,10 @@ round into the wall; a covered walkway from it to the launch tower's
 hall beside the rocket (on the pad, west of it; '_launchtower'). Its
 rooms (in the rocket's own axes, the cabin's world's) join the cabin's
 while it is at the door: the walkway and the tower's; and while the
-door is open, the doorway through the wall. Its state: whether the walkway is at the door
-('attached'; dismissed, it swings away and is gone for good), how far
-it has swung, the door (how far open, wanted open or not, locked).
-Qt-free.
+door is open, the doorway through the wall. Its state: whether the
+walkway is at the door ('attached'; dismissed, it slides back and
+swings away and is gone for good), how far it has gone, the door (how
+far open, wanted open or not, locked). Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen

@@ -43,13 +43,8 @@ CENTRING = 0.2
 APPROACH_FAST = 5.0
 BRAKE = 0.08
 SETTLE = 2.0
-#  It hurries time ('HURRY' times real time) while far from where it
-#  heads: closing, over 'HURRY_CLOSING' m from the point out on the axis;
-#  in the final approach, over 'HURRY_FINAL' m out (at its pace the last
-#  100 m took six minutes of real time).
-HURRY = 10
-HURRY_CLOSING = 200.0
-HURRY_FINAL = 15.0
+#  It never hurries time (user, 2026-11-17: "Warp should not be
+#  automatic!").
 #  Its phases.
 PHASES = ('off', 'closing', 'final')
 
@@ -138,18 +133,6 @@ class DockingGuidance:
     if size > RCS_ACCEL:
       push = tuple(p * RCS_ACCEL / size for p in push)
     vessel.rcs = unrotated(vessel.turn, tuple(MASS * p for p in push))
-
-  def hurried(self, reading: dict) -> int:
-    """The 'hurried' method returns how fast time may run while it flies
-    the nose standing so ('reading'): 'HURRY' far from where it heads,
-    else real time."""
-    if self.phase == 'closing':
-      far = norm(tuple(o - HOLD_OUT * a for o, a in zip(reading['offset'],
-                                                         reading['axis'])))
-      return HURRY if far > HURRY_CLOSING else 1
-    if self.phase == 'final':
-      return HURRY if reading['along'] > HURRY_FINAL else 1
-    return 1
 
   def stopped(self, vessel: Vessel) -> None:
     """The 'stopped' method lets the rocket go: its thrusters quiet."""

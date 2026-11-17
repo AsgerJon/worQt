@@ -369,6 +369,7 @@ class SpaceViewport(QWidget):
     root.setProperty('paperLayout', _dashboard.paperLayout())
     root.setProperty('manualPicture', QUrl.fromLocalFile(str(
       cabinPicturesReady()['manual'])).toString())
+    root.setProperty('handParts', self._handParts())
     root.setProperty('paperGeometry', self._kept1(Mesh(
       *_dashboard.paperRows())))
     root.setProperty('screenGeometry', self._kept1(Mesh(
@@ -429,6 +430,9 @@ class SpaceViewport(QWidget):
     root.setProperty('habitatOn', bool(cabin.get('aboard')) and bool(
       satellites))
     self._outdoorShown(root, frame['pad'], cabin['outdoor'])
+    shown, shake = cabin['hand']
+    root.setProperty('handShown', bool(shown))
+    root.setProperty('handShake', QVector3D(*shake))
     if satellites:
       root.setProperty('habitatLight', QVector3D(*satellites[0][0]))
     root.setProperty('panelLamp', QVector3D(*cabin['lamp']))
@@ -812,6 +816,26 @@ class SpaceViewport(QWidget):
     if kind == 'sring':
       return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
     return looks['black'], '', False, None, 1.0
+
+  def _handParts(self, ) -> list:
+    """Returns the gravity gun in his hands as the hand's view draws it
+    over the world (user, 2026-11-17: "the gravgun cuts in to walls and
+    textures when you are cloes to the wall"): each part in his eyes'
+    frame (right, up, back: the view's camera's own), its look and
+    picture; the 3 on its side unlit, its clear pixels holes."""
+    out = []
+    for look, picture, rows, faces in gunParts():
+      rgb, metal, rough = look
+      out.append({'geometry': self._kept1(Mesh(rows, faces)),
+                  'colour': QColor(*rgb), 'metal': metal, 'rough': rough,
+                  'picture': QUrl.fromLocalFile(str(picture)).toString()
+                  if picture else '', 'unlit': False, 'masked': False})
+    rows, faces = _dashboard.pieceRows(('gun mark', 0), None)
+    out.append({'geometry': self._kept1(Mesh(rows, faces)),
+                'colour': QColor(255, 255, 255), 'metal': 0.0, 'rough': 1.0,
+                'picture': QUrl.fromLocalFile(str(cabinPicturesReady()[
+                  'three'])).toString(), 'unlit': True, 'masked': True})
+    return out
 
   def _walkwayParts(self, parts: dict, slot: int) -> list:
     """Returns the way in's 'parts' (meshes by look) on 'slot': the

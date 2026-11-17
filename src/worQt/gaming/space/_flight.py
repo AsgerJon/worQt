@@ -214,6 +214,8 @@ class Flight:
     fleet.solidFall = wp.zeros(count, wp.vec3, device)
     fleet.solidTurn = self._sent([(0.0, 0.0, 0.0, 1.0)] * count, wp.quat)
     fleet.solidSpin = wp.zeros(count, wp.vec3, device)
+    fleet.stationAt = wp.zeros(count, wp.vec3, device)
+    fleet.stationVel = wp.zeros(count, wp.vec3, device)
     self._near = numpy.zeros(count, numpy.int32)
     return fleet
 
@@ -234,6 +236,7 @@ class Flight:
       return
     solids = stationSolids()
     at, speeds, falls, turns, spins = [], [], [], [], []
+    rounds, rounding = [], []
     rows = station.turnAt(start)
     turn = _warpQuat(quaternionOf(rows))
     axis = tuple(row[2] for row in rows)
@@ -250,6 +253,8 @@ class Flight:
       speed = tuple(a + v for a, v in zip(moving, velocity))
       at.append(offset)
       speeds.append(speed)
+      rounds.append(tuple(a + m for a, m in zip(there, middle)))
+      rounding.append(speed)
       falls.append(fall)
       turns.append(turn)
       spins.append(spin)
@@ -269,6 +274,8 @@ class Flight:
     fleet.solidFall.assign(numpy.asarray(falls, numpy.float32))
     fleet.solidTurn.assign(numpy.asarray(turns, numpy.float32))
     fleet.solidSpin.assign(numpy.asarray(spins, numpy.float32))
+    fleet.stationAt.assign(numpy.asarray(rounds, numpy.float32))
+    fleet.stationVel.assign(numpy.asarray(rounding, numpy.float32))
 
   def _taken(self, vessels: tuple, fleet: object) -> None:
     """Takes the vessels' states back from the device, all at once; the

@@ -492,8 +492,7 @@ class RendezvousGuidance:
     self.checked = min(max(self.checked, self.arrival - STEERED * period),
                        self.arrival - FINAL)
     if keeper.elapsed < self.checked:
-      if keeper.aimed is None:
-        keeper.aim(self.checked - keeper.elapsed)
+      keeper.stopAt(self.checked - keeper.elapsed)
       return
     keeper.realtime()
     if norm(self._goal(vessel, system, keeper)) > CORRECT:
@@ -533,12 +532,12 @@ class RendezvousGuidance:
 
   def _warpedTo(self, vessel: Vessel, keeper: Timekeeper, seconds: float,
                 way: tuple) -> None:
-    """Warps 'seconds' s on (unless warped already), the engine and the
-    thrusters quiet, the nose turned 'way'."""
+    """Waits 'seconds' s, the engine and the thrusters quiet, the nose
+    turned 'way': time warps only as he warps it (user, 2026-11-17: "Warp
+    should not be automatic!"), stopping at the end."""
     self._quiet(vessel)
     self._pointed(vessel, way)
-    if keeper.aimed is None:
-      keeper.aim(seconds)
+    keeper.stopAt(seconds)
 
   def _pointed(self, vessel: Vessel, way: tuple) -> None:
     """Holds the nose 'way' (its roll kept as near as it is)."""

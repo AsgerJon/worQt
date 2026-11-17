@@ -53,8 +53,8 @@ PLATE = 0.06
 #  (into the hall) and bottom (out to the yard, its north wall).
 STAIR_TOP = ((-19.3, -2.6, FLOOR), (-17.7, -0.4, FLOOR + 2.2))
 STAIR_FOOT = ((-25.4, -2.6, GROUND), (-23.6, -0.4, GROUND + 2.2))
-LIFT_TOP = ((-19.4, 0.9, FLOOR), (-17.8, 2.1, FLOOR + 2.2))
-LIFT_FOOT = ((-20.3, 2.2, GROUND), (-19.2, 3.6, GROUND + 2.2))
+LIFT_TOP = ((-19.4, 0.7, FLOOR), (-17.8, 2.3, FLOOR + 2.2))
+LIFT_FOOT = ((-20.7, 2.2, GROUND), (-18.9, 3.6, GROUND + 2.2))
 #  The stair tower's walls outside (its footprint, its top), m.
 TOWER = ((-24.7, -3.2), (-18.5, 3.2))
 TOWER_TOP = FLOOR + 3.2

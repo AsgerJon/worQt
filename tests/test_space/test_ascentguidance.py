@@ -22,7 +22,8 @@ class TestAscentGuidance(SpaceTest):
   def test_to_orbit(self) -> None:
     """From the pad the guidance flies a round orbit 200 km up: its
     periapsis and apoapsis within 5 km of it, every phase gone through
-    in order, the coast warped, the engine shut at the end."""
+    in order, the coast warped by hand (never by it), the engine shut at
+    the end."""
     system, flight = self.systemOf(), self.flightOf()
     keeper = Timekeeper(system)
     vessel = self.padded(system)
@@ -30,6 +31,7 @@ class TestAscentGuidance(SpaceTest):
     guidance.started(vessel, system)
     phases, warped, frames = [guidance.phase], False, 0
     while guidance.on and frames < 300000:
+      self.warpedByHand(keeper, vessel, system)
       guidance.acted(vessel, system, keeper)
       warped = warped or keeper.factor > 1
       seconds = keeper.secondsOf(FRAME)

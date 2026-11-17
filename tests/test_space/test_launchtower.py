@@ -154,3 +154,22 @@ class TestLaunchTower(SpaceTest):
       crewman.righted(pull, FRAME)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
       world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+
+  def test_enter_lift(self) -> None:
+    """From the hall he walks into the lift's car through its door (user,
+    2026-11-17: "we need to be more forgiving about how much space Asger
+    needs. Just now, I couldn't go into the elevator"), and the stairs'
+    doorway too, at an angle."""
+    lift = TowerLift()
+    for start, facing, inside in (
+        ((-17.0, 1.5, FLOOR), (-1.0, 0.0, 0.0), lift.holds),
+        ((-16.8, 0.6, FLOOR), (-0.92, -0.39, 0.0),
+         lambda p: p[0] < -19.0)):
+      cockpit, world, meter = self._world()
+      world.walked(1 | lift.doors)
+      world.stationed(False, (), towerSolids() + lift.boxesOf())
+      self._placed(cockpit, start, facing)
+      self._walked(world, meter, cockpit, set(), 0.3)
+      self._walked(world, meter, cockpit, {'ahead'}, 1.6)
+      self.assertTrue(inside(cockpit.crewman.middle),
+                      (start, cockpit.crewman.middle))

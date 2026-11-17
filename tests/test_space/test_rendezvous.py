@@ -65,6 +65,7 @@ class TestRendezvous(SpaceTest):
     for _ in range(MOST):
       if not guidance.on:
         break
+      self.warpedByHand(keeper, vessel, system)
       guidance.acted(vessel, system, keeper)
       if guidance.phase != phases[-1]:
         phases.append(guidance.phase)
