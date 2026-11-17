@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import numpy
 
 from ._cabinsolids import solids
-from ._crewman import BALLS, HEFT
+from ._crewman import HEFT, MIDDLE
 from ._furnishings import looseThings
 from ._turns import quaternionOf
 
@@ -31,8 +31,9 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 STEP = 1.0 / 1200.0
 MOST_STEPS = 120
 #  The solids' places kept for the space station's (docked: its
-#  elevators' cages, its garden's furniture), after the cabin's own.
-STATION_SLOTS = 160
+#  elevators' cages, its garden's furniture) or the launch tower's (its
+#  stairs' steps), after the cabin's own; Asger's box after them.
+STATION_SLOTS = 320
 #  Where a solid not there is kept (far from everything), m.
 AWAY = (0.0, 0.0, -1e4)
 
@@ -51,10 +52,12 @@ def preloadedCabin(device: str) -> float:
 
 class CabinWorld:
   """
-  CabinWorld steps the cabin's bodies on 'device' ('stepped'): body 0
-  Asger (left out while he sits: 'Crewman.buckled'), then each of
-  '_furnishings.looseThings', every frame as long as the real time
-  passed, in steps of 'STEP'. Docked to the space station ('stationed')
+  CabinWorld steps the cabin's bodies on 'device' ('stepped'): Asger's
+  box a frame at a time ('_cabin_kernels.walked': left out while he
+  sits), his box then a moving solid for the loose things (the last
+  solid's slot); each of '_furnishings.looseThings' (bodies from 1: body
+  0 is kept empty) every frame as long as the real time passed, in steps
+  of 'STEP'. Docked to the space station ('stationed')
   its rooms join the cabin's and its solids (moving, some) the cabin's
   own. 'shown' says where each loose thing is and
   how it is turned from how it rests; 'thuds' counts the meetings begun
@@ -99,10 +102,6 @@ class CabinWorld:
       (m / 3.0 * (h[1] ** 2 + h[2] ** 2), m / 3.0 * (h[0] ** 2 + h[2] ** 2),
        m / 3.0 * (h[0] ** 2 + h[1] ** 2)) for (_, _, h, _, m) in things]
     owners, locals_, radii = [], [], []
-    for along, radius in BALLS:
-      owners.append(0)
-      locals_.append((0.0, 0.0, along))
-      radii.append(radius)
     skin = _cabin_kernels.SKIN_SIZE
     for k, (_, _, half, _, _) in enumerate(things):
       inset = tuple(h - skin for h in half)
@@ -126,14 +125,15 @@ class CabinWorld:
     self.owners = self._sent(owners, wp.int32)
     self.locals = self._sent(locals_, vec3)
     self.radii = self._sent(radii, wp.float32)
-    away = [AWAY] * STATION_SLOTS
+    away = [AWAY] * (STATION_SLOTS + 1)
+    self.own = self._held + STATION_SLOTS
     self._middles = numpy.array([m for m, _, _ in held] + away,
                                 numpy.float64)
     self._solidTurns = numpy.array([_turnOf(axes) for _, _, axes in held]
-                                   + [(1.0, 0.0, 0.0, 0.0)] * STATION_SLOTS,
-                                   numpy.float64)
+                                   + [(1.0, 0.0, 0.0, 0.0)] * (
+                                     STATION_SLOTS + 1), numpy.float64)
     self._halves = numpy.array([h for _, h, _ in held] + [
-      (0.1, 0.1, 0.1)] * STATION_SLOTS, numpy.float64)
+      (0.1, 0.1, 0.1)] * (STATION_SLOTS + 1), numpy.float64)
     self.solidMiddles = self._sent(self._middles, vec3)
     self.solidTurns = self._sent(_warpQuats(self._solidTurns), quat)
     self.solidHalves = self._sent(self._halves, vec3)
@@ -147,7 +147,14 @@ class CabinWorld:
     self.met = self._sent(numpy.zeros((2, 3)), vec3)
     self.thudding = self._sent([0.0, 0.0], wp.float32)
     self.landing = self._sent([0.0], wp.float32)
-    self._pressed, self._moved = self._recorded()
+    self.body = self._sent(numpy.zeros((1, 3)), vec3)
+    self.bodyVelocity = self._sent(numpy.zeros((1, 3)), vec3)
+    self.contact = self._sent([(1.0, 1.0, 0.0)], vec3)
+    self.bodyMet = self._sent(numpy.zeros((3, 3)), vec3)
+    self.near = self._sent([0] * _cabin_kernels.NEAR_MOST, wp.int32)
+    self.nearCount = self._sent([0], wp.int32)
+    self._pressed, self._moved, self._walked, self._nearby = (
+      self._recorded())
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -167,32 +174,44 @@ class CabinWorld:
     present = 0 if crewman.sitting else 1
     if present and not self._present:
       self._asgerSent(crewman)
+    if self._present and not present:
+      self._asgerAway()
     self._present = present
-    wanted, walking, wanting, leap, sure = want
+    vec3 = wp.vec3
+    felt, turning, speeding = (vec3(*accelerometer.felt),
+                               vec3(*accelerometer.turning),
+                               vec3(*accelerometer.speeding))
+    if present:
+      wanted, walking, wanting, leap, sure = want
+      walked = self._walked
+      towing = 0 if crewman.towTo is None else 1
+      for name, value in (
+          ('felt', felt), ('turning', turning), ('speeding', speeding),
+          ('wanted', vec3(*wanted)), ('leap', vec3(*leap)),
+          ('up', vec3(*crewman.up)), ('walking', int(walking)),
+          ('wanting', int(wanting)),
+          ('towTo', vec3(*(crewman.towTo or (0.0, 0.0, 0.0)))),
+          ('towing', towing), ('sure', int(sure)),
+          ('crouch', 1 if crewman.crouching else 0),
+          ('docked', 1 if self.docked else 0), ('outside', self.outside),
+          ('seconds', float(seconds))):
+        walked.set_param_by_name(name, value)
+      nearby = self._nearby
+      for name, value in (
+          ('up', vec3(*crewman.up)), ('seconds', float(seconds)),
+          ('margin', math.hypot(*crewman.velocity) * seconds + 1.0)):
+        nearby.set_param_by_name(name, value)
+      nearby.launch()
+      walked.launch()
     steps = max(1, min(MOST_STEPS, math.ceil(seconds / STEP)))
     step = seconds / steps
-    vec3 = wp.vec3
-    towing = 0 if crewman.towTo is None else 1
-    towTo = vec3(*(crewman.towTo or (0.0, 0.0, 0.0)))
-    legs = 1 if (walking or wanting or towing) else 0
-    up = vec3(*crewman.up)
-    pressed, moved = self._pressed, self._moved
-    for name, value in (('up', up), ('present', present), ('legs', legs)):
-      pressed.set_param_by_name(name, value)
-    for name, value in (
-        ('felt', vec3(*accelerometer.felt)),
-        ('turning', vec3(*accelerometer.turning)),
-        ('speeding', vec3(*accelerometer.speeding)),
-        ('wanted', vec3(*wanted)), ('leap', vec3(*leap)), ('up', up),
-        ('walking', int(walking)), ('wanting', int(wanting)),
-        ('present', present), ('towTo', towTo), ('towing', towing),
-        ('sure', int(sure)), ('step', float(step))):
+    moved = self._moved
+    for name, value in (('felt', felt), ('turning', turning),
+                        ('speeding', speeding), ('step', float(step))):
       moved.set_param_by_name(name, value)
     for k in range(steps):
-      if k == 1:
-        moved.set_param_by_name('leap', vec3(0.0, 0.0, 0.0))
-      pressed.set_param_by_name('elapsed', float(k * step))
-      pressed.launch()
+      self._pressed.set_param_by_name('elapsed', float(k * step))
+      self._pressed.launch()
       moved.launch()
     self._taken(crewman, present)
 
@@ -219,15 +238,15 @@ class CabinWorld:
                                                         turn, velocity)
     if docked:
       self.ways.assign(numpy.asarray(ways, numpy.float32))
-    self._middles[first:] = middles
-    self._halves[first:] = halves
-    self._solidTurns[first:] = turns
+    self._middles[first:first + count] = middles
+    self._halves[first:first + count] = halves
+    self._solidTurns[first:first + count] = turns
     self.solidMiddles.assign(self._middles.astype(numpy.float32))
     self.solidHalves.assign(self._halves.astype(numpy.float32))
     self.solidTurns.assign(_warpQuats(self._solidTurns).astype(
       numpy.float32))
     every = numpy.zeros((len(self._middles), 3), numpy.float32)
-    every[first:] = velocities
+    every[first:first + count] = velocities
     self.solidVelocities.assign(every)
     self.docked = bool(docked)
     self._pressed.set_param_by_name('docked', 1 if docked else 0)
@@ -257,6 +276,17 @@ class CabinWorld:
     launch packed afresh costs some 0.3 ms of Python)."""
     wp, kernels, device = self.wp, self.kernels, self.device
     zero = wp.vec3(0.0, 0.0, 0.0)
+    nearby = wp.launch(kernels.nearby, len(self._middles), [
+      self.solidMiddles, self.solidHalves, self.solidVelocities, self.body,
+      self.near, self.nearCount, wp.vec3(0.0, 0.0, 1.0), 0.0, self.own,
+      1.0 / 60.0], [], [], [], device, None, False, False, True)
+    walked = wp.launch(kernels.walked, 1, [
+      self.body, self.bodyVelocity, self.contact, self.bodyMet,
+      self.thudding, self.solidMiddles, self.solidTurns, self.solidHalves,
+      self.solidVelocities, self.ways, self.near, self.nearCount, zero,
+      zero, zero, zero, zero,
+      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, 0, 0, 0, 0, 0, self.own,
+      1.0 / 60.0], [], [], [], device, None, False, False, True)
     pressed = wp.launch(kernels.pressed, self.pointCount, [
       self.places, self.turns, self.velocities, self.spins, self.masses,
       self.halves, self.owners, self.locals, self.radii,
@@ -270,14 +300,25 @@ class CabinWorld:
       self.inertias, self.pushes, self.twists, self.asger, self.met,
       zero, zero, zero, zero, zero, zero, 0, 0, 0, zero, 0, 0, 0.0], [],
                       [], [], device, None, False, False, True)
-    return pressed, moved
+    return pressed, moved, walked, nearby
 
   def _asgerSent(self, crewman: Crewman) -> None:
-    """Puts Asger's body where he got up: its middle, its velocity."""
+    """Puts Asger's box where he got up: its middle, its velocity,
+    standing on the floor, not crouched."""
     wp = self.wp
-    for target, value in ((self.places, crewman.middle),
-                          (self.velocities, crewman.velocity)):
-      wp.copy(target, self._sent([value], wp.vec3), 0, 0, 1)
+    self.body.assign(numpy.asarray([crewman.soles()], numpy.float32))
+    self.bodyVelocity.assign(numpy.asarray([crewman.velocity],
+                                           numpy.float32))
+    self.contact.assign(numpy.asarray([(1.0, 1.0, 0.0)], numpy.float32))
+
+  def _asgerAway(self, ) -> None:
+    """Takes Asger's box out of the loose things' way (he sits)."""
+    own = self.own
+    middles = self.solidMiddles.numpy()
+    velocities = self.solidVelocities.numpy()
+    middles[own], velocities[own] = AWAY, (0.0, 0.0, 0.0)
+    self.solidMiddles.assign(middles)
+    self.solidVelocities.assign(velocities)
 
   def _taken(self, crewman: Crewman, present: int) -> None:
     """Takes the bodies back from the device: the loose things' places
@@ -285,17 +326,21 @@ class CabinWorld:
     self._places = self.places.numpy().astype(numpy.float64)
     x, y, z, w = self.turns.numpy().astype(numpy.float64).T
     self._turns = numpy.stack([w, x, y, z], 1)
+    self.landed = 0.0
     if present:
-      met = self.met.numpy().astype(numpy.float64)
-      crewman.placed(tuple(self._places[0].tolist()), tuple(
-        self.velocities.numpy()[0].astype(numpy.float64).tolist()),
-                     int(round(met[0][0])), tuple(met[1].tolist()))
+      met = self.bodyMet.numpy().astype(numpy.float64)
+      contact = self.contact.numpy()[0]
+      soles = self.body.numpy()[0].astype(numpy.float64).tolist()
+      crewman.placed(tuple(s + MIDDLE * u for s, u in zip(
+        soles, crewman.up)), tuple(self.bodyVelocity.numpy()[0].astype(
+          numpy.float64).tolist()), int(round(met[0][0])),
+                     tuple(met[1].tolist()), bool(contact[2] > 0.5),
+                     float(met[0][1]), tuple(met[2].tolist()))
+      self.landed = float(met[0][2])
     count, loudest = self.thudding.numpy().tolist()
     self.thuds += int(round(count))
     self.loudest = float(loudest)
     self.thudding.zero_()
-    self.landed = float(self.landing.numpy()[0]) if present else 0.0
-    self.landing.zero_()
 
   def _sent(self, values: object, kind: object) -> object:
     """Returns 'values' as a Warp array of 'kind' on the device."""

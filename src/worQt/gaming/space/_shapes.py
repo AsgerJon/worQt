@@ -270,6 +270,27 @@ def _ringFaces(count: int, rings: int) -> numpy.ndarray:
   return numpy.array(faces, numpy.uint32)
 
 
+def sheetRows(places: list, normals: list, cell: tuple = None) -> tuple:
+  """Returns a sheet's rows and triangles (a curved dashboard's face):
+  'places' and 'normals' each a grid, a list of columns each a list of
+  points up it; laid over 'cell' of a picture (u0, v0, u1, v1: its first
+  column at u0, each column's first point at v0; None: none), spread by
+  the grid's steps; its triangles facing as the columns' way across
+  turned onto their way up does (right onto up: out)."""
+  columns, count = len(places), len(places[0])
+  rows = []
+  for i in range(columns):
+    for j in range(count):
+      rows.append(tuple(places[i][j]) + tuple(normals[i][j]) + _cellAt(
+        cell, i / (columns - 1), j / (count - 1)))
+  faces = []
+  for i in range(columns - 1):
+    for j in range(count - 1):
+      a, b = i * count + j, (i + 1) * count + j
+      faces.extend((a, b, b + 1, a, b + 1, a + 1))
+  return numpy.array(rows), numpy.array(faces, numpy.uint32)
+
+
 def joined(parts: list, about: tuple = None) -> tuple:
   """Returns the rows and triangles of 'parts' as one mesh, its places
   from 'about' (None: as they are)."""

@@ -26,13 +26,18 @@ from worQt.gaming.space._cockpit import BACKREST, BALL_RADIUS, BAT_ON
 from worQt.gaming.space._cockpit import CUSHION, EYE, GLASS, GLOBE_AT
 from worQt.gaming.space._cockpit import GLOBE_AXES
 from worQt.gaming.space._cockpit import FIGURE, FLOOR, KEY_TRAVEL
-from worQt.gaming.space._cockpit import LAMPS, LEFT_CONSOLE, PANEL_AXES
-from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE, SLIDER_LONG
+from worQt.gaming.space._cockpit import DECK_KEYS, LAMPS, LEFT_CONSOLE
+from worQt.gaming.space._cockpit import GLOBE_ON, LIT_KEYS, PANEL_RADIUS
+from worQt.gaming.space._cockpit import PANEL_SPAN, PAPER_AT, PAPER_HIGH
+from worQt.gaming.space._cockpit import SNACK_BAG
+from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE
+from worQt.gaming.space._cockpit import THROTTLE_LONG, panelPoint
 from worQt.gaming.space._cockpit import WALL, Cockpit, capsuleRadius
 from worQt.gaming.space._cabinworld import restingLoose
 from worQt.gaming.space._cockpit import SIDEBOARD, inWindow, seated
 from worQt.gaming.space._crewman import MIDDLE, STAND
-from worQt.gaming.space._dashboard import SWEEP, dialAngle, dialShare
+from worQt.gaming.space._dashboard import SWEEP, dialAngle, dialAxes
+from worQt.gaming.space._dashboard import dialShare
 from worQt.gaming.space._dashboard import LEGENDS, ballCentre, legendAxes
 from worQt.gaming.space._dashboard import pieces
 from worQt.gaming.space._dashboard import pieceRows, pivotOf
@@ -44,16 +49,22 @@ from worQt.gaming.space._vessel import RADIUS
 
 from . import SpaceTest
 
-#  The tape deck's keys' actions (behind him on his right: reached up out
-#  of his chair).
-DECK_ACTIONS = ('play', 'halt', 'eject')
+#  Where the tape deck's own keys are (behind him on his right: reached
+#  up out of his chair; the right console's keys work the same).
+DECK_PLACES = tuple((x, y) for _, _, _, (x, y) in DECK_KEYS)
 
 #  The dashboard's still meshes, by their makers' names.
-STILL = ('panelFace', 'panelFrame', 'dialFaces', 'bezels', 'monitorBody',
-         'screenRows',
-         'paperRows',
-         'sliderTrack', 'consoleBases', 'domeRows', 'monitorInset',
-         'globeStand', 'sideboardRows', 'sideboardTop', 'paperFrame')
+STILL = ('panelFace', 'panelBody', 'hoodFace', 'hoodBody', 'dialFaces',
+         'bezels', 'monitorBody', 'screenRows', 'paperRows', 'sliderTrack',
+         'consoleBases', 'domeRows', 'monitorInset', 'globeMount',
+         'globeCowl', 'readoutRows', 'sideboardRows', 'sideboardTop',
+         'paperFrame', 'snackBag', 'snackTray')
+
+
+def _atDeck(control: object) -> bool:
+  """Returns whether 'control' is one of the tape deck's own keys."""
+  return any(math.dist(control.centre[:2], place) < 1e-9
+             for place in DECK_PLACES)
 
 
 def _inside(point: tuple) -> bool:
@@ -92,25 +103,32 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 29 inputs, each its own action and key:
-    seven switches and the view's and the map's, three knobs (warp,
-    orbit, the engine's limit), sixteen keys (with the docking's: six
-    thrusters, the monitor's feed, undock), the slide; the switches
+    """The dashboard has its 32 inputs, each its own action and key
+    (but the tape deck's own keys: the right console's work the same):
+    the view's and the map's switches, three knobs (warp, orbit, the
+    engine's limit), 26 keys (the AUTOPILOT's lit modes among them, the
+    docking's six thrusters, the monitor's feed, undock; the tape's on
+    the console and on the deck), the throttle's lever; the switches
     plain FourthPeeps, the rest their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 29)
-    actions = [control.action for control in controls]
-    keys = [control.key for control in controls]
+    self.assertEqual(len(controls), 32)
+    own = [control for control in controls if not _atDeck(control)]
+    self.assertEqual(len(own), len(controls) - len(DECK_KEYS))
+    actions = [control.action for control in own]
+    keys = [control.key for control in own]
     self.assertEqual(len(set(actions)), len(actions))
     self.assertEqual(len(set(keys)), len(keys))
     kinds = {}
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 9, 'Knob': 3, 'Pushbutton': 16,
+    self.assertEqual(kinds, {'FourthPeep': 2, 'Knob': 3, 'Pushbutton': 26,
                              'Slider': 1})
-    switch = Cockpit().controlOf('hold').peep
-    self.assertIs(type(switch), FourthPeep)
+    self.assertIs(type(Cockpit().controlOf('view').peep), FourthPeep)
+    for name in LIT_KEYS:
+      self.assertIn(name, [control.name for control in controls])
+    self.assertIsInstance(Cockpit().controlOf('hold').peep, Pushbutton)
+    self.assertFalse(_atDeck(Cockpit().controlOf('play')))
     self.assertIsInstance(Cockpit().controlOf('warp').peep, Knob)
     self.assertIsInstance(Cockpit().controlOf('play').peep, Pushbutton)
     self.assertIsInstance(Cockpit().controlOf('throttle').peep, Slider)
@@ -127,29 +145,36 @@ class TestCockpit(SpaceTest):
         self.assertAlmostEqual(math.hypot(*axis), 1.0, 9)
 
   def test_reach(self) -> None:
-    """Every input but the tape deck's keys is within his arms' reach:
-    0.3 m or more from his eyes, at most 0.8 m from his nearer shoulder
-    (his arm and hand), none behind him; the deck's keys are behind him
+    """Every input but the tape deck's own keys is within his arms'
+    reach (user, 2026-11-17: "When setting in the pilot seat every
+    control should be within reach of Asger"; the dashboard curved round
+    him: "have the dashboard curve maybe?"): 0.3 m or more from his
+    eyes, at most 0.8 m from his nearer shoulder (his arm and hand),
+    none behind him (the consoles' beside his hips at most, where the
+    panel's wings leave them in sight); the deck's keys are behind him
     on his right (user, 2026-11-17: "move the stereo to behind Asger to
-    the right": 'test_deck_keys')."""
+    the right": 'test_deck_keys'; the right console's keys work the
+    deck), the pork scratchings in reach too."""
     shoulders = [tuple(f + SCALE * p for f, p in zip(FIGURE, part[2]))
                  for part in PARTS if part[0].endswith('arm')]
+    self.assertLess(min(math.dist(SNACK_BAG[0], s) for s in shoulders),
+                    0.8)
     for control in Cockpit().controls:
-      if control.action in DECK_ACTIONS:
+      if _atDeck(control):
         self.assertLess(control.centre[0] - EYE[0], -1.0, control.name)
         self.assertLess(control.centre[1] - EYE[1], -0.5, control.name)
         continue
       self.assertGreater(math.dist(control.centre, EYE), 0.3, control.name)
       reach = min(math.dist(control.centre, s) for s in shoulders)
       self.assertLess(reach, 0.8, control.name)
-      self.assertGreater(control.centre[0] - EYE[0], -0.2, control.name)
+      self.assertGreater(control.centre[0] - EYE[0], -0.3, control.name)
 
   def test_looked_at(self) -> None:
     """Looking at an input's middle his eyes rest on it, no other in
     the way (the deck's, behind him, standing: 'test_deck_keys')."""
     cockpit = Cockpit()
-    for control in cockpit.controls:
-      if control.action in DECK_ACTIONS:
+    for control in cockpit.controls + cockpit.readouts:
+      if _atDeck(control):
         continue
       way = tuple(a - b for a, b in zip(control.centre, EYE))
       size = math.dist(control.centre, EYE)
@@ -171,7 +196,7 @@ class TestCockpit(SpaceTest):
     crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (-1.0, 0.0, 0.0)
     left = (0.0, -1.0, 0.0)
     for control in cockpit.controls:
-      if control.action not in DECK_ACTIONS:
+      if not _atDeck(control):
         continue
       for _ in range(40):
         eye = cockpit.eye()
@@ -203,7 +228,7 @@ class TestCockpit(SpaceTest):
                              control.name)
       for _ in range(30):
         cockpit.acted(1.0 / 60.0)
-      if control.action not in DECK_ACTIONS:
+      if control is cockpit.controlOf(control.action):
         self.assertIs(cockpit.lookedAt(), control, control.name)
     cockpit.glanced('hold')
     cockpit.turned(10.0, 0.0)
@@ -253,6 +278,32 @@ class TestCockpit(SpaceTest):
       for row in rows:
         point = tuple(a + b for a, b in zip(row[:3], pivot))
         self.assertTrue(_inside(point), (piece[0], point))
+
+  def test_legs(self) -> None:
+    """The curved panel, its globe and the pork scratchings keep clear
+    over his legs (seated, straight ahead: their tops), and the panel's
+    wings end beside him, not behind him."""
+    legs = [k for k, part in enumerate(PARTS) if part[0].endswith('leg')]
+    tops, reach = [], []
+    for index, place, turn in Cockpit().figureOf():
+      if index not in legs:
+        continue
+      block, pivot = PARTS[index][1], PARTS[index][2]
+      for corner in itertools.product(block[0:2], block[2:4], block[4:6]):
+        local = tuple(SCALE * (c - p) for c, p in zip(corner, pivot))
+        point = tuple(a + b for a, b in zip(place, rotated(turn, local)))
+        tops.append(point[2])
+        reach.append(point[0])
+    top, far = max(tops), max(reach)
+    rows = numpy.concatenate([numpy.asarray(getattr(dashboard, name)()[0])
+                              for name in ('panelFace', 'globeMount',
+                                           'globeCowl', 'domeRows')])
+    over = rows[rows[:, 0] < far + 0.05]
+    self.assertGreater(float(over[:, 2].min()), top + 0.05)
+    middle, axes, half = SNACK_BAG
+    self.assertGreater(middle[2] - half[1], top)
+    end = panelPoint(-PANEL_SPAN * PANEL_RADIUS, 0.0, 0.0)
+    self.assertGreater(end[0], EYE[0] - 0.2)
 
   def test_labels(self) -> None:
     """Every legend and key cap has a cell of its own on the labels'
@@ -344,7 +395,7 @@ class TestCockpit(SpaceTest):
                            KEY_TRAVEL, 9)
     cockpit.acted(0.2)
     self.assertAlmostEqual(math.dist(parts()[at][0], plain[at][0]), 0.0, 9)
-    switch = cockpit.controlOf('hold')
+    switch = cockpit.controlOf('view')
     at = order[('control', switch)]
     switch.peep.used()
     cockpit.acted(1.0)
@@ -362,16 +413,21 @@ class TestCockpit(SpaceTest):
     slide.peep.slid(1.0)
     cockpit.acted(1.0)
     self.assertAlmostEqual(math.dist(parts()[at][0], plain[at][0]),
-                           SLIDER_LONG, 9)
+                           THROTTLE_LONG, 9)
     dash['needles'][1] = 0.5
     dash['lamps'][0] = True
     dash['legends'][0] = True
+    dash['legends'][len(LIT_KEYS)] = True
     now = parts()
-    want = product(turn, aboutAxis(PANEL_AXES[2], -dialAngle(0.5)))
+    want = product(turn, aboutAxis(dialAxes(1)[2], -dialAngle(0.5)))
     self.assertLess(_turnClose(now[order[('needle', 1)]][1], want), 1e-9)
     self.assertEqual(now[order[('lamp', 0)]][3], LAMP_ON)
     self.assertEqual(now[order[('lamp', 1)]][3], LAMP_OFF)
-    self.assertEqual(now[order[('legend', 0)]][3], LEGEND_ON)
+    self.assertEqual(now[order[('legend', len(LIT_KEYS))]][3], LEGEND_ON)
+    lit = order[('control', cockpit.controlOf('hold'))]
+    unlit = order[('control', cockpit.controlOf('prograde'))]
+    self.assertEqual(now[lit][3], LEGEND_ON)
+    self.assertLess(now[unlit][3], LEGEND_ON)
     at, way, up = scenery.cabinOf(system, vessel, cockpit, rocket, ball,
                                   dash, True)['camera']
     local = unrotated(turn, at)
@@ -453,19 +509,21 @@ class TestCockpit(SpaceTest):
       vessel.turn, unit(vessel.pathOf(system))), 1e-6)
 
   def test_ball(self) -> None:
-    """The horizon is a globe on its stand (user, 2026-11-16: "like a
-    globe"), facing his eyes, its ball under a glass dome; it turns in
-    the cabin as the rocket turns; its mechanism follows it: the hubs on
-    its poles, the axles across them, the ring flat in its stand; its
-    marks lie on it."""
+    """The horizon is a globe (user, 2026-11-16: "like a globe") set in
+    the panel under the teleprinter (2026-11-17: "put the globe horizon
+    thing under the printer"), facing up toward his eyes, its ball under
+    a glass dome; it turns in the cabin as the rocket turns; its
+    mechanism follows it: the hubs on its poles, the axles across them,
+    the ring flat in its mount; its marks lie on it."""
     from worQt.gaming.space._navball import Navball
     from worQt.gaming.space._scenery import MARK_KINDS, MARK_OVER
     from worQt.gaming.space._scenery import MECHANISM, Scenery
     self.assertGreater(GLASS, BALL_RADIUS)
     toward = tuple(e - g for e, g in zip(EYE, GLOBE_AT))
     size = math.dist(EYE, GLOBE_AT)
-    self.assertAlmostEqual(sum(a * b / size for a, b in zip(
-      GLOBE_AXES[2], toward)), 1.0, 9)
+    self.assertGreater(sum(a * b / size for a, b in zip(
+      GLOBE_AXES[2], toward)), 0.8)
+    self.assertLess(GLOBE_ON[1] + GLASS, PAPER_AT[1] - 0.5 * PAPER_HIGH)
     self.assertClose(cross(GLOBE_AXES[0], GLOBE_AXES[1]), GLOBE_AXES[2],
                      1e-9)
     system = self.systemOf()

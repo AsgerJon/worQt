@@ -24,7 +24,7 @@ from . import _cabinmixer as mixer
 from ._ascentguidance import TARGET
 from ._aerospike import G0
 from ._tapedeck import LEAD_IN, TapeDeck
-from ._cockpit import DIALS, GUARD_HOLD, LAMPS, LIMITS
+from ._cockpit import DIALS, GUARD_HOLD, KEYS, LAMPS, LIMITS, LIT_KEYS
 from ._dashboard import LEGENDS, dialShare
 from ._flightlog import FlightLog
 from ._teleprinter import WIDTH, Teleprinter
@@ -53,6 +53,9 @@ GUARD_EASE = 0.07
 KNOB = 0.15
 #  The switches' modes: the autopilot's (by the switch's action).
 MODES = ('hold', 'prograde', 'retrograde', 'aim', 'match')
+
+#  What the lit keys work (they stay in while it is on).
+LIT_ACTIONS = tuple(key[2] for key in KEYS if key[0] in LIT_KEYS)
 
 
 class Instruments:
@@ -122,6 +125,8 @@ class Instruments:
     states.update(self.switched)
     latched = {'play': self.deck.playing, 'camera': self.switched[
       'camera']}
+    latched.update({action: bool(states.get(action))
+                    for action in LIT_ACTIONS})
     slid = 0.0
     for control in self.cockpit.controls:
       peep = control.peep
@@ -229,11 +234,11 @@ class Instruments:
       now = self.guards.get(action, 0.0)
       self.guards[action] = now + share * (want - now)
 
-  def _needlesEased(self, real: float, vessel: Vessel,
-                    system: SolarSystem) -> None:
-    """Eases each needle toward its value: the height, the speed (over
-    the ground in the air, round the body above it), the apoapsis and
-    the periapsis over the ground (none below it)."""
+  def valuesOf(self, vessel: Vessel, system: SolarSystem) -> dict:
+    """The 'valuesOf' method returns what each dial shows, by its
+    name: the height, the speed (over the ground in the air, round the
+    body above it), the apoapsis and the periapsis over the ground (none
+    below it; 1e9: no closed orbit)."""
     body = system.bodies[vessel.anchor]
     conic = vessel.conicOf(system)
     height = vessel.heightOver(system)
@@ -243,8 +248,13 @@ class Instruments:
     apo = conic.apoapsis - body.radius if conic and conic.closed else (
       0.0 if conic is None else 1e9)
     peri = conic.periapsis - body.radius if conic else 0.0
-    values = {'HEIGHT': height, 'SPEED': speed, 'APOAPSIS': apo,
-              'PERIAPSIS': peri}
+    return {'HEIGHT': height, 'SPEED': speed, 'APOAPSIS': apo,
+            'PERIAPSIS': peri}
+
+  def _needlesEased(self, real: float, vessel: Vessel,
+                    system: SolarSystem) -> None:
+    """Eases each needle toward its value ('valuesOf')."""
+    values = self.valuesOf(vessel, system)
     share = 1.0 - math.exp(-real / NEEDLE) if real > 0.0 else 0.0
     for k, (name, _) in enumerate(DIALS):
       want = dialShare(name, values[name])

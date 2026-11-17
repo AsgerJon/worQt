@@ -65,6 +65,24 @@ Item {
   //  shows (up, his eyes), its shake (straining at a bolt)
   property var handParts: []
   property bool handShown: false
+  //  Asger's hotbar and inventory (user, 2026-11-17: "Give Asger a hotbar
+  //  and an inventory like in minecraft"; '_inventory'): each slot's
+  //  kind, count and title, the hotbar's selected slot, the inventory
+  //  open, the stack on the pointer, the items' icons by kind, the held
+  //  item's name fading in and out; the telescope ("give Asger also a
+  //  telescope"): the view's height (deg) and its round edge's share.
+  property var inventoryRows: []
+  property int hotbarSelected: 0
+  property bool inventoryOpen: false
+  property bool hotbarShown: false
+  property var carriedRow: ({kind: "", count: 0})
+  property var itemIcons: ({})
+  property real heldFade: 0
+  property real viewField: 60
+  property real scopeShown: 0
+  property real pointerX: 0
+  property real pointerY: 0
+  property string hoverTitle: ""
   property vector3d handShake: Qt.vector3d(0, 0, 0)
   property bool manualShown: false
   property string manualPicture: ""
@@ -160,6 +178,17 @@ Item {
   onPaperLinesChanged: paperCanvas.requestPaint()
   onPaperLayoutChanged: paperCanvas.requestPaint()
   onPaperTypingChanged: paperCanvas.requestPaint()
+  //  The readouts (user, 2026-11-17: "All the auto stuff has to be in one
+  //  place"; "it wasn't at all clear how near I was to Terra Prime"): the
+  //  AUTOPILOT's lit status line and Terra Prime's range in glowing
+  //  number tubes, one canvas ('Dashboard.readoutLayout'), its mesh.
+  property string readoutStatus: ""
+  property var readoutRange: []
+  property var readoutGeometry: null
+  property var readoutLayout: null
+  onReadoutStatusChanged: readoutCanvas.requestPaint()
+  onReadoutRangeChanged: readoutCanvas.requestPaint()
+  onReadoutLayoutChanged: readoutCanvas.requestPaint()
   property var screenGeometry: null
   property vector3d cctvPlace: Qt.vector3d(0, 0, 0)
   property quaternion cctvTurn: Qt.quaternion(1, 0, 0, 0)
@@ -240,6 +269,7 @@ Item {
   property bool boardUp: false
   property string boardHeld: "|"
   signal boardPicked(string action)
+  signal inventoryClicked(int slot, bool right)
   //  The board's keys float a little, all together
   property real bob: 0
   SequentialAnimation on bob {
@@ -567,6 +597,93 @@ Item {
         }
       }
     }
+    Model {
+      geometry: root.readoutGeometry
+      visible: root.readoutGeometry !== null
+      position: root.nearPlaces[1] || Qt.vector3d(0, 0, 0)
+      rotation: root.nearTurns[1] || Qt.quaternion(1, 0, 0, 0)
+      materials: PrincipledMaterial {
+        lighting: PrincipledMaterial.NoLighting
+        cullMode: Material.NoCulling
+        baseColorMap: Texture {
+          generateMipmaps: true
+          mipFilter: Texture.Linear
+          sourceItem: Canvas {
+            id: readoutCanvas
+            width: root.readoutLayout ? root.readoutLayout.width : 1
+            height: root.readoutLayout ? root.readoutLayout.height : 1
+            onPaint: {
+              var ctx = getContext("2d")
+              var at = root.readoutLayout
+              ctx.fillStyle = "#0a0806"
+              ctx.fillRect(0, 0, width, height)
+              if (!at) return
+              ctx.fillStyle = "#1a1006"
+              ctx.fillRect(0, 0, width, at.status)
+              var said = root.readoutStatus
+              ctx.font = "bold " + Math.round(Math.min(
+                0.6 * at.status, 0.94 * width / (0.6 * Math.max(
+                  16, said.length)))) + "px '" + root.paperFont + "'"
+              ctx.textBaseline = "middle"
+              ctx.shadowColor = "#ff8a1c"
+              ctx.shadowBlur = 0.12 * at.status
+              ctx.fillStyle = "#ffb63c"
+              ctx.fillText(root.readoutStatus, 0.03 * at.status,
+                           0.54 * at.status)
+              var top = at.status
+              for (var g = 0; g < at.groups.length; ++g) {
+                var group = at.groups[g]
+                var text = root.readoutRange[g] || ""
+                var digits = []
+                var marks = []
+                for (var c = 0; c < text.length; ++c) {
+                  var ch = text.charAt(c)
+                  if (ch === "." || ch === ":")
+                    marks.push([digits.length, ch])
+                  else
+                    digits.push(ch)
+                }
+                var pad = Math.max(0, group.tubes - digits.length)
+                while (digits.length < group.tubes) digits.unshift(" ")
+                ctx.shadowBlur = 0
+                for (var k = 0; k < group.tubes; ++k) {
+                  var x = group.from + k * group.tube
+                  ctx.fillStyle = "#2a1c14"
+                  ctx.strokeStyle = "#5a4636"
+                  ctx.lineWidth = 2
+                  ctx.beginPath()
+                  ctx.roundedRect(x + 3, top + 0.1 * at.range,
+                                  group.tube - 6, 0.8 * at.range, 10, 10)
+                  ctx.fill()
+                  ctx.stroke()
+                }
+                ctx.font = Math.round(Math.min(0.6 * at.range,
+                                               1.45 * group.tube))
+                           + "px '" + root.paperFont + "'"
+                ctx.textAlign = "center"
+                ctx.shadowColor = "#ff5a10"
+                ctx.shadowBlur = 0.1 * at.range
+                ctx.fillStyle = "#ff9a40"
+                for (k = 0; k < group.tubes; ++k)
+                  ctx.fillText(digits[k], group.from + (k + 0.5)
+                               * group.tube, top + 0.52 * at.range)
+                for (var m = 0; m < marks.length; ++m) {
+                  var mx = group.from + (marks[m][0] + pad) * group.tube
+                  var ys = marks[m][1] === "." ? [0.8] : [0.38, 0.66]
+                  for (var y = 0; y < ys.length; ++y) {
+                    ctx.beginPath()
+                    ctx.arc(mx, top + ys[y] * at.range, 0.035 * at.range,
+                            0, 2 * Math.PI)
+                    ctx.fill()
+                  }
+                }
+                ctx.textAlign = "start"
+              }
+            }
+          }
+        }
+      }
+    }
     Repeater3D {
       model: root.nearParts
       delegate: Model {
@@ -623,6 +740,7 @@ Item {
     camera: farCamera
     PerspectiveCamera {
       id: farCamera
+      fieldOfView: root.viewField
       rotation: root.cameraTurn
       clipNear: 10
       clipFar: 5e6
@@ -645,6 +763,7 @@ Item {
     camera: nearCamera
     PerspectiveCamera {
       id: nearCamera
+      fieldOfView: root.viewField
       rotation: root.cameraTurn
       clipNear: root.nearClip
       clipFar: 3e6
@@ -1310,6 +1429,7 @@ Item {
       y: parent.height / 2 + 22
       spacing: 8
       Rectangle {
+        visible: root.promptKey !== ""
         width: Math.max(30, promptKeyText.implicitWidth + 14)
         height: 30
         radius: 5
@@ -1339,6 +1459,7 @@ Item {
 
   Rectangle {
     visible: root.questRows.length > 0 && !root.mapOpen
+             && root.scopeShown < 0.5
     anchors.top: parent.top
     anchors.right: parent.right
     anchors.margins: 12
@@ -1444,7 +1565,8 @@ Item {
     visible: !root.mapOpen
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
-    anchors.bottomMargin: board.visible ? board.height + 40 : 40
+    anchors.bottomMargin: (board.visible ? board.height + 40 : 40)
+                          + (hotbar.visible ? 54 : 0)
     spacing: 3
     Row {
       spacing: 36
@@ -1495,6 +1617,210 @@ Item {
         height: 4
         radius: 2
         color: "#e2a064"
+      }
+    }
+  }
+
+  //  A slot as Minecraft draws it: grey, sunk, the item's icon (pixels
+  //  unsmoothed), its count when more than one.
+  component ItemSlot: Rectangle {
+    id: slotBox
+    property var row: ({kind: "", count: 0, title: ""})
+    property bool chosen: false
+    width: 48
+    height: 48
+    color: "#8b8b8b"
+    border.width: chosen ? 4 : 2
+    border.color: chosen ? "#ffffff" : "#373737"
+    Image {
+      anchors.centerIn: parent
+      width: 40
+      height: 40
+      visible: slotBox.row.kind !== ""
+      source: slotBox.row.kind !== "" ? (root.itemIcons[slotBox.row.kind]
+                                         || "") : ""
+      smooth: false
+    }
+    Text {
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: 3
+      visible: slotBox.row.count > 1
+      text: slotBox.row.count
+      color: "#ffffff"
+      font.pixelSize: 15
+      font.bold: true
+      style: Text.Outline
+      styleColor: "#3f3f3f"
+    }
+  }
+
+  //  The telescope's round edge (looking through it).
+  Canvas {
+    id: scopeEdge
+    anchors.fill: parent
+    visible: root.scopeShown > 0.01 && !root.mapOpen
+    opacity: root.scopeShown
+    onWidthChanged: requestPaint()
+    onHeightChanged: requestPaint()
+    onPaint: {
+      var ctx = getContext("2d")
+      ctx.reset()
+      var r = 0.47 * Math.min(width, height)
+      ctx.fillStyle = "#000000"
+      ctx.beginPath()
+      ctx.rect(0, 0, width, height)
+      ctx.arc(width / 2, height / 2, r, 0, 2 * Math.PI, true)
+      ctx.fill()
+      ctx.strokeStyle = "#3a2c14"
+      ctx.lineWidth = 6
+      ctx.beginPath()
+      ctx.arc(width / 2, height / 2, r, 0, 2 * Math.PI)
+      ctx.stroke()
+    }
+  }
+
+  //  The hotbar (keys 1 to 9, the wheel) and the held item's name.
+  Column {
+    id: hotbar
+    visible: root.hotbarShown && !root.mapOpen && root.deathText === ""
+             && root.inventoryRows.length > 0
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: board.visible ? board.height + 16 : 8
+    spacing: 4
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      opacity: root.heldFade
+      text: root.inventoryRows.length > root.hotbarSelected
+            ? root.inventoryRows[root.hotbarSelected].title : ""
+      color: "#ffffff"
+      font.pixelSize: 16
+      font.bold: true
+      style: Text.Outline
+      styleColor: "#000000"
+    }
+    Row {
+      spacing: 0
+      Repeater {
+        model: 9
+        ItemSlot {
+          required property int index
+          row: root.inventoryRows.length > index ? root.inventoryRows[index]
+                                                 : ({kind: "", count: 0})
+          chosen: index === root.hotbarSelected
+          opacity: 0.92
+        }
+      }
+    }
+  }
+
+  //  The inventory (Tab): three rows over the hotbar's, as Minecraft's;
+  //  a click picks a stack up or lays it down (the right button: half,
+  //  or one), the stack carried follows the pointer.
+  Rectangle {
+    id: inventoryPanel
+    visible: root.inventoryOpen && !root.mapOpen
+    anchors.fill: parent
+    color: "#90000000"
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      acceptedButtons: Qt.NoButton
+      onPositionChanged: (mouse) => {
+        root.pointerX = mouse.x
+        root.pointerY = mouse.y
+      }
+    }
+    Rectangle {
+      anchors.centerIn: parent
+      width: grid.width + 32
+      height: grid.height + 72
+      color: "#c6c6c6"
+      border.width: 3
+      border.color: "#555555"
+      radius: 4
+      Text {
+        x: 16
+        y: 10
+        text: "Inventory"
+        color: "#404040"
+        font.pixelSize: 18
+        font.bold: true
+      }
+      Column {
+        id: grid
+        x: 16
+        y: 40
+        spacing: 12
+        Grid {
+          columns: 9
+          Repeater {
+            model: 27
+            ItemSlot {
+              required property int index
+              row: root.inventoryRows.length > index + 9
+                   ? root.inventoryRows[index + 9] : ({kind: "", count: 0})
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onEntered: root.hoverTitle = parent.row.title || ""
+                onExited: root.hoverTitle = ""
+                onPressed: (mouse) => root.inventoryClicked(
+                  index + 9, mouse.button === Qt.RightButton)
+              }
+            }
+          }
+        }
+        Row {
+          Repeater {
+            model: 9
+            ItemSlot {
+              required property int index
+              row: root.inventoryRows.length > index
+                   ? root.inventoryRows[index] : ({kind: "", count: 0})
+              chosen: index === root.hotbarSelected
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onEntered: root.hoverTitle = parent.row.title || ""
+                onExited: root.hoverTitle = ""
+                onPressed: (mouse) => root.inventoryClicked(
+                  index, mouse.button === Qt.RightButton)
+              }
+            }
+          }
+        }
+        Text {
+          text: root.hoverTitle !== "" ? root.hoverTitle
+                : "Click: pick up or lay down   right click: half, or one"
+                  + "   Tab: close"
+          color: "#404040"
+          font.pixelSize: 14
+        }
+      }
+    }
+    Image {
+      visible: root.carriedRow.kind !== ""
+      x: root.pointerX - 20
+      y: root.pointerY - 20
+      width: 40
+      height: 40
+      source: root.carriedRow.kind !== "" ? (root.itemIcons[
+        root.carriedRow.kind] || "") : ""
+      smooth: false
+      Text {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root.carriedRow.count > 1
+        text: root.carriedRow.count
+        color: "#ffffff"
+        font.pixelSize: 15
+        font.bold: true
+        style: Text.Outline
+        styleColor: "#3f3f3f"
       }
     }
   }

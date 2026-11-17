@@ -43,7 +43,9 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_night',
                'tests.test_space.test_walkway',
                'tests.test_space.test_launchtower',
-               'tests.test_sandbox.test_peepkinds')
+               'tests.test_space.test_inventory',
+               'tests.test_sandbox.test_peepkinds',
+               'tests.test_sandbox.test_mousetrail')
 
 
 def spaceTests() -> int:

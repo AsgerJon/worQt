@@ -5,7 +5,14 @@ micro-gravity?"; the loose things "FAFO rules"): the loose things rest
 where they are, on the pad or weightless; Asger up stands on the floor
 under four g, walks in one, pushes off weightless and drifts on, thuds
 landing from a jump (as fast as he jumped: it may hurt him); the
-gravity gun pulls him to a magic bolt and holds him there.
+gravity gun pulls him to a magic bolt and holds him there. His body is
+a box (user, 2026-11-17: "give Asger the minecraft implementation of
+some blocks or whatever rather than just a few balls"; "and make me
+able to crouch!"), tried on the pad's open ground: it steps up onto a
+step, not onto what is higher; it slides along a wall it walks into at
+a slant; crouched it goes under what it cannot stand under, stays
+crouched there, and stops at a ledge it would walk off standing; down
+steps it keeps to them, no thud.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -18,12 +25,16 @@ from worQt.gaming.space._bolts import holdOf, rocketBolts
 from worQt.gaming.space._aerospike import G0
 from worQt.gaming.space._cabinworld import CabinWorld, restingLoose
 from worQt.gaming.space._cockpit import FLOOR, Cockpit
-from worQt.gaming.space._crewman import PUSH
+from worQt.gaming.space._crewman import LOW, MIDDLE, PUSH, STEP, TALL
+from worQt.gaming.space._crewman import WIDE
+from worQt.gaming.space._launchtower import GROUND
 
 from . import FRAME, SpaceTest
 
 #  Asger's legs at rest: nothing wanted, no leap.
 STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0), 0)
+#  Where on the pad's open ground his box is tried (his soles), m.
+ARENA = (12.0, 12.0, GROUND)
 
 
 class TestCabinWorld(SpaceTest):
@@ -60,7 +71,8 @@ class TestCabinWorld(SpaceTest):
 
   def test_standing(self) -> None:
     """Up under four g he stands on the floor; in one g he walks back
-    from his chair at most at his stride."""
+    from his chair at most at his stride (a third of a second: then the
+    hull leaning in over him meets his box's top)."""
     cockpit, meter = Cockpit(), Accelerometer()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, 4.0 * G0)
@@ -71,13 +83,13 @@ class TestCabinWorld(SpaceTest):
     self.assertTrue(crewman.touches)
     meter.felt = (0.0, 0.0, G0)
     began = crewman.middle
-    for _ in range(60):
+    for _ in range(20):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
       want = crewman.wantOf({'back'}, cockpit.yaw, cockpit.pitch, pull)
       world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
     gone = began[0] - crewman.middle[0]
-    self.assertGreater(gone, 1.5)
-    self.assertLess(gone, 3.1)
+    self.assertGreater(gone, 0.7)
+    self.assertLess(gone, 1.0)
 
   def test_floating(self) -> None:
     """Weightless he pushes off the floor and drifts on up, slowing
@@ -92,8 +104,8 @@ class TestCabinWorld(SpaceTest):
     leap = crewman.leapOf((0.0, 0.0, 0.0))
     self.assertClose(leap, (0.0, 0.0, PUSH), 1e-6)
     low = crewman.middle[2]
-    self._stepped(world, meter, cockpit, 0.5, STILL[:3] + (leap, 0))
-    self.assertGreater(crewman.middle[2] - low, 0.9)
+    self._stepped(world, meter, cockpit, 0.3, STILL[:3] + (leap, 0))
+    self.assertGreater(crewman.middle[2] - low, 0.55)
     self.assertGreater(crewman.velocity[2], 0.95 * PUSH)
     self.assertFalse(crewman.touches)
 
@@ -135,3 +147,139 @@ class TestCabinWorld(SpaceTest):
     self.assertLess(math.dist(crewman.middle, holdOf(bolts[k])), 0.1)
     self.assertLess(fastest, 6.1)
     self.assertLess(math.hypot(*crewman.velocity), 0.1)
+
+  def _arena(self, boxes: tuple) -> tuple:
+    """Returns his cockpit (him up on the open ground at 'ARENA', facing
+    x), the world with 'boxes' there (each its low and high corners from
+    'ARENA') and the pad's pull (one g)."""
+    cockpit, meter = Cockpit(), Accelerometer()
+    world = CabinWorld('cpu')
+    meter.felt = (0.0, 0.0, G0)
+    cockpit.gotUp()
+    world.walked(1)
+    solids = []
+    for low, high in boxes:
+      low = tuple(a + b for a, b in zip(ARENA, low))
+      high = tuple(a + b for a, b in zip(ARENA, high))
+      solids.append((tuple(0.5 * (a + b) for a, b in zip(low, high)),
+                     tuple(0.5 * (b - a) for a, b in zip(low, high)),
+                     (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    world.stationed(False, (), tuple(solids))
+    crewman = cockpit.crewman
+    crewman.placed((ARENA[0], ARENA[1], ARENA[2] + 0.002 + MIDDLE),
+                   (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)
+    cockpit.yaw, cockpit.pitch = 0.0, 0.0
+    return cockpit, world, meter
+
+  def _walked(self, world: CabinWorld, meter: Accelerometer,
+              cockpit: Cockpit, held: set, seconds: float,
+              crouch: bool = False) -> None:
+    """Walks him 'seconds' s a frame at a time, the keys 'held' (crouched
+    if 'crouch')."""
+    crewman = cockpit.crewman
+    crewman.crouching = crouch
+    for _ in range(max(1, int(round(seconds / FRAME)))):
+      pull = meter.pullAt(crewman.middle, crewman.velocity)
+      crewman.righted(pull, FRAME)
+      want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
+      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+
+  def _soles(self, cockpit: Cockpit) -> tuple:
+    """Returns his soles from 'ARENA'."""
+    return tuple(s - a for s, a in zip(cockpit.crewman.soles(), ARENA))
+
+  def test_step(self) -> None:
+    """Walking ahead he steps up onto a block lower than 'STEP' and
+    walks on across it; a block higher than that stops him, flush."""
+    low = 0.8 * STEP
+    cockpit, world, meter = self._arena((((0.6, -1.0, -0.2), (2.6, 1.0,
+                                                               low)),))
+    self._walked(world, meter, cockpit, set(), 0.2)
+    self._walked(world, meter, cockpit, {'ahead'}, 1.0)
+    soles = self._soles(cockpit)
+    self.assertGreater(soles[0], 1.2)
+    self.assertLess(abs(soles[2] - low), 0.01)
+    self.assertTrue(cockpit.crewman.touches)
+    high = 1.5 * STEP
+    cockpit, world, meter = self._arena((((0.6, -1.0, -0.2), (2.6, 1.0,
+                                                               high)),))
+    self._walked(world, meter, cockpit, set(), 0.2)
+    self._walked(world, meter, cockpit, {'ahead'}, 1.0)
+    soles = self._soles(cockpit)
+    self.assertLess(abs(soles[2]), 0.01)
+    self.assertLess(abs(soles[0] + 0.5 * WIDE - 0.6), 0.01)
+
+  def test_slide(self) -> None:
+    """Walking into a wall at a slant he slides along it, flush, not
+    stopped."""
+    cockpit, world, meter = self._arena((((0.6, -3.0, -0.2), (1.0, 3.0,
+                                                               2.0)),))
+    cockpit.crewman.ahead = (math.cos(0.5), math.sin(0.5), 0.0)
+    self._walked(world, meter, cockpit, set(), 0.2)
+    self._walked(world, meter, cockpit, {'ahead'}, 1.0)
+    soles = self._soles(cockpit)
+    self.assertLess(abs(soles[0] + 0.5 * WIDE - 0.6), 0.01)
+    self.assertGreater(soles[1], 1.0)
+
+  def test_crouch(self) -> None:
+    """Under a slab between his crouched and his standing height he
+    cannot walk standing; crouched he walks under it, slower, and stays
+    crouched there let go; out from under it he stands again."""
+    over = 0.5 * (LOW + TALL)
+    slab = ((0.6, -1.0, over), (2.0, 1.0, over + 0.1))
+    cockpit, world, meter = self._arena((slab,))
+    self._walked(world, meter, cockpit, set(), 0.2)
+    self._walked(world, meter, cockpit, {'ahead'}, 1.0)
+    self.assertLess(self._soles(cockpit)[0] + 0.5 * WIDE, 0.61)
+    self._walked(world, meter, cockpit, {'ahead'}, 0.8, True)
+    crewman = cockpit.crewman
+    self.assertTrue(crewman.crouched)
+    self.assertGreater(self._soles(cockpit)[0], 0.8)
+    self._walked(world, meter, cockpit, set(), 0.3, False)
+    self.assertTrue(crewman.crouched)
+    self._walked(world, meter, cockpit, {'ahead'}, 2.0, True)
+    self._walked(world, meter, cockpit, {'ahead'}, 0.6, False)
+    self.assertGreater(self._soles(cockpit)[0], 2.3)
+    self.assertFalse(crewman.crouched)
+
+  def test_ledge(self) -> None:
+    """On a platform crouched he stops at its edge; standing he walks
+    off it and falls."""
+    deck = ((-2.0, -1.0, -0.2), (1.0, 1.0, 0.5))
+    for crouch in (True, False):
+      cockpit, world, meter = self._arena((deck,))
+      crewman = cockpit.crewman
+      crewman.placed((ARENA[0], ARENA[1], ARENA[2] + 0.502 + MIDDLE),
+                     (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
+      self._walked(world, meter, cockpit, set(), 0.2, crouch)
+      self._walked(world, meter, cockpit, {'ahead'}, 2.0, crouch)
+      soles = self._soles(cockpit)
+      if crouch:
+        self.assertLess(abs(soles[2] - 0.5), 0.01)
+        self.assertLess(soles[0], 1.0 + 0.5 * WIDE)
+      else:
+        self.assertLess(abs(soles[2]), 0.01)
+        self.assertGreater(soles[0], 1.0 + 0.5 * WIDE)
+
+  def test_down(self) -> None:
+    """Walking down steps he keeps to them: no thud, never off them more
+    than a hair."""
+    rise, run = 0.2, 0.3
+    steps = tuple(((run * k, -1.0, -0.2), (run * (k + 1), 1.0,
+                                           rise * (4 - k)))
+                  for k in range(4))
+    cockpit, world, meter = self._arena(((((-2.0, -1.0, -0.2), (0.0, 1.0,
+                                                                 0.8)),)
+                                         + steps))
+    crewman = cockpit.crewman
+    crewman.placed((ARENA[0] - 1.0, ARENA[1], ARENA[2] + 0.802 + MIDDLE),
+                   (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
+    self._walked(world, meter, cockpit, set(), 0.2)
+    before = world.thuds
+    for _ in range(int(round(1.6 / FRAME))):
+      self._walked(world, meter, cockpit, {'ahead'}, FRAME)
+      self.assertTrue(crewman.touches, crewman.middle)
+    self.assertEqual(world.thuds, before)
+    self.assertGreater(self._soles(cockpit)[0], 1.3)
+    self.assertLess(abs(self._soles(cockpit)[2]), 0.01)

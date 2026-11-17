@@ -15,14 +15,19 @@ from __future__ import annotations
 import functools
 import math
 
-from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius
+from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius, seated
 from ._shapes import cylinderRows, discRows, joined, ringRows
 
 #  The rocket's bolts: on the floor (x, y), on the ceiling (x, y), on the
 #  wall (deg round from x toward y, m over the floor): a few everywhere,
 #  clear of the furniture, the windows, the fairy lights and the hatch in
-#  the ceiling's middle (going aboard the station).
-FLOOR_BOLTS = ((0.0, 0.0), (2.2, -0.6), (-1.6, -1.2), (-1.4, 1.6))
+#  the ceiling's middle (going aboard the station); one on the floor
+#  right behind his seat ('SEAT_BOLT', a little behind where he stands
+#  up: user, 2026-11-17: "put a bolt near or on the seat so I can more
+#  easily get back to it": held there, E sits him).
+SEAT_BOLT = seated(-0.95, 0.0, 0.0)[:2]
+FLOOR_BOLTS = ((0.0, 0.0), (2.2, -0.6), (-1.6, -1.2), (-1.4, 1.6),
+               SEAT_BOLT)
 CEILING_BOLTS = ((-0.2, 1.2), (1.0, 0.4), (-0.7, -0.8))
 WALL_BOLTS = ((0.0, 3.0), (72.0, 3.0), (144.0, 3.0), (-144.0, 3.0),
               (-72.0, 3.0), (36.0, 6.5), (180.0, 6.5), (-108.0, 6.5))

@@ -47,6 +47,11 @@ EATING = 2.0
 #  reminded of them, again once he has been fed past 'REMINDED'.
 SNACK = 4.0
 SNACKING = 1.0
+#  A commando bar from his inventory (user, 2026-11-17: "put some
+#  commandobars in Asgers inventory") feeds 'BAR' points in 'MUNCHING'
+#  s (as long as Minecraft's eating).
+BAR = 6.0
+MUNCHING = 1.6
 PECKISH = 6.0
 REMINDED = 8.0
 #  How fast the red of being hurt fades (most of the way in), s.
@@ -174,6 +179,19 @@ class Vitals:
       return 'Asger is full'
     self.eating, self.snacks = SNACKING, self.snacks + 1
     self.bite, self.took = SNACK, SNACKING
+    return ''
+
+  def munched(self, ) -> str:
+    """The 'munched' method begins a commando bar if he may eat; returns
+    why not ('' he eats): dead, already eating, full."""
+    if self.cause is not None:
+      return 'Asger is dead'
+    if self.eating > 0.0:
+      return 'Asger is eating'
+    if self.food >= FOOD - 0.5:
+      return 'Asger is full'
+    self.eating, self.snacks = MUNCHING, self.snacks + 1
+    self.bite, self.took = BAR, MUNCHING
     return ''
 
   def reminder(self, ) -> bool:

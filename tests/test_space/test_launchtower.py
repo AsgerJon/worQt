@@ -20,10 +20,11 @@ from worQt.gaming.space._accelerometer import Accelerometer
 from worQt.gaming.space._aerospike import G0
 from worQt.gaming.space._cabinworld import CabinWorld
 from worQt.gaming.space._cockpit import FLOOR, Cockpit
-from worQt.gaming.space._crewman import MIDDLE
+from worQt.gaming.space._crewman import MIDDLE, STEP
 from worQt.gaming.space._launchtower import FLIGHTS, GROUND, HALL
 from worQt.gaming.space._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT
 from worQt.gaming.space._launchtower import STAIR_TOP, STAIRWELL, START
+from worQt.gaming.space._launchtower import STEPS
 from worQt.gaming.space._launchtower import flightOf, groundsInside
 from worQt.gaming.space._launchtower import landingLevel, rise, towerSolids
 from worQt.gaming.space._towerlift import FAST, FOOT, TOP, TowerLift
@@ -64,8 +65,8 @@ class TestLaunchTower(SpaceTest):
 
   def test_flights(self) -> None:
     """The flights climb from the ground to the hall's floor, each from
-    the landing the last ended on, at a stair's slope; the top landing
-    is by the hall's doorway."""
+    the landing the last ended on, at a stair's slope, each step a solid
+    he steps up; the top landing is by the hall's doorway."""
     self.assertAlmostEqual(landingLevel(0), GROUND)
     self.assertAlmostEqual(landingLevel(FLIGHTS), FLOOR)
     self.assertLess(math.degrees(math.atan2(rise(), 4.0)), 35.0)
@@ -76,7 +77,8 @@ class TestLaunchTower(SpaceTest):
       self.assertAlmostEqual(high, low)
     _, (_, end), _ = flightOf(FLIGHTS - 1)
     self.assertGreater(end, STAIR_TOP[0][0] - 1.5)
-    self.assertEqual(len(towerSolids()), 2 * FLIGHTS + 1 + 4 + 8)
+    self.assertEqual(len(towerSolids()), (STEPS + 1) * FLIGHTS + 1 + 4 + 8)
+    self.assertLess(rise() / STEPS, STEP)
 
   def test_lift(self) -> None:
     """Sent down it rides to the ground (as fast as 'FAST' allows), its

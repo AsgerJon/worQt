@@ -16,7 +16,7 @@ import math
 
 from worQt.gaming.space import _cabinmixer as mixer
 from worQt.gaming.space._ascentguidance import AscentGuidance
-from worQt.gaming.space._cockpit import LAMPS, Cockpit
+from worQt.gaming.space._cockpit import DIALS, LAMPS, Cockpit
 from worQt.gaming.space._dashboard import LEGENDS, dialShare
 from worQt.gaming.space._instruments import Instruments, NEEDLE
 from worQt.gaming.space._timekeeper import Timekeeper
@@ -38,9 +38,10 @@ class TestInstruments(SpaceTest):
             Instruments(cockpit))
 
   def test_switches(self) -> None:
-    """A mode engaged, its switch is thrown (a snap); the warp knob
-    stands at the warp's notch (a tick a notch); the slide goes to the
-    throttle; the legend over a thrown switch is lit."""
+    """A mode engaged, its lit key stays in and is lit (a click); the
+    console's switches are thrown (a snap each); the warp knob stands at
+    the warp's notch (a tick a notch); the lever goes to the throttle;
+    the legend by a thrown switch is lit."""
     system, vessel, keeper, guidance, kit = self._ready()
     kit.acted(0.0, vessel, system, keeper, guidance, False, True, 'go')
     self.assertEqual((kit.snaps, kit.ticks), (1, 0))
@@ -54,32 +55,34 @@ class TestInstruments(SpaceTest):
     self.assertEqual(cockpit.controlOf('view').peep.value, 1.0)
     self.assertEqual(cockpit.controlOf('prograde').peep.value, 0.0)
     self.assertEqual(cockpit.controlOf('warp').peep.notch, 4)
+    self.assertTrue(cockpit.controlOf('hold').peep.latched)
     self.assertEqual(kit.ticks, 4)
-    self.assertEqual(kit.snaps, 3)
+    self.assertEqual(kit.snaps, 2)
+    self.assertEqual(kit.clicks, 1)
     self.assertAlmostEqual(cockpit.controlOf('throttle').peep.value, 0.5)
     lit = dict(zip(LEGENDS, kit.legends))
     self.assertTrue(lit['HOLD'] and lit['MAP'] and lit['VIEW'])
     self.assertFalse(lit['PRO'] or lit['ASCENT'])
     kit.acted(1.0, vessel, system, keeper, guidance, True, True, 'go')
-    self.assertEqual((kit.snaps, kit.ticks), (3, 4))
+    self.assertEqual((kit.snaps, kit.ticks, kit.clicks), (2, 4, 1))
 
   def test_keys(self) -> None:
-    """A key pressed sinks and clicks; switches, knobs and the slide
-    are not pressed (they follow what they work); the play key stays in
-    while the tape plays."""
+    """A key pressed sinks and clicks (a mode's too); knobs and the
+    lever are not pressed (they follow what they work); the play key
+    stays in while the tape plays."""
     system, vessel, keeper, guidance, kit = self._ready()
     kit.pressed('toAp')
     self.assertEqual(kit.clicks, 1)
     self.assertEqual(kit.cockpit.controlOf('toAp').peep.target, 1.0)
     kit.pressed('hold')
     kit.pressed('warp')
-    self.assertEqual(kit.clicks, 1)
+    self.assertEqual(kit.clicks, 2)
     kit.deck.play()
     kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
     play = kit.cockpit.controlOf('play').peep
     self.assertTrue(play.latched)
     self.assertEqual(play.value, 1.0)
-    self.assertEqual(kit.clicks, 2)
+    self.assertEqual(kit.clicks, 4)
     kit.deck.halt()
     kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
     self.assertFalse(play.latched)
@@ -108,17 +111,19 @@ class TestInstruments(SpaceTest):
     system, vessel, keeper, guidance, kit = self._ready()
     vessel = self.orbiting(system, 300e3, 300e3)
     kit.acted(NEEDLE, vessel, system, keeper, guidance, False, True, 'go')
+    names = [name for name, _ in DIALS]
+    height, speed = names.index('HEIGHT'), names.index('SPEED')
     want = dialShare('HEIGHT', vessel.heightOver(system))
-    self.assertAlmostEqual(kit.needles[0], want * (1.0 - math.exp(-1.0)),
-                           6)
+    self.assertAlmostEqual(kit.needles[height], want * (
+      1.0 - math.exp(-1.0)), 6)
     for _ in range(40):
       kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
-    self.assertAlmostEqual(kit.needles[0], want, 6)
-    self.assertGreater(kit.needles[1], 0.5)
+    self.assertAlmostEqual(kit.needles[height], want, 6)
+    self.assertGreater(kit.needles[speed], 0.5)
     vessel = self.padded(system)
     for _ in range(40):
       kit.acted(0.1, vessel, system, keeper, guidance, False, True, 'go')
-    self.assertLess(kit.needles[1], 0.01)
+    self.assertLess(kit.needles[speed], 0.01)
 
   def test_announced(self) -> None:
     """Climbing to leave the air within 'LEAD_IN' s the deck is

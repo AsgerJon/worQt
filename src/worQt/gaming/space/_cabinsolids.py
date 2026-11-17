@@ -2,8 +2,9 @@
 The cabin's solids: what is fixed in it, as boxes Asger and the loose
 things bump into (user, 2026-11-17: Asger getting up and floating
 round, "FAFO rules"), Qt-free, the vessel's own axes: his rig (the
-office chair, the consoles, the panel, the sideboard and the tape deck
-on it, the globe on its stand) and the furnishings fixed down
+pilot seat, the consoles, the curved panel and its hood as boxes round
+the curve, the risers its wings stand on, the globe in the panel, the
+sideboard and the tape deck on it) and the furnishings fixed down
 ('_furnishings.obstacles'). The floor, the wall and the ceiling are the
 cabin kernel's own ('_cabin_kernels').
 """
@@ -12,24 +13,27 @@ cabin kernel's own ('_cabin_kernels').
 from __future__ import annotations
 
 import functools
+import math
 
 import numpy
 
-from ._cockpit import BACKREST, CUSHION, FLOOR, FRAME, GLASS, GLOBE_AT
+from ._cockpit import BACKREST, CUSHION, FACE_HIGH, FACE_LOW, FLOOR
+from ._cockpit import GLASS
 from ._cabin import PEDESTAL
-from ._cockpit import LEFT_CONSOLE, PANEL_AXES, PANEL_HALF, PANEL_MIDDLE
-from ._cockpit import RIGHT_CONSOLE, SIDEBOARD
+from ._cockpit import GLOBE_AT, GLOBE_AXES, HOOD_DEEP, HOOD_HIGH
+from ._cockpit import HOOD_RADIUS, HOOD_SPAN, LEFT_CONSOLE, PANEL_DEEP
+from ._cockpit import PANEL_RADIUS, PANEL_SPAN, RIGHT_CONSOLE, RISER
+from ._cockpit import SIDEBOARD, TOP, hoodAxes, hoodPoint, panelAxes
+from ._cockpit import panelPoint
 from ._deckmodel import stillParts
 from ._furnishings import obstacles
 from ._shapes import UNTURNED
 
-#  The panel's box: how far before and behind its middle it reaches (its
-#  knobs, guards and globe stand out), m; the chair's pedestal and the
-#  bucket on it ('_cabin.chairFrame', 'seatShell'); the globe's stand
-#  (its foot's half width and height, its pillar's half width).
-PANEL_DEEP = 0.04
-GLOBE_FOOT = (0.17, 0.015)
-GLOBE_PILLAR = 0.025
+#  The curved panel and its hood as boxes round the curve, each so many
+#  rad round; how far before its face the panel's reach (its knobs, keys
+#  and guards stand out), m.
+PANEL_PIECE = math.radians(10.0)
+STANDS_OUT = 0.04
 
 
 @functools.lru_cache(maxsize=1)
@@ -45,18 +49,38 @@ def solids() -> tuple:
               UNTURNED))
   out.append(((x, y, under + 0.05), (half[0] + 0.02, half[1] + 0.06,
                                      0.05), UNTURNED))
-  out.append((PANEL_MIDDLE, (PANEL_HALF[0] + FRAME, PANEL_HALF[1] + FRAME,
-                             PANEL_DEEP), PANEL_AXES))
+  out += _curved(panelPoint, panelAxes, PANEL_RADIUS, PANEL_SPAN,
+                 FACE_LOW, FACE_HIGH, PANEL_DEEP)
+  out += _curved(hoodPoint, hoodAxes, HOOD_RADIUS, HOOD_SPAN, 0.0,
+                 HOOD_HIGH, HOOD_DEEP)
+  (ahead, inward), (hx, hy) = RISER
+  for (x, y, _), _ in (LEFT_CONSOLE, RIGHT_CONSOLE):
+    high = panelPoint(0.0, FACE_LOW, 0.0)[2] - 0.03
+    side = math.copysign(inward, y - CUSHION[0][1])
+    out.append(((x + ahead, y - side, 0.5 * (TOP + high)), (
+      hx, hy, 0.5 * (high - TOP)), UNTURNED))
   out.append(_deckBox())
-  x, y, z = GLOBE_AT
-  out.append((GLOBE_AT, (GLASS, GLASS, GLASS), UNTURNED))
-  out.append(((x, y, FLOOR + GLOBE_FOOT[1]), (GLOBE_FOOT[0], GLOBE_FOOT[0],
-                                              GLOBE_FOOT[1]), UNTURNED))
-  low = z - GLASS
-  out.append(((x, y, 0.5 * (FLOOR + low)), (GLOBE_PILLAR, GLOBE_PILLAR,
-                                            0.5 * (low - FLOOR)),
-              UNTURNED))
+  out.append((GLOBE_AT, (GLASS, GLASS, GLASS), GLOBE_AXES))
   return tuple(out) + obstacles()
+
+
+def _curved(pointOf: object, axesOf: object, radius: float, span: float,
+            low: float, high: float, deep: float) -> list:
+  """Returns a curved sheet's body (the panel's, the hood's: 'pointOf',
+  'axesOf' theirs; 'radius' m out along its middle line, 'span' rad
+  round either way, from 'low' to 'high' up its slant, 'deep' behind)
+  as boxes, a 'PANEL_PIECE' round each, reaching 'STANDS_OUT' before
+  its face."""
+  count = max(1, int(math.ceil(2.0 * span / PANEL_PIECE)))
+  piece = 2.0 * span * radius / count
+  out = []
+  for k in range(count):
+    right = -span * radius + (k + 0.5) * piece
+    middle = pointOf(right, 0.5 * (low + high), 0.5 * (STANDS_OUT - deep))
+    out.append((middle, (0.5 * piece * (radius + 0.2) / radius,
+                         0.5 * (high - low), 0.5 * (STANDS_OUT + deep)),
+                axesOf(right)))
+  return out
 
 
 def _deckBox() -> tuple:

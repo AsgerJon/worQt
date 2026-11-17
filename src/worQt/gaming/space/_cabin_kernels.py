@@ -34,12 +34,16 @@ from __future__ import annotations
 import warp as wp
 
 from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius
+from . import _crewman as crew
 from . import _stationinterior as rooms
 from . import _launchtower as tower
 from . import _walkway as walkway
 
 wp.config.log_level = wp.LOG_WARNING
-wp.set_module_options({'enable_backward': False})
+#  No loop unrolled (Asger's box looks round 74 points in loops called
+#  from loops: unrolled, the module took over a quarter of an hour to
+#  compile for the GPU).
+wp.set_module_options({'enable_backward': False, 'max_unroll': 1})
 
 
 def _single(x: float) -> object:
@@ -594,3 +598,596 @@ def moved(places: wp.array(dtype=wp.vec3),
   turned = turn + wp.quat(spin[0], spin[1], spin[2], 0.0) * turn * (
     0.5 * step)
   turns[b] = wp.normalize(turned)
+
+
+#  Asger's box (user, 2026-11-17: "Could we just give Asger the minecraft
+#  implementation of some blocks or whatever rather than just a few
+#  balls?"; "those movements were janky af"; "and make me able to
+#  crouch!"; '_crewman'): half its width, its height standing and
+#  crouched, its middle over its soles, the most it steps up onto, how
+#  far off what it rests on it keeps, m; the most a part of a frame moves
+#  it, m; how many times a move is pushed out of what it is in; how many
+#  levels up its sides it looks for walls (and three a side round each);
+#  a meeting's normal up its 'up' past 'FLOORED' stands on it.
+BOX_HALF = _single(crew.WIDE * 0.5)
+BOX_TALL = _single(crew.TALL)
+BOX_LOW = _single(crew.LOW)
+BOX_MIDDLE = _single(crew.MIDDLE)
+STEP_UP = _single(crew.STEP)
+GAP = _single(0.001)
+MOVE_MOST = _single(0.08)
+ITERATIONS = 5
+LEVELS = 9
+FLOORED = _single(0.6)
+#  How far up is no way out ('upOnto').
+BLOCKED = _single(1.0e9)
+#  The most solids near him a frame ('nearby': his box looks at those
+#  alone; a GPU thread reading all four hundred each time it looked took
+#  18 ms a frame walking).
+NEAR_MOST = 64
+#  A face's axis is taken over an edge's when the edge's is not shallower
+#  by this much, m (an edge's axis grazing a box's side would push him
+#  up or aside where its face should).
+EDGE_BIAS = _single(0.003)
+
+
+@wp.func
+def boxAxes(up: wp.vec3) -> wp.mat33:
+  """Returns his box's axes as columns: across (from a fixed way: the
+  vessel's z, or its x when his up is near it), across that, up."""
+  ref = wp.vec3(0.0, 0.0, 1.0)
+  if wp.abs(up[2]) > 0.9:
+    ref = wp.vec3(1.0, 0.0, 0.0)
+  a = wp.normalize(ref - wp.dot(ref, up) * up)
+  b = wp.cross(up, a)
+  return wp.mat33(a[0], b[0], up[0], a[1], b[1], up[1], a[2], b[2], up[2])
+
+
+@wp.func
+def spanOf(axis: wp.vec3, e0: wp.vec3, e1: wp.vec3, e2: wp.vec3,
+           half: wp.vec3) -> float:
+  """Returns how far a box (its axes 'e0' 'e1' 'e2', 'half' its size)
+  reaches either way along 'axis' from its middle."""
+  return (half[0] * wp.abs(wp.dot(e0, axis)) + half[1] * wp.abs(wp.dot(
+    e1, axis)) + half[2] * wp.abs(wp.dot(e2, axis)))
+
+
+@wp.func
+def axisTried(best: wp.vec4, axis: wp.vec3, apart: wp.vec3, a0: wp.vec3,
+              a1: wp.vec3, a2: wp.vec3, ha: wp.vec3, b0: wp.vec3,
+              b1: wp.vec3, b2: wp.vec3, hb: wp.vec3,
+              bias: float) -> wp.vec4:
+  """Returns 'best' or the two boxes' overlap along 'axis' if shallower
+  ('bias' added in the weighing): the way out (from box b toward box a)
+  and how deep (below nought: apart)."""
+  along = wp.dot(apart, axis)
+  overlap = (spanOf(axis, a0, a1, a2, ha) + spanOf(axis, b0, b1, b2, hb)
+             - wp.abs(along))
+  if overlap + bias < best[3]:
+    side = float(1.0)
+    if along < 0.0:
+      side = -1.0
+    return wp.vec4(side * axis[0], side * axis[1], side * axis[2], overlap)
+  return best
+
+
+@wp.func
+def edgeTried(best: wp.vec4, one: wp.vec3, two: wp.vec3, apart: wp.vec3,
+              a0: wp.vec3, a1: wp.vec3, a2: wp.vec3, ha: wp.vec3,
+              b0: wp.vec3, b1: wp.vec3, b2: wp.vec3,
+              hb: wp.vec3) -> wp.vec4:
+  """Returns 'best' or the overlap across edges 'one' and 'two' (their
+  cross) if shallower by more than 'EDGE_BIAS'."""
+  axis = wp.cross(one, two)
+  size = wp.length(axis)
+  if size < 1.0e-4:
+    return best
+  return axisTried(best, axis / size, apart, a0, a1, a2, ha, b0, b1, b2, hb,
+                   EDGE_BIAS)
+
+
+@wp.func
+def boxApart(ca: wp.vec3, axes: wp.mat33, ha: wp.vec3, cb: wp.vec3,
+             turn: wp.quat, hb: wp.vec3) -> wp.vec4:
+  """Returns how deep box a ('ca', its 'axes' as columns, 'ha') is in box
+  b ('cb', 'turn', 'hb') and the way out of it (separating axes: the
+  shallowest overlap of the fifteen; below nought: apart at least so
+  far)."""
+  a0 = wp.vec3(axes[0, 0], axes[1, 0], axes[2, 0])
+  a1 = wp.vec3(axes[0, 1], axes[1, 1], axes[2, 1])
+  a2 = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  b0 = wp.quat_rotate(turn, wp.vec3(1.0, 0.0, 0.0))
+  b1 = wp.quat_rotate(turn, wp.vec3(0.0, 1.0, 0.0))
+  b2 = wp.quat_rotate(turn, wp.vec3(0.0, 0.0, 1.0))
+  apart = ca - cb
+  best = wp.vec4(0.0, 0.0, 1.0, 1.0e9)
+  best = axisTried(best, a0, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = axisTried(best, a1, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = axisTried(best, a2, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = axisTried(best, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = axisTried(best, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = axisTried(best, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb, 0.0)
+  best = edgeTried(best, a0, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a0, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a0, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a1, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a1, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a1, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a2, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a2, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  best = edgeTried(best, a2, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb)
+  return best
+
+
+@wp.func
+def liftTried(least: float, axis: wp.vec3, apart: wp.vec3, a0: wp.vec3,
+              a1: wp.vec3, a2: wp.vec3, ha: wp.vec3, b0: wp.vec3,
+              b1: wp.vec3, b2: wp.vec3, hb: wp.vec3,
+              up: wp.vec3) -> float:
+  """Returns 'least' or how far box a must go along 'up' to come apart
+  from box b along 'axis' if less (nought: apart along it already)."""
+  along = wp.dot(apart, axis)
+  overlap = (spanOf(axis, a0, a1, a2, ha) + spanOf(axis, b0, b1, b2, hb)
+             - wp.abs(along))
+  if overlap <= 0.0:
+    return 0.0
+  side = float(1.0)
+  if along < 0.0:
+    side = -1.0
+  going = side * wp.dot(up, axis)
+  if going > 1.0e-4:
+    return wp.min(least, overlap / going)
+  return least
+
+
+@wp.func
+def liftEdge(least: float, one: wp.vec3, two: wp.vec3, apart: wp.vec3,
+             a0: wp.vec3, a1: wp.vec3, a2: wp.vec3, ha: wp.vec3,
+             b0: wp.vec3, b1: wp.vec3, b2: wp.vec3, hb: wp.vec3,
+             up: wp.vec3) -> float:
+  """Returns 'least' or the lift across edges 'one' and 'two'."""
+  axis = wp.cross(one, two)
+  size = wp.length(axis)
+  if size < 1.0e-4:
+    return least
+  return liftTried(least, axis / size, apart, a0, a1, a2, ha, b0, b1, b2,
+                   hb, up)
+
+
+@wp.func
+def liftApart(ca: wp.vec3, axes: wp.mat33, ha: wp.vec3, cb: wp.vec3,
+              turn: wp.quat, hb: wp.vec3) -> float:
+  """Returns how far box a ('ca', its 'axes' as columns, its up the
+  third; 'ha') must go up to be clear of box b ('cb', 'turn', 'hb'):
+  the least along any of the separating axes ('BLOCKED': going up never
+  parts them)."""
+  a0 = wp.vec3(axes[0, 0], axes[1, 0], axes[2, 0])
+  a1 = wp.vec3(axes[0, 1], axes[1, 1], axes[2, 1])
+  a2 = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  b0 = wp.quat_rotate(turn, wp.vec3(1.0, 0.0, 0.0))
+  b1 = wp.quat_rotate(turn, wp.vec3(0.0, 1.0, 0.0))
+  b2 = wp.quat_rotate(turn, wp.vec3(0.0, 0.0, 1.0))
+  apart = ca - cb
+  least = BLOCKED
+  least = liftTried(least, a0, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftTried(least, a1, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftTried(least, a2, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftTried(least, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftTried(least, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftTried(least, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a0, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a0, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a0, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a1, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a1, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a1, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a2, b0, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a2, b1, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  least = liftEdge(least, a2, b2, apart, a0, a1, a2, ha, b0, b1, b2, hb, a2)
+  return least
+
+
+@wp.func
+def samplePoint(soles: wp.vec3, axes: wp.mat33, high: float, level: int,
+                i: int, j: int) -> wp.vec3:
+  """Returns where one of the points looked at round his box is: on
+  'level' up it (of 'LEVELS'), 'i' and 'j' across (each of -1, 0, 1)."""
+  a = wp.vec3(axes[0, 0], axes[1, 0], axes[2, 0])
+  b = wp.vec3(axes[0, 1], axes[1, 1], axes[2, 1])
+  up = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  h = high * float(level) / float(LEVELS - 1)
+  return (soles + h * up + BOX_HALF * float(i) * a
+          + BOX_HALF * float(j) * b)
+
+
+@wp.func
+def sampled(level: int, i: int, j: int) -> int:
+  """Returns whether that point is looked at: round the sides on every
+  level, the middles of the foot and the top too."""
+  if i == 0 and j == 0 and level > 0 and level < LEVELS - 1:
+    return 0
+  return 1
+
+
+@wp.func
+def deepestIn(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
+              own: int, docked: int, outside: int,
+              ways: wp.array(dtype=wp.vec3),
+              solidMiddles: wp.array(dtype=wp.vec3),
+              solidTurns: wp.array(dtype=wp.quat),
+              solidHalves: wp.array(dtype=wp.vec3),
+              solidVelocities: wp.array(dtype=wp.vec3),
+              near: wp.array(dtype=wp.int32), count: int) -> wp.vec4:
+  """Returns how deep his box (its soles at 'soles', 'high') is in what
+  it meets at 't' s into the frame (the rooms' walls at its points, the
+  solids, but his own, 'own') at the deepest, and the way out of it
+  (depth below nought: in nothing)."""
+  best = wp.vec4(0.0, 0.0, 1.0, -1.0e9)
+  for level in range(LEVELS):
+    for i in range(-1, 2):
+      for j in range(-1, 2):
+        if sampled(level, i, j) == 1:
+          room = roomGap(samplePoint(soles, axes, high, level, i, j), docked,
+                         outside, ways)
+          if -room[3] > best[3]:
+            best = wp.vec4(room[0], room[1], room[2], -room[3])
+  up = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  middle = soles + 0.5 * high * up
+  half = wp.vec3(BOX_HALF, BOX_HALF, 0.5 * high)
+  for m in range(count):
+    k = near[m]
+    there = solidMiddles[k] + solidVelocities[k] * t
+    reach = wp.length(solidHalves[k]) + wp.length(half)
+    if wp.length(middle - there) < reach:
+      met = boxApart(middle, axes, half, there, solidTurns[k],
+                     solidHalves[k])
+      if met[3] > best[3]:
+        best = met
+  return best
+
+
+@wp.func
+def pushedOut(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
+              own: int, docked: int, outside: int,
+              ways: wp.array(dtype=wp.vec3),
+              solidMiddles: wp.array(dtype=wp.vec3),
+              solidTurns: wp.array(dtype=wp.quat),
+              solidHalves: wp.array(dtype=wp.vec3),
+              solidVelocities: wp.array(dtype=wp.vec3),
+              near: wp.array(dtype=wp.int32), count: int) -> wp.vec3:
+  """Returns his box's soles pushed out of what it is in, the deepest
+  first, 'ITERATIONS' times at most, each a 'GAP' clear of it."""
+  out = soles
+  free = int(0)
+  for _ in range(ITERATIONS):
+    if free == 0:
+      met = deepestIn(out, axes, high, t, own, docked, outside, ways,
+                      solidMiddles, solidTurns, solidHalves,
+                      solidVelocities, near, count)
+      if met[3] > 0.0:
+        out = out + wp.vec3(met[0], met[1], met[2]) * (met[3] + GAP)
+      else:
+        free = int(1)
+  return out
+
+
+@wp.func
+def upOnto(soles: wp.vec3, axes: wp.mat33, high: float, t: float, own: int,
+           docked: int, outside: int, ways: wp.array(dtype=wp.vec3),
+           solidMiddles: wp.array(dtype=wp.vec3),
+           solidTurns: wp.array(dtype=wp.quat),
+           solidHalves: wp.array(dtype=wp.vec3),
+           solidVelocities: wp.array(dtype=wp.vec3),
+           near: wp.array(dtype=wp.int32), count: int) -> float:
+  """Returns how far up his box (its soles at 'soles') must go to stand
+  clear on what it is in (nought: in nothing); 'BLOCKED' when that is
+  no way out: a wall, or what is higher than 'STEP_UP' over its soles
+  (lowered onto a step, it is set on the step's top, never pushed off
+  its edge)."""
+  up = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  need = float(0.0)
+  for level in range(LEVELS):
+    for i in range(-1, 2):
+      for j in range(-1, 2):
+        if sampled(level, i, j) == 1:
+          room = roomGap(samplePoint(soles, axes, high, level, i, j), docked,
+                         outside, ways)
+          if room[3] < 0.0:
+            lean = wp.dot(wp.vec3(room[0], room[1], room[2]), up)
+            if lean > 0.3:
+              need = wp.max(need, -room[3] / lean)
+            else:
+              need = BLOCKED
+  middle = soles + 0.5 * high * up
+  half = wp.vec3(BOX_HALF, BOX_HALF, 0.5 * high)
+  for m in range(count):
+    k = near[m]
+    there = solidMiddles[k] + solidVelocities[k] * t
+    reach = wp.length(solidHalves[k]) + wp.length(half)
+    if wp.length(middle - there) < reach:
+      lift = liftApart(middle, axes, half, there, solidTurns[k],
+                       solidHalves[k])
+      if lift > STEP_UP + 0.01:
+        need = BLOCKED
+      else:
+        need = wp.max(need, lift)
+  return need
+
+
+@wp.kernel
+def nearby(solidMiddles: wp.array(dtype=wp.vec3),
+           solidHalves: wp.array(dtype=wp.vec3),
+           solidVelocities: wp.array(dtype=wp.vec3),
+           place: wp.array(dtype=wp.vec3),
+           near: wp.array(dtype=wp.int32),
+           nearCount: wp.array(dtype=wp.int32), up: wp.vec3,
+           margin: float, own: int, seconds: float):
+  """Lists the solids (a thread a solid) his box may meet this frame
+  ('place': his soles; 'margin': how far he may go in it, m; the solid
+  as far as it moves in 'seconds'): at most 'NEAR_MOST', in 'near', how
+  many in 'nearCount' ('walked' looks at those alone, and empties it)."""
+  k = wp.tid()
+  if k == own:
+    return
+  middle = place[0] + 0.5 * BOX_TALL * wp.normalize(up)
+  reach = (wp.length(solidHalves[k]) + 0.5 * BOX_TALL + 2.0 * BOX_HALF
+           + margin + wp.length(solidVelocities[k]) * seconds)
+  if wp.length(solidMiddles[k] - middle) < reach:
+    slot = wp.atomic_add(nearCount, 0, 1)
+    if slot < NEAR_MOST:
+      near[slot] = k
+
+
+@wp.kernel
+def walked(place: wp.array(dtype=wp.vec3),
+           velocity: wp.array(dtype=wp.vec3),
+           contact: wp.array(dtype=wp.vec3),
+           met: wp.array(dtype=wp.vec3),
+           thuds: wp.array(dtype=wp.float32),
+           solidMiddles: wp.array(dtype=wp.vec3),
+           solidTurns: wp.array(dtype=wp.quat),
+           solidHalves: wp.array(dtype=wp.vec3),
+           solidVelocities: wp.array(dtype=wp.vec3),
+           ways: wp.array(dtype=wp.vec3),
+           near: wp.array(dtype=wp.int32),
+           nearCount: wp.array(dtype=wp.int32),
+           felt: wp.vec3, turning: wp.vec3, speeding: wp.vec3,
+           wanted: wp.vec3, leap: wp.vec3, up: wp.vec3, walking: int,
+           wanting: int, towTo: wp.vec3, towing: int, sure: int,
+           crouch: int, docked: int, outside: int, own: int,
+           seconds: float):
+  """Moves Asger's box a frame ('seconds' s) on, one thread: what is
+  felt there moves it (as a loose thing: 'felt', 'turning', 'speeding'),
+  his legs while he touches something ('wanted', 'walking', 'wanting',
+  a 'leap' once; 'sure': a push off a magic bolt), or the gravity gun
+  ('towTo', 'towing'); in parts of the frame no longer than 'MOVE_MOST',
+  first along his up, then across, each pushed out of what it meets
+  ('pushedOut'): what it meets stops it and it slides along (Minecraft's
+  way, his box upright along 'up'); walking, it steps up onto what is
+  no higher than 'STEP_UP' and keeps to the ground going down (a ledge
+  deeper than that: he falls; crouched ('crouch'), he stops at it). It
+  stands up again only with room overhead. Its place, velocity, what it
+  touches ('contact': touching, standing on something, crouched; 'met'
+  0: how many meetings, how far it stepped up, the fastest it met
+  anything; 1: their normals summed; 2: those it stands on's) back for
+  the host ('place': his soles, not his middle: his up turning, he turns
+  about his feet); the thuds; its
+  box into the solids' slot 'own' (moving as it does through the frame)
+  for the loose things."""
+  v = velocity[0]
+  up = wp.normalize(up)
+  axes = boxAxes(up)
+  soles = place[0]
+  known = wp.min(nearCount[0], NEAR_MOST)
+  nearCount[0] = 0
+  touching = int(0)
+  pressing = int(0)
+  grounded = int(0)
+  crouched = int(0)
+  if contact[0][0] > 0.5:
+    touching = int(1)
+  if contact[0][0] > 1.5:
+    pressing = int(1)
+  if contact[0][1] > 0.5:
+    grounded = int(1)
+  if contact[0][2] > 0.5:
+    crouched = int(1)
+  if crouch == 1:
+    crouched = int(1)
+  elif crouched == 1:
+    standing = deepestIn(soles, axes, BOX_TALL, 0.0, own, docked, outside,
+                         ways, solidMiddles, solidTurns, solidHalves,
+                         solidVelocities, near, known)
+    if standing[3] <= 0.0:
+      crouched = int(0)
+  high = BOX_TALL
+  if crouched == 1:
+    high = BOX_LOW
+  start = soles + 0.5 * high * up
+  half = wp.vec3(BOX_HALF, BOX_HALF, 0.5 * high)
+  solidMiddles[own] = start
+  solidTurns[own] = wp.quat_from_matrix(axes)
+  solidHalves[own] = half
+  count = int(wp.ceil(seconds * (wp.length(v) + 2.0) / MOVE_MOST))
+  count = wp.clamp(count, 1, 24)
+  dt = seconds / float(count)
+  rose = float(0.0)
+  landing = float(0.0)
+  hardest = float(0.0)
+  normals = wp.vec3(0.0, 0.0, 0.0)
+  floors = wp.vec3(0.0, 0.0, 0.0)
+  meetings = int(0)
+  for k in range(count):
+    t = float(k + 1) * dt
+    body = soles + BOX_MIDDLE * up
+    feel = (-felt - wp.cross(turning, wp.cross(turning, body))
+            - 2.0 * wp.cross(turning, v) - wp.cross(speeding, body))
+    if k == 0 and (touching == 1 or sure == 1):
+      v = v + leap
+    if towing == 1:
+      off = towTo - (soles + BOX_MIDDLE * up)
+      far = wp.length(off)
+      wish = wp.vec3(0.0, 0.0, 0.0)
+      if far > 1.0e-4:
+        wish = off * (wp.min(TOW_SPEED, wp.sqrt(2.0 * TOW_BRAKE * far))
+                      / far)
+      gun = (wish - v) / TOW_TIME
+      size = wp.length(gun)
+      if size > TOW_MOST:
+        gun = gun * (TOW_MOST / size)
+      feel = feel + gun
+    elif touching == 1:
+      legs = (wanted - v) / LEGS_TIME
+      if walking == 1:
+        along = v - wp.dot(v, up) * up
+        legs = (wanted - along) / LEGS_TIME
+      size = wp.length(legs)
+      if size > LEGS_MOST:
+        legs = legs * (LEGS_MOST / size)
+      if walking == 1 or wanting == 1:
+        feel = feel + legs
+    v = v + (feel - AIR_ASGER * v) * dt
+    move = v * dt
+    rise = wp.dot(move, up) * up
+    across = move - rise
+    p = soles + rise
+    settled = int(0)
+    if wp.dot(rise, up) < 0.0:
+      onto = upOnto(p, axes, high, t, own, docked, outside, ways,
+                    solidMiddles, solidTurns, solidHalves, solidVelocities,
+                    near, known)
+      if onto < BLOCKED:
+        settled = int(1)
+        if onto > 0.0:
+          p = p + (onto + GAP) * up
+    if settled == 0:
+      p = pushedOut(p, axes, high, t, own, docked, outside, ways,
+                    solidMiddles, solidTurns, solidHalves, solidVelocities,
+                    near, known)
+    before = p
+    p = pushedOut(before + across, axes, high, t, own, docked, outside,
+                  ways, solidMiddles, solidTurns, solidHalves,
+                  solidVelocities, near, known)
+    wide = wp.length(across)
+    onFoot = int(0)
+    if grounded == 1 and walking == 1 and wp.dot(v, up) < 0.5:
+      onFoot = int(1)
+    if onFoot == 1 and wide > 1.0e-6:
+      way = across / wide
+      gone = wp.dot(p - before, way)
+      if gone < 0.95 * wide - 1.0e-4:
+        raised = pushedOut(before + STEP_UP * up, axes, high, t, own,
+                           docked, outside, ways, solidMiddles, solidTurns,
+                           solidHalves, solidVelocities, near, known)
+        lift = wp.dot(raised - before, up)
+        ahead = pushedOut(raised + across, axes, high, t, own, docked,
+                          outside, ways, solidMiddles, solidTurns,
+                          solidHalves, solidVelocities, near, known)
+        lowered = ahead - (lift + 0.002) * up
+        onto = upOnto(lowered, axes, high, t, own, docked, outside, ways,
+                      solidMiddles, solidTurns, solidHalves,
+                      solidVelocities, near, known)
+        if onto < BLOCKED:
+          down = lowered + (onto + GAP) * up
+          climbed = wp.dot(down - before, up)
+          if wp.dot(down - before, way) > gone + 0.002 and climbed > 0.002:
+            p = down
+            rose = rose + climbed
+    if onFoot == 1:
+      dropped = p - STEP_UP * up
+      onto = upOnto(dropped, axes, high, t, own, docked, outside, ways,
+                    solidMiddles, solidTurns, solidHalves, solidVelocities,
+                    near, known)
+      if onto < BLOCKED and onto > 0.003:
+        p = dropped + (onto + GAP) * up
+      elif onto <= 0.003 and crouched == 1:
+        p = before
+        v = wp.dot(v, up) * up
+    soles = p
+    was = pressing
+    touching = int(0)
+    pressing = int(0)
+    grounded = int(0)
+    closing = float(0.0)
+    for level in range(LEVELS):
+      for i in range(-1, 2):
+        for j in range(-1, 2):
+          if sampled(level, i, j) == 1:
+            room = roomGap(samplePoint(soles, axes, high, level, i, j),
+                           docked, outside, ways)
+            if room[3] < NEAR:
+              normal = wp.vec3(room[0], room[1], room[2])
+              touching = int(1)
+              meetings = meetings + 1
+              normals = normals + normal
+              if wp.dot(normal, up) > FLOORED:
+                grounded = int(1)
+                floors = floors + normal
+              into = wp.dot(v, normal)
+              if room[3] < 0.004:
+                pressing = int(1)
+                if into < 0.0:
+                  closing = wp.max(closing, -into)
+                  v = v - into * normal
+    middle = soles + 0.5 * high * up
+    for m in range(known):
+      n = near[m]
+      if n != own:
+        there = solidMiddles[n] + solidVelocities[n] * t
+        reach = wp.length(solidHalves[n]) + wp.length(half) + NEAR
+        if wp.length(middle - there) < reach:
+          box = boxApart(middle, axes, half, there, solidTurns[n],
+                         solidHalves[n])
+          if box[3] > -NEAR:
+            normal = wp.vec3(box[0], box[1], box[2])
+            touching = int(1)
+            meetings = meetings + 1
+            normals = normals + normal
+            if wp.dot(normal, up) > FLOORED:
+              grounded = int(1)
+              floors = floors + normal
+            into = wp.dot(v - solidVelocities[n], normal)
+            turn = solidTurns[n]
+            hb = solidHalves[n]
+            top = wp.dot(there - soles, up) + spanOf(up, wp.quat_rotate(
+              turn, wp.vec3(1.0, 0.0, 0.0)), wp.quat_rotate(turn, wp.vec3(
+                0.0, 1.0, 0.0)), wp.quat_rotate(turn, wp.vec3(0.0, 0.0,
+                                                              1.0)), hb)
+            foot = top - 2.0 * spanOf(up, wp.quat_rotate(turn, wp.vec3(
+              1.0, 0.0, 0.0)), wp.quat_rotate(turn, wp.vec3(0.0, 1.0, 0.0)),
+                                      wp.quat_rotate(turn, wp.vec3(
+                                        0.0, 0.0, 1.0)), hb)
+            step = int(0)
+            if (onFoot == 1 and wp.abs(wp.dot(normal, up)) < 0.3
+                and top > 0.005 and top <= STEP_UP + 0.01
+                and foot < 0.005):
+              step = int(1)
+            if box[3] > -0.004 and step == 0:
+              pressing = int(1)
+              if into < 0.0:
+                closing = wp.max(closing, -into)
+                v = v - into * normal
+    if was == 0:
+      hardest = wp.max(hardest, closing)
+      landing = wp.max(landing, closing)
+  if hardest > THUD:
+    wp.atomic_add(thuds, 0, 1.0)
+    wp.atomic_max(thuds, 1, hardest)
+  place[0] = soles
+  velocity[0] = v
+  solidVelocities[own] = (soles + 0.5 * high * up - start) / seconds
+  stood = float(0.0)
+  if grounded == 1:
+    stood = 1.0
+  touched = float(0.0)
+  if pressing == 1:
+    touched = 2.0
+  elif touching == 1:
+    touched = 1.0
+  low = float(0.0)
+  if crouched == 1:
+    low = 1.0
+  contact[0] = wp.vec3(touched, stood, low)
+  met[0] = wp.vec3(float(meetings), rose, landing)
+  met[1] = normals
+  met[2] = floors

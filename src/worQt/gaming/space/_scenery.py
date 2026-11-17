@@ -19,9 +19,10 @@ from worQt.gaming.sandbox._skin import PARTS
 from worQt.gaming.sandbox import Pushbutton, Slider
 
 from ._cockpit import BALL_RADIUS, CAMERA_AT, CAMERA_LOOK, CAMERA_UP
-from ._cockpit import FLOOR, GLOBE_AT, GLOBE_AXES, GUARD_OPEN, PANEL_AXES
+from ._cockpit import FLOOR, GLOBE_AT, GLOBE_AXES, GUARD_OPEN, LIT_KEYS
 from ._cockpit import panelPoint
-from ._dashboard import ALTIMETER, ballCentre, dialAngle, dialCentre
+from ._dashboard import ALTIMETER, LEGENDS, ballCentre, dialAngle
+from ._dashboard import dialAxes, dialCentre
 from ._dashboard import HATCH_HINGE, HATCH_OPEN, guardHinge, headPlace
 from ._dashboard import pieces
 from ._deckmodel import AXIS, movingParts
@@ -280,9 +281,9 @@ class Scenery:
             'camera': self._cameraOf(there, turn, dash['nose']),
             'aboard': dash.get('aboard', False),
             'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
-            'hand': (bool(dash['gun'][0]) and inside, tuple(
-              dash['gun'][3]) if len(dash['gun']) > 3 else (0.0, 0.0,
-                                                           0.0)),
+            'hand': (bool(dash.get('hand', dash['gun'][0])) and inside,
+                     tuple(dash['gun'][3]) if len(dash['gun']) > 3 else (
+                       0.0, 0.0, 0.0)),
             'swing': (dash.get('back', BACK), dash.get('swing',
                                                         SWING_AWAY)),
             'outdoor': (there(hallLight()), dash.get('swing', SWING_AWAY)
@@ -340,8 +341,12 @@ class Scenery:
       peep = what.peep
       pivot = peep.pivot
       if isinstance(peep, Pushbutton):
+        lit = what.name in LIT_KEYS and dash['legends'][LEGENDS.index(
+          what.name)]
         return (there(tuple(p + peep.sunk() * a for p, a in zip(
-          pivot, peep.axis))), turn, True, 0.0)
+          pivot, peep.axis))), turn, True, (
+          LEGEND_ON if lit else LEGEND_OFF) if what.name in LIT_KEYS
+          else 0.0)
       if isinstance(peep, Slider):
         return (there(tuple(p + peep.along() * a for p, a in zip(
           pivot, peep.axis))), turn, True, 0.0)
@@ -351,7 +356,7 @@ class Scenery:
     if kind == 'needle':
       angle = dialAngle(dash['needles'][what])
       return (there(dialCentre(what)), product(turn, aboutAxis(
-        PANEL_AXES[2], -angle)), True, NEEDLE_GLOW)
+        dialAxes(what)[2], -angle)), True, NEEDLE_GLOW)
     if kind == 'glint':
       peep = what.peep
       return (there(peep.pivot), product(turn, aboutAxis(peep.axis,
@@ -407,7 +412,7 @@ class Scenery:
               LEGEND_ON if dash['legends'][what] else LEGEND_OFF)
     if kind == 'bug':
       return (there(dialCentre(ALTIMETER)), product(turn, aboutAxis(
-        PANEL_AXES[2], -dialAngle(dash['bug']))), True, 0.0)
+        dialAxes(ALTIMETER)[2], -dialAngle(dash['bug']))), True, 0.0)
     if kind == 'deck':
       part, index, _, pivot = movingParts()[what][:4]
       angle = (dash['reels'][index] if part == 'reel'

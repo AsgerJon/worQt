@@ -29,11 +29,13 @@ from ._cabinpictures import cabinPicturesReady
 from ._bolts import boltGlintRows, boltRingRows, boltRows
 from ._furnishings import furnishings, looseParts
 from ._gunmodel import gunParts
+from ._handitems import heldParts
+from ._itempictures import itemPictures
 from ._interiormeshes import interiorMeshes
 from ._kolonihave import gardenMeshes
 from ._stationmeshes import stationMeshes
 from ._stationpictures import stationPicturesReady
-from ._cockpit import BALL_RADIUS, LAMPS, SCALE
+from ._cockpit import BALL_RADIUS, LAMPS, LIT_KEYS, SCALE
 from ._meshes import capRows, padRows, ringRows, rocketParts, sphereRows
 from ._navball import Navball, mirroredRows
 from ._scenery import AFTER_PIECES, MARK_KINDS, MECHANISM
@@ -46,6 +48,9 @@ from ._dashpictures import MARK_NAMES
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
 
+#  The view's height (deg, the cameras' own: narrowed by the telescope,
+#  'heldShown').
+VIEW_FIELD = 60.0
 _SCENE = Path(__file__).with_name('space.qml')
 #  How often the frames drawn a second are counted anew, s.
 COUNTED = 0.5
@@ -250,6 +255,7 @@ class SpaceViewport(QWidget):
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   boardPicked = Signal(str)
+  inventoryClicked = Signal(int, bool)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -266,6 +272,8 @@ class SpaceViewport(QWidget):
     self.furnishedYet, self._kept, self._caps = False, [], []
     self._beams = []
     self._path, self._slots, self._paper = None, CABIN_SLOT, None
+    self._readout = None
+    self._heldKind, self._hands, self._inventory = 'gravgun', {}, None
     self._armSlot, self._quest = 0, None
     self.fps, self._frames, self._since = 0.0, 0, time.perf_counter()
     self.quick.frameSwapped.connect(self._swapped)
@@ -369,9 +377,14 @@ class SpaceViewport(QWidget):
     root.setProperty('paperLayout', _dashboard.paperLayout())
     root.setProperty('manualPicture', QUrl.fromLocalFile(str(
       cabinPicturesReady()['manual'])).toString())
-    root.setProperty('handParts', self._handParts())
+    root.setProperty('handParts', self._handParts('gravgun'))
+    root.setProperty('itemIcons', {kind: QUrl.fromLocalFile(str(
+      path)).toString() for kind, path in itemPictures().items()})
     root.setProperty('paperGeometry', self._kept1(Mesh(
       *_dashboard.paperRows())))
+    root.setProperty('readoutGeometry', self._kept1(Mesh(
+      *_dashboard.readoutRows())))
+    root.setProperty('readoutLayout', _dashboard.readoutLayout())
     root.setProperty('screenGeometry', self._kept1(Mesh(
       *_dashboard.screenRows())))
     self._files = files
@@ -572,6 +585,45 @@ class SpaceViewport(QWidget):
       self._quest = rows
       root.setProperty('questRows', rows)
 
+  def inventoryShown(self, rows: list, selected: int, open_: bool,
+                     carried: list | None, shown: bool,
+                     since: float) -> None:
+    """The 'inventoryShown' method shows Asger's hotbar ('shown': in his
+    eyes), its slot 'selected' and the held item's name a while after
+    it was chosen ('since' s ago); open ('open_'), the whole inventory
+    ('rows': each slot's kind, count and title; '_inventory') and the
+    stack on the pointer ('carried')."""
+    root = self._root()
+    if root is None:
+      return
+    carriedRow = {'kind': '', 'count': 0} if carried is None else {
+      'kind': carried[0], 'count': carried[1]}
+    state = (rows, selected, open_, carriedRow, shown)
+    if state != self._inventory:
+      self._inventory = state
+      root.setProperty('inventoryRows', rows)
+      root.setProperty('hotbarSelected', selected)
+      root.setProperty('inventoryOpen', bool(open_))
+      root.setProperty('carriedRow', carriedRow)
+      root.setProperty('hotbarShown', bool(shown))
+    root.setProperty('heldFade', max(0.0, min(1.0, 2.5 - since)))
+
+  def heldShown(self, kind: str | None, zoom: float) -> None:
+    """The 'heldShown' method puts 'kind' in his hand (its meshes in the
+    hand's view; None: nothing) and narrows the view 'zoom' times (the
+    telescope), its round edge drawn round it."""
+    root = self._root()
+    if root is None:
+      return
+    if kind != self._heldKind:
+      self._heldKind = kind
+      root.setProperty('handParts', [] if kind is None else
+                       self._handParts(kind))
+    field = 2.0 * math.degrees(math.atan(math.tan(math.radians(
+      0.5 * VIEW_FIELD)) / zoom))
+    root.setProperty('viewField', field)
+    root.setProperty('scopeShown', max(0.0, min(1.0, (zoom - 1.2) / 2.0)))
+
   def manualShown(self, shown: bool) -> None:
     """The 'manualShown' method shows the warning manual close up, or
     puts it back."""
@@ -587,13 +639,15 @@ class SpaceViewport(QWidget):
       root.setProperty('sleepShade', float(shade))
 
   def cockpitShown(self, inside: bool, prompt: tuple | None,
-                   paper: tuple, stamp: str) -> None:
+                   paper: tuple, stamp: str, readout: tuple) -> None:
     """The 'cockpitShown' method shows the view from Asger's eyes
     ('inside': the overlays hidden, a dot in the middle, the cabin's
-    nearest cut) or not; the input he looks at ('prompt': its key and
-    what working it does, None: none); the teleprinter's paper ('paper':
-    its lines printed and the line being typed, 'Teleprinter.paper');
-    the closed circuit picture's time ('stamp')."""
+    nearest cut) or not; the input he looks at ('prompt': its key ('':
+    none, a value read) and what working it does, None: none); the
+    teleprinter's paper ('paper': its lines printed and the line being
+    typed, 'Teleprinter.paper'); the closed circuit picture's time
+    ('stamp'); the readouts ('readout': the AUTOPILOT's status line and
+    Terra Prime's range's groups' figures, each as its tubes show it)."""
     root = self._root()
     if root is None:
       return
@@ -602,6 +656,10 @@ class SpaceViewport(QWidget):
     root.setProperty('nearClip', EYES_NEAR if inside else CHASE_NEAR)
     root.setProperty('promptKey', prompt[0] if prompt else '')
     root.setProperty('promptName', prompt[1] if prompt else '')
+    if readout != self._readout:
+      self._readout = readout
+      root.setProperty('readoutStatus', readout[0])
+      root.setProperty('readoutRange', list(readout[1]))
     lines, typing = paper[0], paper[1]
     if (lines, typing) != self._paper:
       self._paper = lines, typing
@@ -625,6 +683,8 @@ class SpaceViewport(QWidget):
     root = self._root()
     if root is None:
       return False
+    if root.property('inventoryOpen'):
+      return True
     under = root.childAt(at.x(), at.y())
     return under is not None and under.objectName() in CLICKED
 
@@ -660,8 +720,10 @@ class SpaceViewport(QWidget):
              ('chrome', _cabin.chairFrame(), ''),
              ('rosewood', _cabin.consoleRows(), ''),
              ('aluminium', _cabin.consoleTops(), ''),
-             ('rosewood', _dashboard.panelFrame(), ''),
+             ('rosewood', _dashboard.panelBody(), ''),
              ('picture', _dashboard.panelFace(), face),
+             ('rosewood', _dashboard.hoodBody(), ''),
+             ('picture', _dashboard.hoodFace(), pictures['hood']),
              ('chrome', _dashboard.bezels(), ''),
              ('chrome', _dashboard.paperFrame(), ''),
              ('wood', _dashboard.monitorBody(), pictures['wood']),
@@ -672,7 +734,8 @@ class SpaceViewport(QWidget):
              ('snacks', _dashboard.snackBag(), ''),
              ('rosewood', _dashboard.sideboardRows(), ''),
              ('aluminium', _dashboard.sideboardTop(), ''),
-             ('chrome', _dashboard.globeStand(), ''))
+             ('chrome', _dashboard.globeMount(), ''),
+             ('black', _dashboard.globeCowl(), ''))
     for name, rows, picture in still:
       out.append(_partOf(kept(Mesh(*rows)), looks[name], ROCKET_SLOT,
                          False, picture))
@@ -771,9 +834,13 @@ class SpaceViewport(QWidget):
     kind, what = piece
     if kind == 'control':
       peep = what.peep
+      if isinstance(peep, Pushbutton) and what.name in LIT_KEYS:
+        return looks['smoke glass'], labels, False, (255, 255, 255), 1.0
       if isinstance(peep, Pushbutton):
         return looks['picture'], labels, False, None, 1.0
-      if isinstance(peep, (Knob, Slider)):
+      if isinstance(peep, Slider):
+        return looks['black'], '', False, None, 1.0
+      if isinstance(peep, Knob):
         return looks['aluminium'], '', False, None, 1.0
       return looks['chrome'], '', False, None, 1.0
     if kind == 'needle':
@@ -817,24 +884,31 @@ class SpaceViewport(QWidget):
       return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
     return looks['black'], '', False, None, 1.0
 
-  def _handParts(self, ) -> list:
-    """Returns the gravity gun in his hands as the hand's view draws it
+  def _handParts(self, kind: str) -> list:
+    """Returns what is in his hand ('kind': the gravity gun, the
+    telescope, a commando bar: '_handitems') as the hand's view draws it
     over the world (user, 2026-11-17: "the gravgun cuts in to walls and
     textures when you are cloes to the wall"): each part in his eyes'
     frame (right, up, back: the view's camera's own), its look and
-    picture; the 3 on its side unlit, its clear pixels holes."""
+    picture; the gun's 3 on its side unlit, its clear pixels holes;
+    made once a kind."""
+    if kind in self._hands:
+      return self._hands[kind]
     out = []
-    for look, picture, rows, faces in gunParts():
+    for look, picture, rows, faces in heldParts(kind):
       rgb, metal, rough = look
       out.append({'geometry': self._kept1(Mesh(rows, faces)),
                   'colour': QColor(*rgb), 'metal': metal, 'rough': rough,
                   'picture': QUrl.fromLocalFile(str(picture)).toString()
                   if picture else '', 'unlit': False, 'masked': False})
-    rows, faces = _dashboard.pieceRows(('gun mark', 0), None)
-    out.append({'geometry': self._kept1(Mesh(rows, faces)),
-                'colour': QColor(255, 255, 255), 'metal': 0.0, 'rough': 1.0,
-                'picture': QUrl.fromLocalFile(str(cabinPicturesReady()[
-                  'three'])).toString(), 'unlit': True, 'masked': True})
+    if kind == 'gravgun':
+      rows, faces = _dashboard.pieceRows(('gun mark', 0), None)
+      out.append({'geometry': self._kept1(Mesh(rows, faces)),
+                  'colour': QColor(255, 255, 255), 'metal': 0.0,
+                  'rough': 1.0, 'picture': QUrl.fromLocalFile(str(
+                    cabinPicturesReady()['three'])).toString(),
+                  'unlit': True, 'masked': True})
+    self._hands[kind] = out
     return out
 
   def _walkwayParts(self, parts: dict, slot: int) -> list:
@@ -896,6 +970,7 @@ class SpaceViewport(QWidget):
     self.loaded = root is not None
     if root is not None:
       root.boardPicked.connect(self.boardPicked)
+      root.inventoryClicked.connect(self.inventoryClicked)
 
 
 def _armOf(pad: tuple, arm: tuple) -> tuple:

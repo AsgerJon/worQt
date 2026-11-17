@@ -9,8 +9,8 @@ axes as it stands on the pad (the pad's own, x east, 'PAD_UP' lower):
   walkway leaving its east wall for the rocket;
 - the STAIR TOWER west of it, from the ground up: its stairwell (two
   lanes of flights, back and forth, a wall between, landings at either
-  end: 'FLIGHTS' of them, each a ramp under its steps: Asger's round
-  body climbs a slope, not a step's edge), a doorway from its top
+  end: 'FLIGHTS' of them, 'STEPS' steps each, each step a solid block:
+  Asger's box steps up them as Minecraft's does), a doorway from its top
   landing into the hall and one from its bottom out to the ground; the
   LIFT's shaft beside it (its car: '_towerlift');
 - the YARD round it all: the pad's ground, walkable in the dark, the
@@ -43,6 +43,7 @@ STAIRWELL = ((-24.5, -3.0, GROUND), (-18.7, 0.0, FLOOR + 3.0))
 LANES = (-1.5, 0.05)
 LANDING = 1.0
 FLIGHTS = 21
+STEPS = 12
 #  The lift's shaft (inside), the car's floor and roof plates' half
 #  thickness and its height inside, m.
 SHAFT = ((-20.9, 0.4, GROUND), (-18.7, 2.6, FLOOR + 3.0))
@@ -137,23 +138,19 @@ def groundsInside(point: tuple, top: bool, foot: bool) -> float:
 def towerSolids() -> tuple:
   """Returns the tower's still solids in the cabin's world (each its
   middle, half sizes, turn (w x y z) and velocity, still): the flights'
-  ramps and the landings, the wall between the lanes, the steel tower's
-  legs, the rocket's legs and feet."""
+  steps (each a block from under its flight's foot up to its tread) and
+  the landings, the wall between the lanes, the steel tower's legs, the
+  rocket's legs and feet."""
   out = []
-  run = STAIRWELL[1][0] - STAIRWELL[0][0] - 2.0 * LANDING
-  slope = math.atan2(rise(), run)
-  long = math.hypot(run, rise())
   thick = 0.15
   for k in range(FLIGHTS):
     (y0, y1), (xa, xb), (za, zb) = flightOf(k)
-    sign = 1.0 if xb > xa else -1.0
-    angle = sign * slope
-    normal = (-math.sin(angle), 0.0, math.cos(angle))
-    middle = (0.5 * (xa + xb) - thick * normal[0],
-              0.5 * (y0 + y1), 0.5 * (za + zb) - thick * normal[2])
-    turn = (math.cos(0.5 * -angle), 0.0, math.sin(0.5 * -angle), 0.0)
-    out.append((middle, (0.5 * long + 0.05, 0.5 * (y1 - y0), thick), turn,
-                (0.0, 0.0, 0.0)))
+    run, up = (xb - xa) / STEPS, (zb - za) / STEPS
+    for j in range(STEPS):
+      top, low = za + (j + 1) * up, za - thick
+      out.append(((xa + (j + 0.5) * run, 0.5 * (y0 + y1), 0.5 * (top + low)),
+                  (0.5 * abs(run), 0.5 * (y1 - y0), 0.5 * (top - low)),
+                  (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
   (x0, y0, _), (x1, y1, _) = STAIRWELL
   for k in range(1, FLIGHTS + 1):
     west = k % 2 == 0

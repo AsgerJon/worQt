@@ -23,17 +23,18 @@ import numpy
 
 from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 
-from ._cockpit import BAT_LONG, BALL_RADIUS, CONSOLE_AXES
-from ._cockpit import CONSOLE_KEY_HALF, CONSOLE_SWITCHES, DIAL_RADIUS
-from ._cockpit import DIALS, EYE, FLOOR, FRAME, GLASS, GLOBE_AT, NOSE
-from ._cockpit import GLOBE_AXES
-from ._cockpit import GUARD_KNOB, GUARD_SWITCH, KEY_HALF, LAMP_RADIUS
-from ._cockpit import LAMPS, LEGEND_HALF, LEGEND_UP, MONITOR_OUT
-from ._cockpit import PANEL_AXES, PANEL_HALF, PANEL_THICK, PAPER_AT
-from ._cockpit import PAPER_HIGH, PAPER_WIDE, SCREEN_AT, SCREEN_HALF
-from ._cockpit import SIDEBOARD, SLIDER_FROM, SLIDER_LONG, SWITCHES, TOP
-from ._cockpit import SNACK_BAG
-from ._cockpit import panelPoint
+from ._cockpit import BAT_LONG, BALL_OUT, BALL_RADIUS, CONSOLE_AXES
+from ._cockpit import CONSOLE_SWITCHES, DIAL_RADIUS
+from ._cockpit import DIALS, EYE, FACE_HIGH, FACE_LOW, GLASS, GLOBE_AT
+from ._cockpit import GLOBE_AXES, HOOD_DEEP, HOOD_HIGH, HOOD_RADIUS
+from ._cockpit import HOOD_SPAN, LEFT_CONSOLE, LIT_KEYS, NOSE, PANEL_AXES
+from ._cockpit import GUARD_KNOB, GUARD_SWITCH, LAMP_RADIUS
+from ._cockpit import LAMPS, LEGEND_HALF, MONITOR_OUT, PANEL_DEEP
+from ._cockpit import PANEL_RADIUS, PANEL_SPAN, PAPER_AT, RANGE, RISER
+from ._cockpit import PAPER_HIGH, PAPER_WIDE, RIGHT_CONSOLE, SCREEN_AT
+from ._cockpit import SCREEN_HALF, SIDEBOARD, SNACK_BAG, STATUS
+from ._cockpit import THROTTLE_AT, THROTTLE_LONG, TOP
+from ._cockpit import hoodAxes, hoodPoint, panelAxes, panelPoint
 from ._deckmodel import movingParts
 from ._elevator import PLATE_HALVES
 from ._stationinterior import HATCH
@@ -45,7 +46,7 @@ from ._launchtower import PLATE, SHAFT
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
-from ._shapes import roundedSlabRows
+from ._shapes import roundedSlabRows, sheetRows
 from ._furnishings import bulbsRows, flamesRows, looseParts
 from ._furnishings import looseThings, roundFlamesRows, shadeRows
 
@@ -74,9 +75,10 @@ LAMP_COLOURS = {'ENGINE': (255, 160, 40), 'AIR': (255, 160, 40),
                 'GROUND': (255, 60, 40), 'WARP': (255, 160, 40),
                 'GUIDE': (255, 160, 40), 'ORBIT': (90, 255, 110),
                 'DOCK': (90, 255, 110)}
-#  The legends lit over the switches (the panel's and the view's).
-LEGENDS = tuple(name for name, _, _, _ in SWITCHES) + tuple(
-  name for name, _, _, _ in CONSOLE_SWITCHES)
+#  What lights amber on smoked glass: the lit keys' caps (the
+#  AUTOPILOT's modes, MATCH), then the legends beside the console's
+#  switches (the view's and the map's: pieces of their own).
+LEGENDS = LIT_KEYS + tuple(name for name, _, _, _ in CONSOLE_SWITCHES)
 #  The teleprinter's typehead's size (m: across, up, out), how far before
 #  the paper it runs. Its paper's picture: how many pixels across, how
 #  high the line typed stands over the paper's foot (m), the font's
@@ -88,11 +90,19 @@ PAPER_PIXELS = 1024
 PAPER_FOOT = 0.008
 ADVANCE = 0.6
 BAND = 3
-#  The globe's stand: its foot's radius and height, its pillar's radius,
-#  its fixed ring's width and depth (round the glass), m.
-FOOT = (0.2, 0.03)
-PILLAR = 0.025
-FIXED_RING = (0.016, 0.02)
+#  The globe's mount in the panel: its fixed ring's width and depth
+#  (round the glass), m; the black cowl from the panel's face out to it.
+FIXED_RING = (0.012, 0.016)
+#  The curved sheets' steps round (rad); the readouts' canvas (pixels
+#  across: the status line over the range's tubes, each as high as its
+#  window's shape asks) and the range's groups of tubes, each its label
+#  (printed under it on the hood) and how many tubes; the gap round each
+#  group, tubes.
+STEP = math.radians(1.0)
+READOUT_PIXELS = 1024
+RANGE_GROUPS = (('RANGE KM', 5), ('CLOSING M/S', 5), ('CLOSEST KM', 5),
+                ('IN H:MM', 4))
+GROUP_GAP = 0.6
 #  The cabin's lights' meshes, by their pieces' kinds (drawn where they
 #  are, about nothing).
 LIGHTS = {'flames': flamesRows, 'flames round': roundFlamesRows,
@@ -159,7 +169,7 @@ def pieces(controls: tuple) -> tuple:
   out = [('control', control) for control in controls]
   out += [('needle', k) for k in range(len(DIALS))]
   out += [('lamp', k) for k in range(len(LAMPS))]
-  out += [('legend', k) for k in range(len(LEGENDS))]
+  out += [('legend', k) for k in range(len(LIT_KEYS), len(LEGENDS))]
   out += [('deck', k) for k in range(len(movingParts()))]
   out += [('bug', 0), ('typehead', 0)]
   out += [('guard', control) for control in controls if guarded(control)]
@@ -200,31 +210,31 @@ def ballCentre() -> tuple:
 
 
 def dialCentre(index: int) -> tuple:
-  """Returns dial 'index''s middle on the panel's face."""
+  """Returns dial 'index''s middle on the hood's face."""
   u, v = DIALS[index][1]
-  return panelPoint(u, v, 0.5 * PANEL_THICK + 0.004)
+  return hoodPoint(u, v, 0.004)
+
+
+def dialAxes(index: int) -> tuple:
+  """Returns dial 'index''s axes (the hood's there)."""
+  return hoodAxes(DIALS[index][1][0])
 
 
 def lampCentre(index: int) -> tuple:
-  """Returns lamp 'index''s middle on the panel's face."""
+  """Returns lamp 'index''s middle on the hood's face."""
   u, v = LAMPS[index][1]
-  return panelPoint(u, v, 0.5 * PANEL_THICK + 0.003)
+  return hoodPoint(u, v, 0.003)
 
 
 def legendCentre(index: int) -> tuple:
-  """Returns legend 'index''s middle: over its switch on the panel, or
-  on the console beside the view's switch."""
-  if index < len(SWITCHES):
-    u, v = SWITCHES[index][3]
-    return panelPoint(u, v + LEGEND_UP, 0.5 * PANEL_THICK + 0.002)
-  x, y = CONSOLE_SWITCHES[index - len(SWITCHES)][3]
+  """Returns legend 'index''s middle on the console beside its switch
+  (the lit keys' are their caps)."""
+  x, y = CONSOLE_SWITCHES[index - len(LIT_KEYS)][3]
   return x - 0.04, y, TOP + 0.002
 
 
 def legendAxes(index: int) -> tuple:
   """Returns legend 'index''s axes (right, up, out)."""
-  if index < len(SWITCHES):
-    return PANEL_AXES
   return CONSOLE_AXES
 
 
@@ -234,7 +244,27 @@ def headPlace(column: float) -> tuple:
   u, v = PAPER_AT
   return panelPoint(u - 0.5 * WIDTH * PITCH + column * WIDTH * PITCH,
                     v - 0.5 * PAPER_HIGH + PAPER_FOOT + 0.3 * LINE,
-                    0.5 * PANEL_THICK + HEAD_OUT)
+                    HEAD_OUT)
+
+
+def readoutLayout() -> dict:
+  """Returns the readouts' canvas's layout, pixels: its 'width' and
+  'height', the status line's height on its top ('status') and the
+  range's under it ('range'), the range's 'groups' (each its 'label',
+  where its first tube begins ('from'), how many 'tubes', a tube's
+  width ('tube'))."""
+  status, far = STATUS[1], RANGE[1]
+  statusHigh = round(READOUT_PIXELS * status[1] / status[0])
+  rangeHigh = round(READOUT_PIXELS * far[1] / far[0])
+  tubes = sum(count for _, count in RANGE_GROUPS)
+  tube = READOUT_PIXELS / (tubes + GROUP_GAP * (len(RANGE_GROUPS) + 1))
+  groups, at = [], GROUP_GAP * tube
+  for label, count in RANGE_GROUPS:
+    groups.append({'label': label, 'from': at, 'tubes': count,
+                   'tube': tube})
+    at += (count + GROUP_GAP) * tube
+  return {'width': READOUT_PIXELS, 'height': statusHigh + rangeHigh,
+          'status': statusHigh, 'range': rangeHigh, 'groups': groups}
 
 
 def paperLayout() -> dict:
@@ -253,25 +283,91 @@ def paperLayout() -> dict:
 #  THE STILL FURNITURE   # # # # # # # # # # # # # # # # # # # # # # # # # #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+def _away(axis: tuple) -> tuple:
+  """Returns 'axis' the other way."""
+  return tuple(-x for x in axis)
+
+
+def _span(left: float, right: float, radius: float) -> list:
+  """Returns the steps along a curved sheet's middle line ('radius' m
+  out) from 'left' to 'right' m along it, a 'STEP' round or less."""
+  count = max(2, int(math.ceil(abs(right - left) / radius / STEP)) + 1)
+  return [left + (right - left) * k / (count - 1) for k in range(count)]
+
+
+def _sheet(pointOf: object, axesOf: object, rights: list, ups: tuple,
+           out: float, cell: tuple = None) -> tuple:
+  """Returns a curved sheet on the panel or the hood ('pointOf', 'axesOf':
+  their own) across 'rights', up 'ups', 'out' before its face, facing
+  out, laid over 'cell' of a picture."""
+  places = [[pointOf(r, u, out) for u in ups] for r in rights]
+  normals = [[axesOf(r)[2]] * len(ups) for r in rights]
+  return sheetRows(places, normals, cell)
+
+
+def _bodyRows(pointOf: object, axesOf: object, rights: list, low: float,
+              high: float, deep: float) -> tuple:
+  """Returns the body behind a curved face (from 'low' to 'high' up it,
+  'deep' m deep): its back, its top, its foot and its two ends."""
+  first, last = rights[0], rights[-1]
+  back = sheetRows([[pointOf(r, u, -deep) for u in (high, low)]
+                    for r in rights], [[_away(axesOf(r)[2])] * 2
+                                       for r in rights])
+  top = sheetRows([[pointOf(r, high, o) for o in (0.0, -deep)]
+                   for r in rights], [[axesOf(r)[1]] * 2 for r in rights])
+  foot = sheetRows([[pointOf(r, low, o) for o in (-deep, 0.0)]
+                    for r in rights], [[_away(axesOf(r)[1])] * 2
+                                       for r in rights])
+  ends = []
+  for at, outs, way in ((first, (-deep, 0.0), _away(axesOf(first)[0])),
+                        (last, (0.0, -deep), axesOf(last)[0])):
+    ends.append(sheetRows([[pointOf(at, u, o) for u in (low, high)]
+                           for o in outs], [[way] * 2] * 2))
+  return joined([back, top, foot] + ends)
+
+
 def panelFace() -> tuple:
-  """Returns the panel's aluminium face, its picture across it (the
-  printed legends: '_dashpictures.facePainted')."""
-  right, up, out = PANEL_AXES
-  rows = []
-  for u, v in ((0, 0), (1, 0), (1, 1), (0, 1)):
-    place = panelPoint((2 * u - 1) * PANEL_HALF[0],
-                       (2 * v - 1) * PANEL_HALF[1], 0.5 * PANEL_THICK)
-    rows.append(place + out + (float(u), float(v)))
-  return numpy.array(rows), numpy.array((0, 1, 2, 0, 2, 3), numpy.uint32)
+  """Returns the panel's aluminium face, curved round him (user,
+  2026-11-17: "have the dashboard curve maybe?"), its picture across it
+  (the printed legends: '_dashpictures.facePainted'), along its middle
+  line and up its slant."""
+  rights = _span(-PANEL_RADIUS * PANEL_SPAN, PANEL_RADIUS * PANEL_SPAN,
+                 PANEL_RADIUS)
+  return _sheet(panelPoint, panelAxes, rights, (FACE_LOW, FACE_HIGH), 0.0,
+                (0.0, 0.0, 1.0, 1.0))
 
 
-def panelFrame() -> tuple:
-  """Returns the rosewood frame round the panel and its back: a box a
-  'FRAME' larger, just behind its face."""
-  return boxRows(panelPoint(0.0, 0.0, -0.002), (PANEL_HALF[0] + FRAME,
-                                                PANEL_HALF[1] + FRAME,
-                                                0.5 * PANEL_THICK),
-                 PANEL_AXES)
+def panelBody() -> tuple:
+  """Returns the panel's rosewood body behind its face and the risers
+  its wings stand on, one on each console."""
+  rights = _span(-PANEL_RADIUS * PANEL_SPAN, PANEL_RADIUS * PANEL_SPAN,
+                 PANEL_RADIUS)
+  parts = [_bodyRows(panelPoint, panelAxes, rights, FACE_LOW, FACE_HIGH,
+                     PANEL_DEEP)]
+  (ahead, inward), (hx, hy) = RISER
+  for (x, y, _), _ in (LEFT_CONSOLE, RIGHT_CONSOLE):
+    low, high = TOP, panelPoint(0.0, FACE_LOW, 0.0)[2] - 0.03
+    parts.append(boxRows((x + ahead, y - math.copysign(inward, y - EYE[1]),
+                          0.5 * (low + high)), (hx, hy, 0.5 * (high - low)),
+                         UNTURNED))
+  return joined(parts)
+
+
+def hoodFace() -> tuple:
+  """Returns the hood's face over the panel's middle (user, 2026-11-17:
+  "Move the indicator dials above the dashboard"), its picture across it
+  ('_dashpictures.hoodPainted')."""
+  rights = _span(-HOOD_RADIUS * HOOD_SPAN, HOOD_RADIUS * HOOD_SPAN,
+                 HOOD_RADIUS)
+  return _sheet(hoodPoint, hoodAxes, rights, (0.0, HOOD_HIGH), 0.0,
+                (0.0, 0.0, 1.0, 1.0))
+
+
+def hoodBody() -> tuple:
+  """Returns the hood's rosewood body behind its face."""
+  rights = _span(-HOOD_RADIUS * HOOD_SPAN, HOOD_RADIUS * HOOD_SPAN,
+                 HOOD_RADIUS)
+  return _bodyRows(hoodPoint, hoodAxes, rights, 0.0, HOOD_HIGH, HOOD_DEEP)
 
 
 def dialFaces() -> tuple:
@@ -279,23 +375,16 @@ def dialFaces() -> tuple:
   across)."""
   parts = []
   for k in range(len(DIALS)):
-    parts.append(discRows(dialCentre(k), PANEL_AXES, DIAL_RADIUS, 40,
+    parts.append(discRows(dialCentre(k), dialAxes(k), DIAL_RADIUS, 40,
                           (k / len(DIALS), 0.0, (k + 1) / len(DIALS), 1.0)))
   return joined(parts)
 
 
 def bezels() -> tuple:
-  """Returns the brushed rings round the dials and the switches'
-  plates."""
-  parts = []
-  face = 0.5 * PANEL_THICK
-  for k in range(len(DIALS)):
-    parts.append(ringRows(dialCentre(k), PANEL_AXES, DIAL_RADIUS,
-                          DIAL_RADIUS + 0.006, 0.008))
-  for name, _, _, (u, v) in SWITCHES:
-    parts.append(discRows(panelPoint(u, v, face + 0.001), PANEL_AXES,
-                          0.011, 20, None))
-  return joined(parts)
+  """Returns the chrome rings round the dials."""
+  return joined([ringRows(dialCentre(k), dialAxes(k), DIAL_RADIUS,
+                          DIAL_RADIUS + 0.006, 0.008)
+                 for k in range(len(DIALS))])
 
 
 def domeRows() -> tuple:
@@ -323,21 +412,21 @@ def domeRows() -> tuple:
   return numpy.array(rows), numpy.array(faces, numpy.uint32)
 
 
-def globeStand() -> tuple:
-  """Returns the globe's stand (user, 2026-11-16: "like a globe"): a
-  foot on the floor, a pillar up to the fixed ring round the ball's
-  middle that holds the glass and the mechanism."""
-  right, up, out = GLOBE_AXES
-  x, y, z = GLOBE_AT
-  ring = ringRows(tuple(c - 0.5 * FIXED_RING[1] * n for c, n in zip(
-    GLOBE_AT, out)), GLOBE_AXES, GLASS, GLASS + FIXED_RING[0],
-                  FIXED_RING[1])
-  low = z - (GLASS + FIXED_RING[0]) * up[2]
-  pillar = cylinderRows((x, y, FLOOR + FOOT[1]), (0.0, 0.0, 1.0), PILLAR,
-                        low - FLOOR - FOOT[1], 20)
-  foot = frustumRows((x, y, FLOOR), (0.0, 0.0, 1.0), FOOT[0],
-                     0.6 * FOOT[0], FOOT[1], 40)
-  return joined([ring, pillar, foot])
+def globeMount() -> tuple:
+  """Returns the globe's fixed ring round its glass at the ball's
+  middle, where the glass and the mechanism hold."""
+  out = GLOBE_AXES[2]
+  return ringRows(pointAlong(GLOBE_AT, out, -0.5 * FIXED_RING[1]),
+                  GLOBE_AXES, GLASS, GLASS + FIXED_RING[0], FIXED_RING[1])
+
+
+def globeCowl() -> tuple:
+  """Returns the black cowl the globe stands out of the panel in, from
+  its face out to the fixed ring (the ball's back half sunk in it)."""
+  out = GLOBE_AXES[2]
+  return cylinderRows(pointAlong(GLOBE_AT, out, -BALL_OUT), out,
+                      GLASS + FIXED_RING[0], BALL_OUT - 0.5 * FIXED_RING[1],
+                      48)
 
 
 def monitorBody() -> tuple:
@@ -348,7 +437,7 @@ def monitorBody() -> tuple:
   screen, its corners round and its front edge rounded over (the veneer
   on its front: '_dashpictures.woodPainted')."""
   u, v = SCREEN_AT
-  return roundedSlabRows(panelPoint(u, v, 0.5 * PANEL_THICK), PANEL_AXES,
+  return roundedSlabRows(panelPoint(u, v, 0.0), panelAxes(u),
                          (SCREEN_HALF[0] + CABINET_MARGIN,
                           SCREEN_HALF[1] + CABINET_MARGIN), MONITOR_OUT,
                          CABINET_ROUND, CABINET_EDGE, (0.0, 0.0, 1.0, 1.0))
@@ -358,11 +447,10 @@ def monitorInset() -> tuple:
   """Returns the monitor's black inset round its tube, its corners
   round, a hair before its cabinet's face."""
   u, v = SCREEN_AT
-  return roundedSlabRows(panelPoint(u, v, 0.5 * PANEL_THICK + MONITOR_OUT
-                                    - 0.001), PANEL_AXES,
-                         (SCREEN_HALF[0] + INSET_MARGIN,
-                          SCREEN_HALF[1] + INSET_MARGIN), 0.002,
-                         INSET_ROUND, 0.001)
+  return roundedSlabRows(panelPoint(u, v, MONITOR_OUT - 0.001),
+                         panelAxes(u), (SCREEN_HALF[0] + INSET_MARGIN,
+                                        SCREEN_HALF[1] + INSET_MARGIN),
+                         0.002, INSET_ROUND, 0.001)
 
 
 def screenRows() -> tuple:
@@ -370,30 +458,50 @@ def screenRows() -> tuple:
   its corners round, its middle bulging; its picture the camera's (the
   whole of it)."""
   u, v = SCREEN_AT
-  return roundedPaneRows(panelPoint(u, v, 0.5 * PANEL_THICK + MONITOR_OUT
-                                    + 0.0012), PANEL_AXES, SCREEN_HALF,
-                         TUBE_ROUND, TUBE_BULGE, (0.0, 0.0, 1.0, 1.0))
+  return roundedPaneRows(panelPoint(u, v, MONITOR_OUT + 0.0012),
+                         panelAxes(u), SCREEN_HALF, TUBE_ROUND, TUBE_BULGE,
+                         (0.0, 0.0, 1.0, 1.0))
 
 
 def paperRows() -> tuple:
   """Returns the teleprinter's paper in its window in the panel's
-  middle, its picture what is typed on it."""
+  middle, curved with it, its picture what is typed on it."""
   u, v = PAPER_AT
-  return quadRows(panelPoint(u, v, 0.5 * PANEL_THICK + 0.002), PANEL_AXES,
-                  (0.5 * PAPER_WIDE, 0.5 * PAPER_HIGH), (0.0, 0.0, 1.0,
-                                                         1.0))
+  w, h = 0.5 * PAPER_WIDE, 0.5 * PAPER_HIGH
+  return _sheet(panelPoint, panelAxes, _span(u - w, u + w, PANEL_RADIUS),
+                (v - h, v + h), 0.002, (0.0, 0.0, 1.0, 1.0))
 
 
 def paperFrame() -> tuple:
-  """Returns the chrome frame round the teleprinter's window."""
+  """Returns the chrome frame round the teleprinter's window: a bar
+  over it and under it (curved with the panel) and one either side."""
   u, v = PAPER_AT
   w, h, edge = 0.5 * PAPER_WIDE, 0.5 * PAPER_HIGH, 0.006
-  out = 0.5 * PANEL_THICK + 0.005
-  bars = [((u, v + h + edge), (w + 2 * edge, edge)),
-          ((u, v - h - edge), (w + 2 * edge, edge)),
-          ((u - w - edge, v), (edge, h)), ((u + w + edge, v), (edge, h))]
-  return joined([boxRows(panelPoint(bu, bv, out), (hu, hv, 0.005),
-                         PANEL_AXES) for (bu, bv), (hu, hv) in bars])
+  rights = _span(u - w - edge, u + w + edge, PANEL_RADIUS)
+  bars = [_sheet(panelPoint, panelAxes, rights, (v + h, v + h + edge),
+                 0.005), _sheet(panelPoint, panelAxes, rights,
+                                (v - h - edge, v - h), 0.005)]
+  for side in (-1.0, 1.0):
+    at = u + side * (w + 0.5 * edge)
+    bars.append(boxRows(panelPoint(at, v, 0.0025), (0.5 * edge, h, 0.0025),
+                        panelAxes(at)))
+  return joined(bars)
+
+
+def readoutRows() -> tuple:
+  """Returns the readouts' windows, both on the readouts' canvas: the
+  AUTOPILOT's status line on the panel (the canvas's top half) and Terra
+  Prime's range on the hood (its bottom half)."""
+  layout = readoutLayout()
+  split = layout['range'] / layout['height']
+  (u, v), (hw, hh) = STATUS
+  status = _sheet(panelPoint, panelAxes, _span(u - hw, u + hw,
+                                               PANEL_RADIUS),
+                  (v - hh, v + hh), 0.002, (0.0, split, 1.0, 1.0))
+  (u, v), (hw, hh) = RANGE
+  far = _sheet(hoodPoint, hoodAxes, _span(u - hw, u + hw, HOOD_RADIUS),
+               (v - hh, v + hh), 0.002, (0.0, 0.0, 1.0, split))
+  return joined([status, far])
 
 
 def snackBag() -> tuple:
@@ -411,15 +519,14 @@ def snackTray() -> tuple:
 
 
 def sliderTrack() -> tuple:
-  """Returns the throttle's slide control's slot along the right
-  console."""
-  middle = (SLIDER_FROM[0] + 0.5 * SLIDER_LONG, SLIDER_FROM[1], TOP + 0.001)
-  return boxRows(middle, (0.5 * SLIDER_LONG + 0.012, 0.007, 0.002),
-                 UNTURNED)
+  """Returns the throttle lever's slot up the panel."""
+  u, v = THROTTLE_AT
+  return boxRows(panelPoint(u, v + 0.5 * THROTTLE_LONG, 0.001), (
+    0.007, 0.5 * THROTTLE_LONG + 0.012, 0.002), panelAxes(u))
 
 
 def consoleBases() -> tuple:
-  """Returns the plates under the consoles' keys and the view's switch."""
+  """Returns the plates under the consoles' switches."""
   parts = []
   for _, _, _, (x, y) in CONSOLE_SWITCHES:
     parts.append(discRows((x, y, TOP + 0.001), ((0.0, 1.0, 0.0),
@@ -496,7 +603,8 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'needle':
     return _needleRows(what)
   if kind == 'lamp':
-    return discRows(lampCentre(what), PANEL_AXES, LAMP_RADIUS, 16, None)
+    return discRows(lampCentre(what), hoodAxes(LAMPS[what][1][0]),
+                    LAMP_RADIUS, 16, None)
   if kind == 'legend':
     name = LEGENDS[what]
     return quadRows(legendCentre(what), legendAxes(what), LEGEND_HALF,
@@ -541,12 +649,13 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'sring':
     return ringPieceRows()
   if kind == 'bug':
-    right, up, out = PANEL_AXES
+    axes = dialAxes(ALTIMETER)
+    right, up, out = axes
     centre = dialCentre(ALTIMETER)
     middle = pointAlong(pointAlong(centre, up, 0.86 * DIAL_RADIUS), out,
                         0.004)
-    return boxRows(middle, (0.0024, 0.13 * DIAL_RADIUS, 0.0012),
-                   PANEL_AXES, None, centre)
+    return boxRows(middle, (0.0024, 0.13 * DIAL_RADIUS, 0.0012), axes,
+                   None, centre)
   return boxRows((0.0, 0.0, 0.0), HEAD_HALF, PANEL_AXES)
 
 
@@ -585,15 +694,16 @@ def _needleRows(index: int) -> tuple:
   on a rotating actuator"), about the dial's middle, pointing up: the
   shaft's boss standing out of the face, the arm out to near the rim,
   a counterweight's tail behind, a cap on the boss."""
-  right, up, out = PANEL_AXES
+  axes = dialAxes(index)
+  right, up, out = axes
   centre = dialCentre(index)
   boss = cylinderRows(centre, out, 0.0055, 0.009, 20)
   arm = boxRows(pointAlong(pointAlong(centre, up, 0.44 * DIAL_RADIUS), out,
                        0.0075), (0.0014, 0.44 * DIAL_RADIUS, 0.0012),
-                PANEL_AXES)
+                axes)
   tail = boxRows(pointAlong(pointAlong(centre, up, -0.13 * DIAL_RADIUS), out,
                         0.0075), (0.0032, 0.13 * DIAL_RADIUS, 0.0016),
-                 PANEL_AXES)
+                 axes)
   cap = cylinderRows(pointAlong(centre, out, 0.009), out, 0.0035, 0.003, 16)
   return joined([boss, arm, tail, cap], centre)
 
@@ -681,15 +791,17 @@ def _inputRows(control: object, cells: dict) -> tuple:
                    control.axes)
     return joined([knob, mark], pivot)
   if isinstance(peep, Pushbutton):
-    half = KEY_HALF if control.half[0] == KEY_HALF[0] else CONSOLE_KEY_HALF
+    half = control.half
     cap = boxRows(tuple(p + 0.006 * n for p, n in zip(pivot, out)),
                   (half[0], half[1], 0.006), control.axes,
                   cells.get(control.name))
     return joined([cap], pivot)
   if isinstance(peep, Slider):
-    knob = boxRows((pivot[0], pivot[1], pivot[2] + 0.014), (0.016, 0.022,
-                                                           0.014), UNTURNED)
-    return joined([knob], pivot)
+    stem = boxRows(pointAlong(pivot, out, 0.006), (0.004, 0.004, 0.006),
+                   control.axes)
+    grip = boxRows(pointAlong(pivot, out, 0.02), (0.03, 0.011, 0.009),
+                   control.axes)
+    return joined([stem, grip], pivot)
   bat = cylinderRows(pivot, out, 0.0035, BAT_LONG, 12)
   tip = cylinderRows(tuple(p + BAT_LONG * n for p, n in zip(pivot, out)),
                      out, 0.006, 0.006, 12)

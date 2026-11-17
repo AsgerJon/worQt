@@ -21,15 +21,21 @@ from ._cockpit import CUSHION, FLOOR, HIPS, LIMBS, SCALE, seated
 from ._turns import aboutAxis, cross, dot, norm, product, quaternionOf
 from ._turns import rotated, unit
 
-#  His body: its middle this far over his soles, m (the kernel's balls
-#  along his up from it: 'BALLS', each how far along and its radius:
-#  slim, 32 cm across at most, user, 2026-11-17: "we need to be more
-#  forgiving about how much space Asger needs"; the lowest touching his
-#  soles, the highest his crown); his eyes this far up and ahead of his
-#  soles, m; his mass, kg.
+#  His body (user, 2026-11-17: "Could we just give Asger the minecraft
+#  implementation of some blocks or whatever rather than just a few
+#  balls?"; "those movements were janky af"; '_cabin_kernels.walked'):
+#  an upright box along his up, 'WIDE' across both ways (slimmer than
+#  Minecraft's 0.6: "we need to be more forgiving about how much space
+#  Asger needs"), 'TALL' from his soles to his crown, crouched 'LOW'
+#  ("and make me able to crouch!": Minecraft's sneak), its 'MIDDLE' this
+#  far over his soles (his place, m); walking it steps up onto what is no
+#  higher than 'STEP' (the stairs' steps are 0.21), m. His eyes this far
+#  up and ahead of his soles, m; his mass, kg.
 MIDDLE = 0.9
-BALLS = ((-0.75, 0.15), (-0.42, 0.14), (0.0, 0.16), (0.4, 0.16),
-         (0.74, 0.12))
+WIDE = 0.4
+TALL = 32.0 * SCALE
+LOW = 1.55
+STEP = 0.35
 EYES_UP = 28.0 * SCALE
 EYES_AHEAD = 4.0 * SCALE + 0.02
 HEFT = 80.0
@@ -38,17 +44,25 @@ HEFT = 80.0
 #  his seat's middle.
 STAND = seated(-0.88, 0.0, 0.002)
 SIT = 1.0
-#  Pulled to the floor harder than 'WALK' g he walks, at 'STRIDE' m/s,
-#  slower the harder he is pulled past one g (as its square); he jumps
+#  Pulled to the floor harder than 'WALK' g he walks, at 'STRIDE' m/s
+#  ('CROUCHED' of it crouched), slower the harder he is pulled past one g
+#  (as its square); crouched his body leans 'LEAN' rad forward from his
+#  hips (his eyes and head lower with it); stepping up, his eyes follow
+#  most of the way in 'EASE_STEP' s (not at once: a jump); he jumps
 #  'JUMP' m high. Pulled less, he pushes off what he touches at 'PUSH'
 #  m/s. Pulled harder than 'UPRIGHT' g his up turns to stand against the
-#  pull, most of the way in 'RIGHTING' s.
+#  pull, most of the way in 'RIGHTING' s (standing on a floor within
+#  'SQUARE' (a cosine) of that, square on the floor).
 WALK = 0.3
 STRIDE = 3.0
+CROUCHED = 0.3
+LEAN = 0.6
+EASE_STEP = 0.08
 JUMP = 0.5
 PUSH = 2.0
 UPRIGHT = 0.15
 RIGHTING = 0.5
+SQUARE = 0.7
 #  His limbs: how far his legs and arms swing either way at a full
 #  stride, rad; floating, how they hang (legs a little ahead, arms out
 #  before him).
@@ -97,6 +111,10 @@ class Crewman:
   towing: int | None
   attached: bool
   lounge: tuple | None
+  crouched: bool
+  crouching: bool
+  rising: float
+  floor: tuple | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -104,6 +122,7 @@ class Crewman:
 
   def __init__(self, ) -> None:
     self.buckled, self.lounge = True, None
+    self.crouching = False
     self._stood()
     self.gait = Gait()
 
@@ -199,28 +218,51 @@ class Crewman:
         origin, self.up, facing))
     left = cross(self.up, facing)
     sway, rise = self.gait.offset()
-    return tuple(s + EYES_UP * u + EYES_AHEAD * f - sway * l + rise * u
+    up, ahead = self._eyesUp()
+    rise -= self.rising
+    return tuple(s + up * u + ahead * f - sway * l + rise * u
                  for s, u, f, l in zip(self.soles(), self.up, facing,
                                        left))
 
+  def _eyesUp(self, ) -> tuple:
+    """Returns how far up and ahead of his soles his eyes are: crouched,
+    his head leant forward with his body from his hips."""
+    if not self.crouched:
+      return EYES_UP, EYES_AHEAD
+    hips = 12.0 * SCALE
+    over = EYES_UP - hips
+    return (hips + over * math.cos(LEAN) - EYES_AHEAD * math.sin(LEAN),
+            EYES_AHEAD * math.cos(LEAN) + over * math.sin(LEAN))
+
   def placed(self, middle: tuple, velocity: tuple, met: int,
-             normals: tuple) -> None:
+             normals: tuple, crouched: bool = False, rose: float = 0.0,
+             floors: tuple = (0.0, 0.0, 0.0)) -> None:
     """The 'placed' method takes his body from the kernel: its 'middle'
-    and 'velocity', how many of its balls 'met' something and their
-    normals summed."""
+    and 'velocity', how many meetings it touches and their normals
+    summed, whether it is crouched, how far it stepped up (his eyes
+    follow it eased: 'rising'), the normals of what it stands on summed
+    ('floor': their unit, None: nothing)."""
     self.middle, self.velocity = tuple(middle), tuple(velocity)
     size = norm(normals)
     self.touches = met > 0
     self.ground = tuple(n / size for n in normals) if (
       self.touches and size > 1e-9) else None
+    size = norm(floors)
+    self.floor = tuple(f / size for f in floors) if size > 1e-9 else None
+    self.crouched = bool(crouched)
+    self.rising += float(rose)
 
   def righted(self, pull: tuple, seconds: float) -> None:
     """The 'righted' method turns his up a share of the way to stand
     against 'pull' (m/s²; pulled less than 'UPRIGHT' g his up stays as
-    it is: floating, nothing is down) and moves his stride on."""
+    it is: floating, nothing is down), or standing on a floor, square on
+    it (as Minecraft's player stands: the pull sideways in a moving
+    elevator's cage does not tilt him) and moves his stride on."""
     weight = norm(pull)
     if weight > UPRIGHT * G0:
       want = tuple(-p / weight for p in pull)
+      if self.floor is not None and dot(self.floor, want) > SQUARE:
+        want = self.floor
       share = 1.0 - math.exp(-seconds / RIGHTING)
       up = unit(tuple(u + share * (w - u) for u, w in zip(self.up, want)))
       ahead = tuple(a - dot(self.ahead, up) * u for a, u in zip(
@@ -232,6 +274,7 @@ class Crewman:
       self.velocity, self.up))
     walking = self.touches and weight > WALK * G0
     self.gait.stepped(norm(along), walking, seconds)
+    self.rising *= math.exp(-seconds / EASE_STEP)
 
   def wantOf(self, held: set, yaw: float, pitch: float,
              pull: tuple) -> tuple:
@@ -248,6 +291,8 @@ class Crewman:
       way = tuple(ahead * f + aside * l for f, l in zip(facing, left))
       size = norm(way)
       speed = STRIDE / max(1.0, weight) ** 2
+      if self.crouched or self.crouching:
+        speed *= CROUCHED
       if size < 1e-9:
         return (0.0, 0.0, 0.0), 1, 1
       return tuple(speed * w / size for w in way), 1, 1
@@ -297,12 +342,19 @@ class Crewman:
     if floating:
       angles = {'right leg': FLOAT_LEGS, 'left leg': FLOAT_LEGS,
                 'right arm': FLOAT_ARMS, 'left arm': FLOAT_ARMS}
+    hips = (0.0, 0.0, 12.0 * SCALE)
+    lean = aboutAxis((0.0, 1.0, 0.0), LEAN if self.crouched else 0.0)
     out = []
     for index, part in enumerate(parts):
       local = tuple(SCALE * p for p in part[2])
+      turn = body
+      if not part[0].endswith('leg'):
+        local = tuple(h + x for h, x in zip(hips, rotated(lean, tuple(
+          p - h for p, h in zip(local, hips)))))
+        turn = product(body, lean)
       place = tuple(s + x for s, x in zip(soles, rotated(body, local)))
       limb = aboutAxis((0.0, 1.0, 0.0), angles.get(part[0], 0.0))
-      out.append((index, place, product(body, limb)))
+      out.append((index, place, product(turn, limb)))
     return tuple(out)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -340,3 +392,4 @@ class Crewman:
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)
     self.towing, self.towTo, self.attached = None, None, False
+    self.crouched, self.rising, self.floor = False, 0.0, (0.0, 0.0, 1.0)

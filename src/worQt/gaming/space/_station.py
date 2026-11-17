@@ -5,8 +5,11 @@ gravity. Think 2001: A Space Odyssey"; "1800m"; "have some 300m antennas
 sticking out of the station that has RGB lighting"): a wheel turning
 once a minute, so its ring's floor pulls one g by its turning alone,
 on rails round Terra in a circle 'HIGH' m over its equator, its axis
-along Terra's pole (seen from the ground it is a ring). Qt-free; its
-shape: '_stationmeshes'.
+held still among the stars along the pad's zenith as it first passes
+over (user, 2026-11-17: "have Terra Prime be oriented such that it
+passes over the spawn parallel with it. Making it more visible": seen
+from the pad the whole wheel, face on; along Terra's pole it was edge
+on, a line). Qt-free; its shape: '_stationmeshes'.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -45,7 +48,8 @@ class Station:
   Station holds the space station: 'body', a 'HeavenlyBody' on rails
   round Terra (its parent: 'parent', its index in the system) pulling
   nothing (one of the system's 'satellites', folded with it), turning
-  'SPIN' about its own z (its axis, Terra's pole) from its own x; where
+  'SPIN' about its own z (its axis: straight over the pad, where it
+  passes over at first, held there among the stars) from its own x; where
   it is from Terra and how fast it moves ('stateAt'), how it is turned
   ('turnAt': rows taking its own axes to the ecliptic's).
   """
@@ -76,7 +80,7 @@ class Station:
     conic = Conic.fromState(terra.mu, tuple(far * u for u in up),
                             tuple(speed * a for a in ahead))
     self.body = HeavenlyBody('Terra Prime', terra, GRAVITATION * MASS, REACH,
-                             SPIN, terra.pole, 0.0, conic, 'station', None)
+                             SPIN, over, 0.0, conic, 'station', None)
     system.satellites.append(self.body)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

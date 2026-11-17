@@ -31,7 +31,9 @@ from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
 from ._cabinmixer import THUD, THUDS
 from ._cabinmixer import FOOD_NEAR, LAUGHS, SNACKS, TOLD, TOWING, TOWS
 from ._chasecamera import ChaseCamera
-from ._cockpit import CUSHION, EYE, LIMITS, THRUSTS, Cockpit
+from ._cockpit import CUSHION, DIALS, EYE, LAMPS, LIMITS, LIT_KEYS
+from ._cockpit import THRUSTS, Cockpit
+from ._dashboard import LEGENDS
 from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
 from ._crewman import MIDDLE, PUSH, SIT
@@ -45,6 +47,7 @@ from ._gunbeam import muzzle, strengthOf
 from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
 from ._kolonihave import gardenSolids
 from ._night import MORNING, morningIn, nightIn
+from ._inventory import HOTBAR, ITEMS, Inventory
 from ._quest import Quest
 from ._rendezvousguidance import RendezvousGuidance
 from ._stationinterior import DECK, HUB_INSIDE, PLANE, cabinInside, roomOf
@@ -191,6 +194,14 @@ STATION_SAID = 2e6
 #  Time is not warped within this of the station's port (its solids met
 #  in short steps; its antennas sweep out to 1.2 km), m.
 WARP_CLEAR = 2e3
+#  The hotbar's keys (user, 2026-11-17: "Give Asger a hotbar and an
+#  inventory like in minecraft": 1 to 9 as Minecraft's; Tab opens the
+#  inventory, E being his hand's), the telescope's magnification (held
+#  in hand, the right button held: "give Asger also a telescope"), how
+#  fast the view eases to it, s.
+DIGITS = {getattr(Qt.Key, 'Key_%d' % (k + 1)): k for k in range(HOTBAR)}
+SCOPE = 8.0
+SCOPE_EASE = 0.08
 #  Up, looking within this of his chair's cushion, E sits him, rad.
 CHAIR_AIM = math.radians(25.0)
 #  E within this of an elevator's stop's door calls it there, m.
@@ -209,6 +220,11 @@ HATCH_EASE = 0.5
 #  The closest approach to the station is worked out anew this often,
 #  s of real time (some 2 ms each).
 CLOSEST_EVERY = 0.25
+#  The autopilot's modes as the AUTOPILOT's status line says them; the
+#  dials' names (read off as WAILA does: '_readOf').
+MODES_SAID = {'off': 'MANUAL', 'hold': 'HOLD', 'prograde': 'PROGRADE',
+              'retrograde': 'RETROGRADE', 'match': 'MATCH SPIN'}
+DIAL_NAMES = tuple(name for name, _ in DIALS)
 #  The rendezvous's phases as the board and the readout say them.
 RENDEZVOUS_SAID = {'plane': 'to its plane', 'wait': 'waiting',
                    'burn': 'burning', 'coast': 'coasting',
@@ -234,8 +250,8 @@ MOVING = {Qt.Key.Key_W: 'ahead', Qt.Key.Key_S: 'back',
 TAKING = ('full', 'cut', 'hold', 'prograde', 'retrograde', 'aim',
           'throttle', 'pad')
 HINT = ('click: look round   wheel: zoom   Esc: free the mouse   click a'
-        ' lamp: do it   V: Asger\'s eyes   Shift: get up   E at the chair:'
-        ' sit')
+        ' lamp: do it   V: Asger\'s eyes   Shift: get up (up: crouch)   E'
+        ' at the chair: sit   1-9: hotbar   Tab: inventory')
 MAP_HINT = ('drag: turn   wheel: zoom   click a name: look at it   '
             '⌫: back to the rocket   M: back to flying')
 
@@ -290,6 +306,7 @@ class SpaceWindow(QMainWindow):
     self.rendezvous = RendezvousGuidance(self.station)
     self._armed, self._laughs = False, 0
     self._noseCamera, self._pulses, self._reading = False, {}, None
+    self._ball = None
     self._padded()
     self.chase, self.orrery, self.scenery = (ChaseCamera(), Orrery(),
                                              Scenery())
@@ -301,6 +318,9 @@ class SpaceWindow(QMainWindow):
     self.flight, self.files, self.readying = None, None, 'starting'
     self._step, self._stuck = time.perf_counter(), False
     self.trouble, self.held, self.mapOpen = None, {}, False
+    self._stoodBy = False
+    self.inventory, self._inventoryOpen = Inventory(), False
+    self._scoping, self._zoom, self._heldSince = False, 1.0, 0.0
     self.note, self._noted, self._flashed = '', 0.0, {}
     self._dragged, self._dragFrom, self._clickedAt = False, None, None
     self._ticked = time.perf_counter()
@@ -308,6 +328,7 @@ class SpaceWindow(QMainWindow):
     self.setCentralWidget(self.viewport)
     self.viewport.quick.installEventFilter(self)
     self.viewport.boardPicked.connect(self._acted)
+    self.viewport.inventoryClicked.connect(self._inventoryClicked)
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
     self.timer.timeout.connect(self._idled)
@@ -362,15 +383,16 @@ class SpaceWindow(QMainWindow):
       return True
     if kind == QEvent.Type.MouseButtonPress and self.inside:
       right = event.button() == Qt.MouseButton.RightButton
-      if not (right and self._gunPressed()):
+      if not (right and self._heldPressed()):
         self._used(right)
       return True
     if kind == QEvent.Type.MouseButtonRelease and self.inside:
       if event.button() == Qt.MouseButton.RightButton:
-        self._gunReleased()
+        self._heldReleased()
       return True
     if kind == QEvent.Type.MouseMove:
-      self.pointer.movedTo(event.globalPosition(), event.position())
+      self.pointer.movedTo(event.globalPosition(), event.position(),
+                           event.timestamp() / 1000.0)
     elif kind == QEvent.Type.Wheel:
       notches = event.angleDelta().y() / 120.0
       if not self.inside:
@@ -378,6 +400,9 @@ class SpaceWindow(QMainWindow):
       elif self._looked() == 'throttle':
         engine = self.vessel.engine
         engine.throttled(engine.throttle + WHEEL_THROTTLE * notches)
+      elif notches and not self._inventoryOpen:
+        self.inventory.scrolled(-1 if notches > 0 else 1)
+        self._heldSince = time.perf_counter()
       return True
     elif kind == QEvent.Type.Leave:
       self.pointer.forget()
@@ -453,9 +478,19 @@ class SpaceWindow(QMainWindow):
     told[FOOD_NEAR] = self._foodNear()
     told[SNACKS] = self.vitals.snacks
     self.speaker.heard(tuple(told))
-    right, down = self.pointer.moved()
+    right, down = self.pointer.movedBy(time.perf_counter())
+    zoom = self._scopeKept(real)
     if right or down:
-      (self.cockpit if self.inside else self.chase).turned(right, down)
+      if self.inside:
+        self.cockpit.turned(right / zoom, down / zoom)
+      else:
+        self.chase.turned(right, down)
+    inventory = self.inventory
+    viewport.inventoryShown(inventory.rows(), inventory.selected,
+                            self._inventoryOpen, inventory.carried,
+                            self.inside and not self.mapOpen,
+                            time.perf_counter() - self._heldSince)
+    viewport.heldShown(inventory.held, zoom)
     if self.mapOpen:
       quick = viewport.quick
       viewport.mapShown(self.scenery.mapOf(
@@ -463,6 +498,7 @@ class SpaceWindow(QMainWindow):
         quick.height()))
     else:
       ball = self.navball.frameOf(vessel, system, NAV_RADIUS)
+      self._ball = ball
       frame = self.scenery.flightOf(system, vessel, self._seen(),
                                     keeper.now)
       cabin = self.scenery.cabinOf(system, vessel, self.cockpit,
@@ -474,7 +510,8 @@ class SpaceWindow(QMainWindow):
     stamp = (self.began + timedelta(seconds=keeper.elapsed)).strftime(
       '%Y-%m-%d  %H:%M:%S')
     viewport.cockpitShown(self.inside, self._prompt(),
-                          self.instruments.printer.paper(), stamp)
+                          self.instruments.printer.paper(), stamp,
+                          (self._statusOf(), self._rangeOf()))
     viewport.hudShown(self._readout(), MAP_HINT if self.mapOpen else HINT,
                       '')
     viewport.monitorShown(self._noseCamera, self._dockText())
@@ -594,8 +631,19 @@ class SpaceWindow(QMainWindow):
       if key in (Qt.Key.Key_E, Qt.Key.Key_Escape):
         self._manualOpen = False
       return True
+    if self._inventoryOpen:
+      if key in (Qt.Key.Key_Tab, Qt.Key.Key_Escape, Qt.Key.Key_E):
+        self._inventoryShut()
+      return True
     if key == Qt.Key.Key_Escape:
       self.pointer.letGo()
+      return True
+    if key == Qt.Key.Key_Tab and self.inside:
+      self._inventoryOpened()
+      return True
+    if key in DIGITS and self.inside:
+      self.inventory.chosen(DIGITS[key])
+      self._heldSince = time.perf_counter()
       return True
     if self.vitals.cause is not None:
       action = KEY_ACTIONS.get(key)
@@ -611,8 +659,10 @@ class SpaceWindow(QMainWindow):
       crewman = self.cockpit.crewman
       if crewman.buckled:
         self._gotUp()
+        self._stoodBy = True
       elif crewman.lounge is not None:
         crewman.offSofa()
+        self._stoodBy = True
         self._noteOf('Asger gets up off the sofa')
       return True
     if not self.cockpit.crewman.buckled:
@@ -835,7 +885,20 @@ class SpaceWindow(QMainWindow):
       return 'Close the door' if walkway.wanted else 'Open the door'
     if control.action == 'lock':
       return 'Unlock the door' if walkway.locked else 'Lock the door'
-    return control.peep.prompt()
+    vessel = self.vessel
+    valued = {'warp': 'Warp %sx' % _grouped(self.keeper.factor, 0),
+              'limit': 'Engine limited to %g g' % LIMITS[limitNotch(
+                vessel.engine)],
+              'orbit': 'Orbit %s' % lengthText(self.guidance.target),
+              'throttle': 'Thrust %.0f %%' % (100.0
+                                              * vessel.engine.throttle)}
+    if control.action in valued:
+      return valued[control.action]
+    said = control.peep.prompt()
+    if control.name in LIT_KEYS:
+      lit = self.instruments.legends[LEGENDS.index(control.name)]
+      return '%s (%s)' % (said, 'on' if lit else 'off')
+    return said
 
   def _doorWorked(self, ) -> None:
     """Opens the door, or closes it if nothing is in the doorway
@@ -987,9 +1050,9 @@ class SpaceWindow(QMainWindow):
   def _gotUp(self, ) -> None:
     """Gets Asger up out of his chair (user, 2026-11-17: Shift), said."""
     self.cockpit.gotUp()
-    self._noteOf('Asger is up: W A S D, Space; E at the chair sits him;'
-                 ' hold the right button at a glowing bolt: the gun pulls'
-                 ' him there')
+    self._noteOf('Asger is up: W A S D, Space, Shift crouches; E at the'
+                 ' chair sits him; 1-9 his hotbar, Tab his inventory; the'
+                 ' right button uses what he holds')
 
   def _chairAimed(self, ) -> bool:
     """Returns whether Asger, up, looks at his chair within 'SIT' of it
@@ -1042,6 +1105,10 @@ class SpaceWindow(QMainWindow):
       pull = accelerometer.pullAt(crewman.middle, crewman.velocity)
       crewman.righted(pull, real)
       held = {MOVING[key] for key in self.held if key in MOVING}
+      if Qt.Key.Key_Shift not in self.held:
+        self._stoodBy = False
+      crewman.crouching = (Qt.Key.Key_Shift in self.held
+                           and not self._stoodBy)
       wanted, walking, wanting = crewman.wantOf(held, cockpit.yaw,
                                                 cockpit.pitch, pull)
       leap, sure = (0.0, 0.0, 0.0), 0
@@ -1199,7 +1266,8 @@ class SpaceWindow(QMainWindow):
     right = cross(look, up)
     frame = quaternionOf(tuple((right[k], up[k], -look[k])
                                for k in range(3)))
-    held = not cockpit.crewman.buckled and self.vitals.cause is None
+    up = not cockpit.crewman.buckled and self.vitals.cause is None
+    held = up and self.inventory.held == 'gravgun'
     eye = cockpit.eye()
     towing = cockpit.crewman.towing if held else None
     beam, shake = (False,), (0.0, 0.0, 0.0)
@@ -1212,6 +1280,9 @@ class SpaceWindow(QMainWindow):
       beam = (True, start, self.bolts[towing][0], BEAM_TURNS * since,
               strengthOf(since))
     dash['gun'] = (held, eye, frame, shake)
+    kind = self.inventory.held
+    dash['hand'] = (kind is not None and self.vitals.cause is None
+                    and (up or kind != 'gravgun') and self._zoom < 1.3)
     dash['beam'] = beam
     dash['nose'] = self._noseCamera
     dash['hatch'] = self._hatch
@@ -1248,9 +1319,10 @@ class SpaceWindow(QMainWindow):
     return rotated(turn, eye), rotated(turn, look), rotated(turn, up)
 
   def _looked(self, ) -> str:
-    """Returns the action of the input Asger looks at ('' none)."""
+    """Returns the action of the input Asger looks at ('' none; a
+    readout is read, not worked)."""
     control = self.cockpit.lookedAt()
-    return control.action if control else ''
+    return control.action if control and control.peep is not None else ''
 
   def _used(self, back: bool) -> None:
     """Works the input Asger looks at ('back': a right click, the other
@@ -1273,6 +1345,71 @@ class SpaceWindow(QMainWindow):
       return
     if self._chairAimed():
       self._buckled()
+
+  def _heldPressed(self, ) -> bool:
+    """The right button pressed with no input in reach: what is in his
+    hand is used (user, 2026-11-17: "Give Asger a hotbar and an inventory
+    like in minecraft. then one tool is the gravgun, then give Asger also
+    a telescope"): the gravity gun as before ('_gunPressed'), the
+    telescope looked through while it is held ('SCOPE' times), a
+    commando bar eaten. Returns whether it did anything."""
+    if self.vitals.cause is not None or self.sleep.on or self._looked():
+      return False
+    held = self.inventory.held
+    if held == 'gravgun':
+      return self._gunPressed()
+    if held == 'telescope':
+      self._scoping = True
+      return True
+    if held == 'commando':
+      why = self.vitals.munched()
+      if why:
+        self._noteOf(why)
+      else:
+        self.inventory.usedUp()
+        self._noteOf('Asger eats a commando bar')
+      return True
+    return False
+
+  def _heldReleased(self, ) -> None:
+    """The right button let go: the telescope lowered; the gravity gun
+    as before ('_gunReleased')."""
+    self._scoping = False
+    self._gunReleased()
+
+  def _inventoryOpened(self, ) -> None:
+    """Opens the inventory (Tab): the mouse let go to click its slots,
+    the telescope lowered."""
+    self._inventoryOpen, self._scoping = True, False
+    self.pointer.letGo()
+
+  def _inventoryShut(self, ) -> None:
+    """Shuts the inventory (Tab, Esc or E): the stack on the pointer
+    put back, the mouse taken to look round again."""
+    self.inventory.closed()
+    self._inventoryOpen = False
+    self.pointer.take()
+
+  def _inventoryClicked(self, slot: int, right: bool) -> None:
+    """A slot of the open inventory clicked (right: the right
+    button)."""
+    if self._inventoryOpen:
+      self.inventory.clicked(slot, right)
+
+  def _scopeKept(self, real: float) -> float:
+    """Eases the view's magnification toward the telescope's while it
+    is looked through (in his hand, his eyes'), else back to none;
+    returns it. The gun put away lets go of its bolt."""
+    held = self.inventory.held
+    want = SCOPE if (self._scoping and held == 'telescope'
+                     and self.inside and self.vitals.cause is None) else 1.0
+    share = 1.0 - math.exp(-real / SCOPE_EASE) if real > 0.0 else 0.0
+    self._zoom = math.exp(math.log(self._zoom) + share * (
+      math.log(want) - math.log(self._zoom)))
+    crewman = self.cockpit.crewman
+    if held != 'gravgun' and crewman.towing is not None:
+      crewman.letGo()
+    return self._zoom
 
   def _gunPressed(self, ) -> bool:
     """The right button pressed out of his chair with no input in reach:
@@ -1317,6 +1454,8 @@ class SpaceWindow(QMainWindow):
     if not self.inside or self.vitals.cause is not None:
       return None
     looked = self.cockpit.lookedAt()
+    if looked is not None and looked.peep is None:
+      return '', self._readOf(looked.action)
     if looked is not None:
       return looked.key, self._promptOf(looked)
     lift = self._elevatorOf()
@@ -1327,10 +1466,16 @@ class SpaceWindow(QMainWindow):
     crewman = self.cockpit.crewman
     if crewman.towing is not None and not crewman.attached:
       return 'Right button', 'Hold on: the gun pulls Asger to the bolt'
-    if self.cockpit.boltAimed(self.bolts, self._open) is not None:
+    held = self.inventory.held
+    if held == 'gravgun' and self.cockpit.boltAimed(
+        self.bolts, self._open) is not None:
       return 'Right button', 'Hold to pick up the magic bolt'
     if crewman.towing is not None:
       return 'Space', 'Push off the bolt (right click: let go)'
+    if held == 'telescope' and not self._scoping:
+      return 'Right button', 'Hold to look through the telescope'
+    if held == 'commando':
+      return 'Right button', 'Eat a commando bar'
     return None
 
   def _steered(self, real: float) -> None:
@@ -1542,6 +1687,88 @@ class SpaceWindow(QMainWindow):
       self.accelerometer.reset()
       self._docks += 1
       self._noteOf('Docked to Terra Prime')
+
+  def _statusOf(self, ) -> str:
+    """Returns the AUTOPILOT's status line (user, 2026-11-17: "All the
+    auto stuff has to be in one place"): what flies the rocket by itself
+    and how far along, else the attitude it holds, else 'MANUAL'."""
+    keeper, vessel = self.keeper, self.vessel
+    if self.autodock.on:
+      reading = self._reading
+      far = '' if reading is None else ' ' + lengthText(reading[
+        'distance'])
+      return ('2 DOCK: %s%s' % (self.autodock.phase, far)).upper()
+    if self.rendezvous.on:
+      guide = self.rendezvous
+      if guide.phase in ('plane', 'wait'):
+        return '2 RNDZ: BURN IN %s' % timeText(guide.depart
+                                               - keeper.elapsed)
+      return ('2 RNDZ: %s %s' % (RENDEZVOUS_SAID[guide.phase], timeText(
+        max(0.0, guide.arrival - keeper.elapsed)))).upper()
+    if self.guidance.on:
+      return ('1 ASCENT: %s %s' % (self.guidance.phase, lengthText(
+        self.guidance.target))).upper()
+    pilot = vessel.autopilot
+    mode = MODES_SAID.get(pilot.mode, pilot.mode.upper())
+    if pilot.mode == 'aim':
+      mode = 'AIM %+.0f\u00b0' % math.degrees(pilot.pitch)
+    if self._armed:
+      return '2 ARMED' + ('' if pilot.mode == 'off' else ', ' + mode)
+    return mode
+
+  def _rangeOf(self, ) -> tuple:
+    """Returns Terra Prime's range as its tubes show it ('-' where out
+    of them): how far (km), how fast closing (m/s, falling apart less
+    than nought), its next closest approach (km) and in how long
+    (h:mm)."""
+    reading, closest = self._reading, self.orrery.closest
+    if reading is None:
+      return ('-----',) * 3 + ('--:--',)
+    offset = reading['offset']
+    apart = norm(offset)
+    closing = -dot(reading['drift'], offset) / max(1e-9, apart)
+    near = '-----' if closest is None else _tubed(closest[1] / 1e3)
+    when = '--:--' if closest is None or closest[0] >= 360000.0 else (
+      '%2d:%02d' % (closest[0] // 3600.0, (closest[0] % 3600.0) // 60.0))
+    return (_tubed(apart / 1e3), _signed(closing), near, when)
+
+  def _readOf(self, action: str) -> str:
+    """Returns what Asger reads off a readout he looks at (user,
+    2026-11-17: "when reaching a dial the precise value should be shown.
+    like with WAILA"): a dial's exact value, a lamp's on or off, Terra
+    Prime's range in full, the status line, the globe's pitch and
+    heading."""
+    what = action[len('read '):]
+    if what in DIAL_NAMES:
+      value = self.instruments.valuesOf(self.vessel, self.system)[what]
+      unit = 'm/s' if what == 'SPEED' else 'm'
+      if value >= 1e9:
+        return '%s: none (no closed orbit)' % what.capitalize()
+      return '%s: %s %s' % (what.capitalize(), _grouped(value, 1), unit)
+    if what.startswith('lamp '):
+      name = what[len('lamp '):]
+      lit = self.instruments.lamps[[n for n, _ in LAMPS].index(name)]
+      return '%s: %s' % (name.capitalize(), 'on' if lit else 'off')
+    if what == 'range':
+      reading, closest = self._reading, self.orrery.closest
+      if reading is None:
+        return 'Terra Prime: out of range'
+      offset = reading['offset']
+      apart = norm(offset)
+      closing = -dot(reading['drift'], offset) / max(1e-9, apart)
+      said = 'Terra Prime %s m, closing %+.1f m/s' % (_grouped(apart, 0),
+                                                      closing)
+      if closest is not None:
+        said += '; closest %s m in %s, passing at %.1f m/s' % (
+          _grouped(closest[1], 0), timeText(closest[0]), closest[2])
+      return said
+    if what == 'status':
+      return 'Autopilot: %s' % self._statusOf()
+    ball = self._ball
+    if ball is None:
+      return 'The horizon'
+    return 'Pitch %+.1f\u00b0, heading %05.1f\u00b0' % (
+      ball['pitch'], ball['heading'] % 360.0)
 
   def _rendezvousText(self, ) -> str:
     """Returns the readout's line of the rendezvous: its phase, and how
@@ -1755,6 +1982,32 @@ class SpaceWindow(QMainWindow):
     if self.note and time.perf_counter() - self._noted < NOTE_LASTS:
       lines.append(self.note)
     return '\n'.join(lines)
+
+
+def _grouped(value: float, places: int) -> str:
+  """Returns 'value' with 'places' decimals, its thousands set apart by
+  spaces."""
+  return ('{:,.%df}' % places).format(value).replace(',', ' ')
+
+
+def _tubed(km: float) -> str:
+  """Returns 'km' as five number tubes show it: two decimals under a
+  hundred, one under ten thousand; past that dashes."""
+  if km < 99.995:
+    return '%6.2f' % km
+  if km < 9999.95:
+    return '%6.1f' % km
+  return '-----'
+
+
+def _signed(speed: float) -> str:
+  """Returns 'speed' (m/s) as five number tubes show it, signed: one
+  decimal under a thousand; past a hundred thousand dashes."""
+  if abs(speed) < 999.95:
+    return '%+6.1f' % speed
+  if abs(speed) < 99999.5:
+    return '%+5.0f' % speed
+  return '-----'
 
 
 def _nightStart(now: datetime) -> float:

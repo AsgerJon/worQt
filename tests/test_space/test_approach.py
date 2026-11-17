@@ -20,6 +20,7 @@ from worQt.gaming.space._rendezvousguidance import RendezvousGuidance
 from worQt.gaming.space._station import Station
 from worQt.gaming.space._timekeeper import Timekeeper
 from worQt.gaming.space._transfers import Transfers
+from worQt.gaming.space._turns import cross, unit
 from worQt.gaming.space._vessel import Vessel
 
 from . import SpaceTest
@@ -30,19 +31,19 @@ class TestApproach(SpaceTest):
 
   def _beside(self, out: float) -> tuple:
     """Returns a system, its station and a vessel 'out' m from the
-    station along its axis (out of its plane), moving as it does."""
+    station out of its path's plane, moving as it does."""
     system = self.systemOf()
     station = Station(system)
     middle, velocity = station.stateAt(0.0)
-    axis = tuple(row[2] for row in station.turnAt(0.0))
+    axis = unit(cross(middle, velocity))
     vessel = Vessel()
     vessel.placed(station.parent, tuple(m + out * a for m, a in zip(
       middle, axis)), velocity, (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     return system, station, vessel
 
   def test_crossing(self) -> None:
-    """5 km out of the station's plane, moving as it does, the rocket
-    crosses the plane a quarter turn later within 20 m of the station,
+    """5 km out of the station's path's plane, moving as it does, the
+    rocket crosses the plane a quarter turn later within 20 m of the station,
     passing at 5 km times the turning rate."""
     system, station, vessel = self._beside(5000.0)
     wait, gap, speed, _, _ = closestApproach(vessel, system, station, 0.0)

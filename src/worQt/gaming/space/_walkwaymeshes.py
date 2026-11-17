@@ -34,7 +34,7 @@ from ._shapes import UNTURNED, boxRows, joined, quadRows
 from ._launchtower import EXIT_SIGN, FLIGHTS, GROUND, HALL, LANDING, LANES
 from ._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT, STAIR_FOOT, STAIR_TOP
 from ._launchtower import STAIRWELL, TOWER, TOWER_LEGS, TOWER_TOP
-from ._launchtower import flightOf, landingLevel
+from ._launchtower import STEPS, flightOf, landingLevel
 from ._walkway import DOOR_HIGH, DOOR_SPAN, PAD_UP, SLOPE, TUNNEL_FROM
 from ._walkway import TUNNEL_HALF, TUNNEL_HIGH
 
@@ -234,7 +234,7 @@ def _stairs(put: object) -> None:
   """Adds the stairs: each flight's steps on its ramp, the landings, the
   wall between the lanes, a handrail up each flight, a lamp on the wall
   at each landing."""
-  steps = 12
+  steps = STEPS
   for k in range(FLIGHTS):
     (y0, y1), (xa, xb), (za, zb) = flightOf(k)
     run = (xb - xa) / steps
