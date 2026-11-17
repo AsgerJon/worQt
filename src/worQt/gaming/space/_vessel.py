@@ -79,8 +79,17 @@ class Vessel:
   Its docking thrusters push it 'rcs' (N, its own axes: user,
   2026-11-17, docking); 'docked' to the space station it rides with it
   (moved by it, not by the flight); 'bumped' how fast it last hit the
-  station (m/s into it, the last frame; nought: it did not). The
-  flight's kernel moves it ('Flight').
+  station (m/s into it, the last frame; nought: it did not); 'felt' what
+  pushed it a kilogram over the last frame, everything but gravity
+  (m/s², its own axes: the thrust, drag, the ground, the thrusters, the
+  station's solids or, docked, the latch: what anything in it feels),
+  and 'spinning', how fast its spin changed over it (rad/s², its own
+  axes): both None till a frame has been simulated (user, 2026-11-17:
+  "there better be a physically simulated such fucking thing every
+  where it needs to be calculated"); 'jolt', how its velocity was
+  changed between frames by what held it (m/s, the ecliptic's axes: the
+  latch catching it, pushing it off: 'jolted'; felt over the next
+  frame, then spent). The flight's kernel moves it ('Flight').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -100,6 +109,9 @@ class Vessel:
   rcs: tuple
   docked: bool
   bumped: float
+  felt: tuple | None
+  spinning: tuple | None
+  jolt: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -112,6 +124,7 @@ class Vessel:
     self.place, self.velocity = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.turn, self.spin = (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.rcs, self.docked, self.bumped = (0.0, 0.0, 0.0), False, 0.0
+    self.felt, self.spinning, self.jolt = None, None, (0.0, 0.0, 0.0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -126,6 +139,12 @@ class Vessel:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def jolted(self, change: tuple) -> None:
+    """The 'jolted' method notes that what holds it changed its
+    velocity by 'change' between frames (m/s, the ecliptic's axes): it
+    is felt over the next frame."""
+    self.jolt = tuple(a + float(b) for a, b in zip(self.jolt, change))
 
   def placed(self, anchor: int, place: tuple, velocity: tuple,
              turn: tuple, spin: tuple) -> None:

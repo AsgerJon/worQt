@@ -113,7 +113,7 @@ class TestWalkway(SpaceTest):
     """In the tower's hall he stands where he starts; walking ahead
     along the walkway he stops at the shut door; it open, he walks on
     into the cabin."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, G0)
     cockpit.gotUp()
@@ -205,7 +205,7 @@ class TestWalkway(SpaceTest):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
       crewman.righted(pull, FRAME)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
-      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
 
   def test_clear(self) -> None:
     """Dismissed, the walkway slides back and swings away without ever

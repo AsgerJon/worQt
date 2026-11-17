@@ -175,13 +175,18 @@ PANEL_MIDDLE = panelPoint(0.0, 0.0, 0.0)
 PANEL_AXES = panelAxes(0.0)
 #  The panel's sections, each framed and titled on its face (left to
 #  right: TIME, the AUTOPILOT with all that flies by itself (user,
-#  2026-11-17: "All the auto stuff has to be in one place"), the
-#  teleprinter unframed, the THRUST, the MANUAL DOCKING): title, left,
-#  bottom, right, top (right, up on the panel, m).
+#  2026-11-17: "All the auto stuff has to be in one place"; its three
+#  modes: "Orbit, Rendezvous and Docking"), the teleprinter unframed, the
+#  ASSISTS (the attitude's: "The auto pilot has four functions: hold,
+#  pro, retro and aim. These should be moved to a separate group on the
+#  other side of the teleprinter, where they are called 'ASSISTS'"), the
+#  THRUST with the LAUNCH key and its checklist, the MANUAL DOCKING):
+#  title, left, bottom, right, top (right, up on the panel, m).
 SECTIONS = (('TIME', -0.721, -0.255, -0.535, 0.155),
             ('AUTOPILOT', -0.523, -0.255, -0.193, 0.155),
-            ('THRUST', 0.193, -0.255, 0.393, 0.155),
-            ('MANUAL DOCKING', 0.405, -0.255, 0.721, 0.155))
+            ('ASSISTS', 0.193, -0.255, 0.283, 0.155),
+            ('THRUST', 0.293, -0.255, 0.503, 0.155),
+            ('MANUAL DOCKING', 0.513, -0.255, 0.721, 0.155))
 #  Its outputs on the hood: the dials (each its name and middle (right,
 #  up on the hood); their radius), each needle a lever on its turning
 #  shaft ("the needle should be modelled as an actually moving lever on
@@ -196,9 +201,13 @@ SECTIONS = (('TIME', -0.721, -0.255, -0.535, 0.155),
 #  stands out); the horizon's globe under the teleprinter (user,
 #  2026-11-17: "put the globe horizon thing under the printer"): its
 #  ball's middle on the panel and how far before its face, its radius,
-#  its glass dome's.
+#  its glass dome's. The THRUST's dial is on the panel (user, 2026-11-17:
+#  "Also on the thrust panel, have an indicator on the currently applied
+#  g": 'PANEL_DIALS'), the rest on the hood.
 DIALS = (('SPEED', (-0.30, 0.088)), ('HEIGHT', (-0.195, 0.088)),
-         ('APOAPSIS', (0.195, 0.088)), ('PERIAPSIS', (0.30, 0.088)))
+         ('APOAPSIS', (0.195, 0.088)), ('PERIAPSIS', (0.30, 0.088)),
+         ('THRUST', (0.36, 0.085)))
+PANEL_DIALS = ('THRUST',)
 DIAL_RADIUS = 0.04
 LAMPS = (('ENGINE', (-0.12, 0.143)), ('AIR', (-0.08, 0.143)),
          ('GROUND', (-0.04, 0.143)), ('WARP', (0.0, 0.143)),
@@ -206,66 +215,88 @@ LAMPS = (('ENGINE', (-0.12, 0.143)), ('AIR', (-0.08, 0.143)),
          ('DOCK', (0.12, 0.143)))
 LAMP_RADIUS = 0.008
 RANGE = ((0.0, 0.068), (0.135, 0.033))
-STATUS = ((-0.358, 0.108), (0.152, 0.02))
-SCREEN_AT, SCREEN_HALF, MONITOR_OUT = (0.635, 0.025), (0.052, 0.039), 0.03
+STATUS = ((-0.41, 0.108), (0.1, 0.02))
+SCREEN_AT, SCREEN_HALF, MONITOR_OUT = (0.617, 0.048), (0.072, 0.054), 0.03
+#  The docking port's numbers under the CCTV (user, 2026-11-17: "The
+#  CCTV must be bigger and not cluttered with text. The port indicator
+#  and all that should be below it by the other manual docking
+#  controls"): its window's middle and half its size.
+PORT = ((0.617, -0.043), (0.09, 0.015))
 GLOBE_ON, BALL_OUT = (0.0, -0.15), 0.03
 BALL_RADIUS = 0.08
 GLASS = BALL_RADIUS + 0.02
 #  Its inputs: the keys (name, key, action, middle (right, up on the
-#  panel), half their size; their travel in), the AUTOPILOT's lit (user,
-#  2026-11-17: "The autopilot controls is entirelyt hopeless, rething
-#  completely": a key a mode, lit while it flies, 1 to orbit and 2 to
-#  Terra Prime numbered as they follow: "I want reaching orbit to be a
-#  separate step from rendezvous and docking"), as are MATCH's; REAL
-#  WARP right by the warp knob ("it should be right near the enchanted
-#  warp control and say 'REAL WARP'"); the knobs (name, key, action,
-#  middle, notches, first notch's turn, a notch's turn: rad about the
-#  panel's out, clockwise as he sees it going on; their radius), each
-#  under a guard flipped up while it is worked ("it should have a safety
-#  gaurd that is lifted up when adjusted"): half its size, how far it
-#  flips up (rad), how long it stays up after, s; the throttle's lever
-#  on the panel (user, 2026-11-17: "remove the throttle controls from
-#  the right side of the pilot seat"): its slot's foot (right, up) and
-#  how far up the slant it runs, m. The docking (the try-hard's:
-#  "we include buttons so that a try-hard *could* manually do the
-#  thing"): the thrusters' keys (arrows; PgUp, PgDn), MATCH, the
-#  monitor's feed (CAM: aft or the nose's docking camera), UNDOCK.
+#  panel), half their size; their travel in): the AUTOPILOT's modes, lit
+#  the one chosen (user, 2026-11-17: "we should have the three modes"),
+#  ENGAGE lit while it has the controls ("an indicator of the auto pilot
+#  being allowed to have control"), WARP TO ACTION beside its display
+#  (grey until it waits for a burn, then lit and glinting as the warp
+#  knob: "When the autopilot begins waiting for a new burn, this button
+#  activates with the same enchanted glint as the general warp dial");
+#  the ASSISTS lit while they hold; LAUNCH under a guard ("independently
+#  of the auto pilot we need a launch button"), in once the engine is
+#  lit; REAL WARP right by the warp knob ("it should be right near the
+#  enchanted warp control and say 'REAL WARP'"); the knobs (name, key,
+#  action, middle, notches, first notch's turn, a notch's turn: rad
+#  about the panel's out, clockwise as he sees it going on; their
+#  radius), each under a guard flipped up while it is worked ("it should
+#  have a safety gaurd that is lifted up when adjusted"): half its size,
+#  how far it flips up (rad), how long it stays up after, s; LAUNCH's
+#  guard's half size. The throttle a push-pull knob as a Cessna 172's
+#  ("let it be a control that is pulled out when off and in when full"):
+#  its shaft's foot on the panel (right, up), how far it pulls out, m, its
+#  knob's radius. The docking (the try-hard's: "we include buttons so
+#  that a try-hard *could* manually do the thing"): the thrusters' keys
+#  (arrows; PgUp, PgDn), MATCH, the monitor's feed (CAM: aft or the
+#  nose's docking camera), UNDOCK.
 MODE_HALF = (0.03, 0.015)
-THRUSTER_HALF = (0.018, 0.013)
-ROW_HALF = (0.022, 0.014)
+AUTO_HALF = (0.042, 0.02)
+THRUSTER_HALF = (0.016, 0.012)
+ROW_HALF = (0.026, 0.014)
 KEYS = (('REAL WARP', '/', 'stop', (-0.585, 0.03), (0.03, 0.018)),
         ('TO AP', 'G', 'toAp', (-0.585, -0.065), (0.03, 0.014)),
-        ('HOLD', 'T', 'hold', (-0.47, 0.035), MODE_HALF),
-        ('PRO', 'F', 'prograde', (-0.398, 0.035), MODE_HALF),
-        ('RETRO', 'R', 'retrograde', (-0.326, 0.035), MODE_HALF),
-        ('AIM', 'W', 'aim', (-0.254, 0.035), MODE_HALF),
-        ('ASCENT', 'J', 'ascent', (-0.462, -0.085), (0.042, 0.018)),
-        ('RNDZ', 'C', 'autodock', (-0.254, -0.085), (0.042, 0.022)),
-        ('FULL', 'Z', 'full', (0.335, 0.065), (0.025, 0.014)),
-        ('CUT', 'X', 'cut', (0.335, 0.012), (0.025, 0.014)),
-        ('UP', '↑', 'rcs up', (0.475, 0.08), THRUSTER_HALF),
-        ('DOWN', '↓', 'rcs down', (0.475, -0.02), THRUSTER_HALF),
-        ('LEFT', '←', 'rcs left', (0.433, 0.03), THRUSTER_HALF),
-        ('RIGHT', '→', 'rcs right', (0.517, 0.03), THRUSTER_HALF),
-        ('FWD', 'PgUp', 'rcs ahead', (0.442, -0.12), ROW_HALF),
-        ('BACK', 'PgDn', 'rcs back', (0.502, -0.12), ROW_HALF),
-        ('MATCH', 'L', 'match', (0.567, -0.12), ROW_HALF),
-        ('CAM', 'K', 'camera', (0.63, -0.12), ROW_HALF),
-        ('UNDOCK', 'Del', 'undock', (0.692, -0.12), ROW_HALF))
+        ('WARP TO ACTION', 'Enter', 'action', (-0.25, 0.108),
+         (0.045, 0.022)),
+        ('ORBIT', 'J', 'ap orbit', (-0.462, 0.025), AUTO_HALF),
+        ('RNDZ', 'H', 'ap rendezvous', (-0.358, 0.025), AUTO_HALF),
+        ('DOCK', 'N', 'ap dock', (-0.254, 0.025), AUTO_HALF),
+        ('ENGAGE', 'C', 'engage', (-0.3, -0.135), (0.075, 0.03)),
+        ('HOLD', 'T', 'hold', (0.238, 0.095), MODE_HALF),
+        ('PRO', 'F', 'prograde', (0.238, 0.04), MODE_HALF),
+        ('RETRO', 'R', 'retrograde', (0.238, -0.015), MODE_HALF),
+        ('AIM', 'W', 'aim', (0.238, -0.07), MODE_HALF),
+        ('FULL', 'Z', 'full', (0.455, 0.105), (0.025, 0.014)),
+        ('CUT', 'X', 'cut', (0.455, 0.058), (0.025, 0.014)),
+        ('LAUNCH', 'Space', 'launch', (0.455, -0.18), (0.03, 0.03)),
+        ('UP', '\u2191', 'rcs up', (0.565, -0.094), THRUSTER_HALF),
+        ('DOWN', '\u2193', 'rcs down', (0.565, -0.17), THRUSTER_HALF),
+        ('LEFT', '\u2190', 'rcs left', (0.527, -0.132), THRUSTER_HALF),
+        ('RIGHT', '\u2192', 'rcs right', (0.603, -0.132), THRUSTER_HALF),
+        ('FWD', 'PgUp', 'rcs ahead', (0.67, -0.105), (0.022, 0.014)),
+        ('BACK', 'PgDn', 'rcs back', (0.67, -0.16), (0.022, 0.014)),
+        ('MATCH', 'L', 'match', (0.555, -0.222), ROW_HALF),
+        ('CAM', 'K', 'camera', (0.617, -0.222), ROW_HALF),
+        ('UNDOCK', 'Del', 'undock', (0.679, -0.222), ROW_HALF))
 #  The keys lit while what they work is on (amber letters on smoked
 #  glass), and what each key's cap reads where it is not its name.
-LIT_KEYS = ('HOLD', 'PRO', 'RETRO', 'AIM', 'ASCENT', 'RNDZ', 'MATCH')
-CAPS = {'ASCENT': '1 ASCENT', 'RNDZ': '2 RNDZ\n+ DOCK',
-        'REAL WARP': 'REAL\nWARP'}
+LIT_KEYS = ('ORBIT', 'RNDZ', 'DOCK', 'ENGAGE', 'WARP TO ACTION', 'HOLD',
+            'PRO', 'RETRO', 'AIM', 'MATCH')
+CAPS = {'REAL WARP': 'REAL\nWARP', 'WARP TO ACTION': 'WARP TO\nACTION'}
 KEY_TRAVEL = 0.006
 KNOBS = (('WARP', '. ,', 'warp', (-0.665, -0.03), 8, math.radians(105),
           -math.radians(30)),
-         ('LIMIT', 'Y U', 'limit', (0.335, -0.12), 8, math.radians(105),
+         ('LIMIT', 'Y U', 'limit', (0.455, -0.03), 8, math.radians(105),
           -math.radians(30)),
-         ('ORBIT', '[ ]', 'orbit', (-0.358, -0.08), len(TARGETS),
+         ('ORBIT KM', '[ ]', 'orbit', (-0.46, -0.135), len(TARGETS),
           math.radians(150), -math.radians(30)))
 KNOB_RADIUS = 0.022
-THROTTLE_AT, THROTTLE_LONG = (0.245, -0.21), 0.28
+THROTTLE_AT, THROTTLE_TRAVEL, THROTTLE_KNOB = (0.36, -0.03), 0.08, 0.018
+#  The LAUNCH key's checklist beside it (user, 2026-11-17: "the relevant
+#  items from teh quests take diegetic shape in the form of a check list
+#  next it that includes the first 8 items"; '_quest.CHECKLIST'): its
+#  first line's lamp's middle (right, up), a line's height down, its
+#  lamps' radius.
+CHECK_AT, CHECK_LINE, CHECK_RADIUS = (0.305, -0.115), 0.0172, 0.0042
 #  The docking thrusters' keys' ways, the rocket's own axes (the nose
 #  camera looks along its z, its picture's up its x: up, down, left,
 #  right as it shows them; ahead and back along the nose).
@@ -275,6 +306,7 @@ THRUSTS = {'rcs up': (1.0, 0.0, 0.0), 'rcs down': (-1.0, 0.0, 0.0),
 LIMITS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
 GUARD_KNOB = (KNOB_RADIUS + 0.006, KNOB_RADIUS + 0.006, 0.02)
 GUARD_SWITCH = (0.017, 0.025, 0.022)
+GUARD_LAUNCH = (0.036, 0.036, 0.016)
 GUARD_OPEN = math.radians(105.0)
 GUARD_HOLD = 1.2
 #  The console switches (the view's and the map's, on his left): their
@@ -349,7 +381,7 @@ TAPE_MODEL = 'Stereo Reel to Reel Tape Deck.glb'
 TAPE_SCALE = 0.6
 TAPE_ORIGIN = (SIDEBOARD[0][0] - 0.05, SIDEBOARD[0][1], TOP + 0.014)
 TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
-#  A ray from his eyes looks this far at most, m. The gravity gun reaches
+#  A ray from his eyes looks this far at most, m. The Grav-Gun reaches
 #  a magic bolt this far, m (the space station's hub is 120 m long: its
 #  bolts are some 30 m apart), pointed at within 'AIM' rad (or its ring
 #  seen from there, 'BOLT_SEEN' m round).
@@ -416,7 +448,7 @@ KEY_PROMPTS = {'door': 'Open or close the door', 'lock': 'Lock the door',
 
 def _household() -> tuple:
   """Returns what he may work away from the dashboard (looked at within
-  reach, E or a click): the rations' crate (he eats one), the daybed
+  reach, a click): the rations' crate (he eats one), the daybed
   (he sleeps till morning, if it is night), the sofa (he sits on it),
   the pork scratchings under the dashboard (in reach of his chair),
   the door's keys (outside on the walkway: the door; inside by it: the
@@ -437,7 +469,7 @@ def _household() -> tuple:
     top = tuple(m + half[2] * u for m, u in zip(middle, axes[2]))
     peep = Pushbutton(name, None, top, (0.0, 0.0, -1.0), 0.01,
                       (prompt,) * 2)
-    out.append(Control(name, 'E', action, middle, axes, half, peep))
+    out.append(Control(name, 'Click', action, middle, axes, half, peep))
   return tuple(out)
 
 
@@ -446,9 +478,13 @@ def _household() -> tuple:
 PROMPTS = {'stop': 'Real time: stop the warp',
            'toAp': 'Warp to the apoapsis', 'hold': 'Hold the attitude',
            'prograde': 'Point prograde', 'retrograde': 'Point retrograde',
-           'aim': 'Fly the aim', 'ascent': '1: Fly up to orbit',
-           'autodock': '2: Rendezvous and dock with Terra Prime',
-           'full': 'Full thrust', 'cut': 'Cut the engine',
+           'aim': 'Fly the aim', 'ap orbit': 'Autopilot mode: up to orbit',
+           'ap rendezvous': 'Autopilot mode: rendezvous with Terra Prime',
+           'ap dock': 'Autopilot mode: dock with Terra Prime',
+           'engage': 'Engage the autopilot (or let go)',
+           'action': 'Warp to the autopilot\'s next burn',
+           'launch': 'LAUNCH', 'full': 'Full thrust',
+           'cut': 'Cut the engine',
            'rcs up': 'Thrust up', 'rcs down': 'Thrust down',
            'rcs left': 'Thrust left', 'rcs right': 'Thrust right',
            'rcs ahead': 'Thrust ahead', 'rcs back': 'Thrust back',
@@ -496,12 +532,31 @@ def _controls() -> tuple:
                        CONSOLE_AXES, (0.015, 0.02, 0.018), peep))
   u, v = THROTTLE_AT
   axes = panelAxes(u)
-  peep = Slider('THROTTLE', None, panelPoint(u, v, 0.0), axes[1],
-                THROTTLE_LONG)
+  peep = Slider('THROTTLE', None, panelPoint(u, v, 0.0), axes[2],
+                THROTTLE_TRAVEL, ('Throttle: push in for thrust, pull out'
+                                  ' to cut',) * 2)
   out.append(Control('THROTTLE', '+ \u2212', 'throttle', panelPoint(
-    u, v + 0.5 * THROTTLE_LONG, 0.02), axes, (0.032, 0.5 * THROTTLE_LONG
-                                               + 0.02, 0.03), peep))
+    u, v, 0.5 * THROTTLE_TRAVEL + 0.01), axes, (THROTTLE_KNOB + 0.006,
+                                                THROTTLE_KNOB + 0.006,
+                                                0.5 * THROTTLE_TRAVEL
+                                                + 0.025), peep))
   return tuple(out)
+
+
+def dialPoint(index: int, out: float) -> tuple:
+  """Returns dial 'index''s middle, 'out' m before its face (the
+  panel's or the hood's: 'PANEL_DIALS')."""
+  name, (u, v) = DIALS[index]
+  if name in PANEL_DIALS:
+    return panelPoint(u, v, out)
+  return hoodPoint(u, v, out)
+
+
+def dialFrame(index: int) -> tuple:
+  """Returns dial 'index''s axes (right, up, out: the panel's or the
+  hood's there)."""
+  name, (u, _) = DIALS[index]
+  return panelAxes(u) if name in PANEL_DIALS else hoodAxes(u)
 
 
 def _readouts() -> tuple:
@@ -511,9 +566,9 @@ def _readouts() -> tuple:
   action 'read' and what: the dials, the lamps, Terra Prime's range, the
   AUTOPILOT's status line, the globe."""
   out = []
-  for name, (u, v) in DIALS:
-    out.append(Control(name, '', 'read ' + name, hoodPoint(u, v, 0.005),
-                       hoodAxes(u), (DIAL_RADIUS, DIAL_RADIUS, 0.01),
+  for k, (name, _) in enumerate(DIALS):
+    out.append(Control(name, '', 'read ' + name, dialPoint(k, 0.005),
+                       dialFrame(k), (DIAL_RADIUS, DIAL_RADIUS, 0.01),
                        None))
   for name, (u, v) in LAMPS:
     out.append(Control(name, '', 'read lamp ' + name, hoodPoint(
@@ -524,8 +579,16 @@ def _readouts() -> tuple:
   (u, v), half = STATUS
   out.append(Control('STATUS', '', 'read status', panelPoint(u, v, 0.002),
                      panelAxes(u), half + (0.01,), None))
+  (u, v), half = PORT
+  out.append(Control('PORT', '', 'read port', panelPoint(u, v, 0.002),
+                     panelAxes(u), half + (0.01,), None))
   out.append(Control('GLOBE', '', 'read globe', GLOBE_AT, GLOBE_AXES,
                      (GLASS, GLASS, GLASS), None))
+  u, v = CHECK_AT
+  middle = (u + 0.05, v - 3.5 * CHECK_LINE)
+  out.append(Control('CHECKLIST', '', 'read checklist', panelPoint(
+    middle[0], middle[1], 0.002), panelAxes(middle[0]), (
+    0.06, 4.0 * CHECK_LINE + 0.01, 0.01), None))
   return tuple(out)
 
 
@@ -633,6 +696,29 @@ class Cockpit:
       if angle <= max(AIM, math.atan(BOLT_SEEN / far)) and angle < least:
         if open_ is None or _inSight(eye, off, far, open_):
           best, least = k, angle
+    return best
+
+  def looseAimed(self, things: tuple, open_: object = None) -> int | None:
+    """The 'looseAimed' method returns the loose thing (its index in
+    'things': each its middle and its half sizes) the Grav-Gun points at
+    out of his chair: the nearest whose round (its half sizes' length)
+    his eyes' middle passes through, within 'GUN_REACH', in sight
+    ('open_', as 'boltAimed'); None if none (or he sits)."""
+    if self.crewman.sitting:
+      return None
+    eye, look = self.eye(), self.looking()[0]
+    best, nearest = None, math.inf
+    for k, (middle, half) in enumerate(things):
+      off = tuple(m - e for m, e in zip(middle, eye))
+      along = sum(o * l for o, l in zip(off, look))
+      if along <= 0.0 or along > GUN_REACH:
+        continue
+      round_ = math.sqrt(sum(h * h for h in half))
+      aside = math.sqrt(max(0.0, sum(o * o for o in off) - along * along))
+      if aside <= round_ and along < nearest:
+        far = math.sqrt(sum(o * o for o in off))
+        if open_ is None or _inSight(eye, off, far, open_):
+          best, nearest = k, along
     return best
 
   def strappedIn(self, ) -> None:

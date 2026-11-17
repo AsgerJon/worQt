@@ -136,27 +136,53 @@ class DockingPort:
     return quaternionOf(tuple(tuple(columns[k][i] for k in range(3))
                               for i in range(3)))
 
-  def latched(self, vessel: Vessel, t: float) -> None:
+  def latched(self, vessel: Vessel, system: SolarSystem,
+              t: float) -> None:
     """The 'latched' method docks the vessel at time 't': its turn
     noted in the station's axes, its engine and thrusters shut, its
-    autopilot off: from now the station moves it ('heldOn')."""
+    autopilot off: from now the station moves it ('heldOn'); the latch
+    takes its drift off at once, a jolt it feels."""
     self.aligned(vessel, t)
     vessel.docked = True
     vessel.engine.throttled(0.0)
     vessel.rcs = (0.0, 0.0, 0.0)
     vessel.autopilot.engaged('off', vessel.turn)
+    before = vessel.velocity
+    self.heldOn(vessel, system, t)
+    vessel.jolted(tuple(a - b for a, b in zip(vessel.velocity, before)))
 
   def heldOn(self, vessel: Vessel, system: SolarSystem, t: float) -> None:
     """The 'heldOn' method puts the docked vessel where the station has
     it at time 't': its nose in the port, turned as noted, moving and
-    turning with the station."""
+    turning with the station; and what it feels, the latch's push a
+    kilogram (user, 2026-11-17: "The experienced gravity in microgravity
+    is the gravity pulled by the planet orbited minus the centri force
+    caused by the movement about the planet"): how it is moved (the
+    station's middle falling round its planet, the vessel's middle
+    carried round the station's axis) less how gravity pulls it there;
+    its spin steady."""
+    station = self.station
+    if vessel.anchor != station.parent:
+      raise ValueError('docked to a station round body %d, kept from %d'
+                       % (station.parent, vessel.anchor))
     turn = self.turnAt(t)
     reading = self.readingOf(vessel, system, t)
     place = tuple(p - n for p, n in zip(reading['port'], rotated(
       turn, NOSE_PORT)))
-    spin = tuple(SPIN * a for a in reading['axis'])
+    axis = reading['axis']
+    spin = tuple(SPIN * a for a in axis)
     vessel.placed(vessel.anchor, place, reading['velocity'], turn,
                   unrotated(turn, spin))
+    middle, _ = station.stateAt(t)
+    mu = system.bodies[station.parent].mu
+    far = norm(middle)
+    falling = tuple(-mu * m / far ** 3 for m in middle)
+    offset = tuple(p - m for p, m in zip(place, middle))
+    carried = cross(spin, cross(spin, offset))
+    pulled = system.pullOn(vessel.anchor, place, t)
+    vessel.felt = unrotated(turn, tuple(f + c - g for f, c, g in zip(
+      falling, carried, pulled)))
+    vessel.spinning = (0.0, 0.0, 0.0)
 
   def released(self, vessel: Vessel, system: SolarSystem,
                t: float) -> None:
@@ -167,6 +193,7 @@ class DockingPort:
     velocity = tuple(v + PUSH_OFF * a for v, a in zip(reading['velocity'],
                                                       reading['axis']))
     vessel.docked = False
+    vessel.jolted(tuple(PUSH_OFF * a for a in reading['axis']))
     vessel.placed(vessel.anchor, vessel.place, velocity, vessel.turn,
                   vessel.spin)
 

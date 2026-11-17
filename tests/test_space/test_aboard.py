@@ -29,7 +29,7 @@ from . import FRAME, SpaceTest
 #  station's axis, unrolled.
 RELATIVE = ((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0))
 #  Asger's legs at rest.
-STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0), 0)
+STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
 
 
 class TestAboard(SpaceTest):

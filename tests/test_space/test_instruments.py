@@ -45,6 +45,7 @@ class TestInstruments(SpaceTest):
     system, vessel, keeper, guidance, kit = self._ready()
     kit.acted(0.0, vessel, system, keeper, guidance, False, True, 'go')
     self.assertEqual((kit.snaps, kit.ticks), (1, 0))
+    clicked = kit.clicks
     vessel.autopilot.engaged('hold', vessel.turn)
     keeper.factor = 100
     vessel.engine.throttled(0.5)
@@ -58,31 +59,38 @@ class TestInstruments(SpaceTest):
     self.assertTrue(cockpit.controlOf('hold').peep.latched)
     self.assertEqual(kit.ticks, 4)
     self.assertEqual(kit.snaps, 2)
-    self.assertEqual(kit.clicks, 1)
+    self.assertEqual(kit.clicks, clicked + 1)
     self.assertAlmostEqual(cockpit.controlOf('throttle').peep.value, 0.5)
     lit = dict(zip(LEGENDS, kit.legends))
     self.assertTrue(lit['HOLD'] and lit['MAP'] and lit['VIEW'])
-    self.assertFalse(lit['PRO'] or lit['ASCENT'])
+    self.assertTrue(lit['ORBIT'])
+    self.assertFalse(lit['PRO'] or lit['ENGAGE'] or lit['RNDZ'])
     kit.acted(1.0, vessel, system, keeper, guidance, True, True, 'go')
-    self.assertEqual((kit.snaps, kit.ticks, kit.clicks), (2, 4, 1))
+    self.assertEqual((kit.snaps, kit.ticks, kit.clicks),
+                     (2, 4, clicked + 1))
 
   def test_keys(self) -> None:
     """A key pressed sinks and clicks (a mode's too); knobs and the
     lever are not pressed (they follow what they work); the play key
-    stays in while the tape plays."""
+    stays in while the tape plays (the autopilot's ORBIT chosen and the
+    LAUNCH key, the engine lit, stay in from the first frame)."""
     system, vessel, keeper, guidance, kit = self._ready()
+    kit.acted(0.0, vessel, system, keeper, guidance, False, True, 'go')
+    self.assertTrue(kit.cockpit.controlOf('ap orbit').peep.latched)
+    self.assertTrue(kit.cockpit.controlOf('launch').peep.latched)
+    base = kit.clicks
     kit.pressed('toAp')
-    self.assertEqual(kit.clicks, 1)
+    self.assertEqual(kit.clicks, base + 1)
     self.assertEqual(kit.cockpit.controlOf('toAp').peep.target, 1.0)
     kit.pressed('hold')
     kit.pressed('warp')
-    self.assertEqual(kit.clicks, 2)
+    self.assertEqual(kit.clicks, base + 2)
     kit.deck.play()
     kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
     play = kit.cockpit.controlOf('play').peep
     self.assertTrue(play.latched)
     self.assertEqual(play.value, 1.0)
-    self.assertEqual(kit.clicks, 4)
+    self.assertEqual(kit.clicks, base + 4)
     kit.deck.halt()
     kit.acted(0.5, vessel, system, keeper, guidance, False, True, 'go')
     self.assertFalse(play.latched)

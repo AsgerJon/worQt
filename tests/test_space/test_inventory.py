@@ -97,6 +97,25 @@ class TestInventory(SpaceTest):
     vitals.food = FOOD
     self.assertNotEqual(vitals.munched(), '')
 
+  def test_snacks(self) -> None:
+    """A few bags of pork scratchings are in the inventory beside the
+    bars (user, 2026-11-17: "where there should be a few snacks"); held
+    and eaten, one fewer."""
+    inventory, vitals = Inventory(), Vitals()
+    bags = [s for s in inventory.slots if s is not None
+            and s[0] == 'scratchings']
+    self.assertEqual(len(bags), 1)
+    self.assertGreater(bags[0][1], 1)
+    inventory.clicked(HOTBAR + 1, False)
+    inventory.clicked(5, False)
+    inventory.chosen(5)
+    self.assertEqual(inventory.held, 'scratchings')
+    count = inventory.slots[5][1]
+    vitals.food = FOOD - 2.0 * BAR
+    self.assertEqual(vitals.snacked(), '')
+    self.assertTrue(inventory.usedUp())
+    self.assertEqual(inventory.slots[5][1], count - 1)
+
   def test_pictures(self) -> None:
     """Every item has its icon ('PIXELS' square) and its meshes in his
     hand."""

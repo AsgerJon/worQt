@@ -156,28 +156,6 @@ class TestBolts(SpaceTest):
     hatch = (0.0, 0.0, PORT_LOW)
     self.assertLess(math.dist(hatch, bolts[0][0]), GUN_REACH)
 
-  def test_picked(self) -> None:
-    """The gun picks up its bolt once he is near where it holds him
-    (user, 2026-11-17: "right click pulls Asger towards it, but only as
-    long as Asger holds right click *or* Asger gets close enough to it
-    to "pick" up the bolt"): from then on he holds on; let go, not."""
-    from worQt.gaming.space._crewman import PICKED_UP, Crewman
-    crewman = Crewman()
-    crewman.unbuckled()
-    bolt = rocketBolts()[0]
-    hold = holdOf(bolt)
-    crewman.towed(0, hold)
-    crewman.middle = tuple(h + 1.0 for h in hold)
-    self.assertFalse(crewman.picked())
-    self.assertFalse(crewman.attached)
-    crewman.middle = tuple(h + 0.5 * PICKED_UP for h in hold[:1]) + hold[1:]
-    self.assertTrue(crewman.picked())
-    self.assertTrue(crewman.attached)
-    self.assertFalse(crewman.picked())
-    crewman.letGo()
-    self.assertFalse(crewman.attached)
-    self.assertIsNone(crewman.towTo)
-
   def test_walls(self) -> None:
     """The gun takes no bolt through a wall (user, 2026-11-17: "the
     gravgun should not be able to grab bolts through walls"): one beyond

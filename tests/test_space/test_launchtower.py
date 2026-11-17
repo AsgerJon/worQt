@@ -131,7 +131,7 @@ class TestLaunchTower(SpaceTest):
   def _world(self) -> tuple:
     """Returns his cockpit (him up), the cabin's world with the tower's
     rooms and solids, and the felt pull of the pad (one g)."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, G0)
     cockpit.gotUp()
@@ -155,7 +155,7 @@ class TestLaunchTower(SpaceTest):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
       crewman.righted(pull, FRAME)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
-      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
 
   def test_enter_lift(self) -> None:
     """From the hall he walks into the lift's car through its door (user,

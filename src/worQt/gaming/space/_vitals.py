@@ -20,6 +20,9 @@ from ._cockpit import SCALE
 #  each two points: as a game's bars).
 HEALTH = 20.0
 FOOD = 20.0
+#  Within this of his whole food he is full: he eats no more, and time
+#  may warp (user, 2026-11-17: "fully saturated").
+FULL_WITHIN = 0.5
 #  Pulled harder than 'CRUSHING_FROM' g it hurts him, 'CRUSHING' of his
 #  health a second for each g past it squared: three g kills him in 80
 #  s, four g in 20 s, two g never.
@@ -106,17 +109,19 @@ class Vitals:
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def lived(self, seconds: float, gees: float,
-            seated: bool = False) -> None:
+  def lived(self, seconds: float, gees: float, seated: bool = False,
+            warped: bool = False) -> None:
     """The 'lived' method lives 'seconds' s (real time) pulled 'gees' g:
-    hungrier the harder he is pulled, hurt past two g (not 'seated': his
-    chair keeps him from the pull's harm, user, 2026-11-17: "When Asger
-    sits in the seat, he is protected from damage taken by g forces") or
-    starving, mending when fed and unhurt, a ration eaten on; dead at no
-    health (what killed him in 'cause')."""
+    hungrier the harder he is pulled (not while time is 'warped': user,
+    2026-11-17, "During warp, Asger does not lose hunger"), hurt past two
+    g (not 'seated': his chair keeps him from the pull's harm, user,
+    2026-11-17: "When Asger sits in the seat, he is protected from damage
+    taken by g forces") or starving, mending when fed and unhurt, a
+    ration eaten on; dead at no health (what killed him in 'cause')."""
     if self.cause is not None or seconds <= 0.0:
       return
-    hunger = FOOD / FOOD_LASTS * HUNGRIER ** min(1.0, max(0.0, gees - 1.0))
+    hunger = 0.0 if warped else FOOD / FOOD_LASTS * HUNGRIER ** min(
+      1.0, max(0.0, gees - 1.0))
     self.food = max(0.0, self.food - hunger * seconds)
     if self.eating > 0.0:
       self.eating -= seconds
@@ -161,7 +166,7 @@ class Vitals:
       return 'Asger is dead'
     if self.eating > 0.0:
       return 'Asger is eating'
-    if self.food >= FOOD - 0.5:
+    if self.food >= FOOD - FULL_WITHIN:
       return 'Asger is full'
     self.eating, self.meals = EATING, self.meals + 1
     self.bite, self.took = RATION, EATING
@@ -175,7 +180,7 @@ class Vitals:
       return 'Asger is dead'
     if self.eating > 0.0:
       return 'Asger is eating'
-    if self.food >= FOOD - 0.5:
+    if self.food >= FOOD - FULL_WITHIN:
       return 'Asger is full'
     self.eating, self.snacks = SNACKING, self.snacks + 1
     self.bite, self.took = SNACK, SNACKING
@@ -188,7 +193,7 @@ class Vitals:
       return 'Asger is dead'
     if self.eating > 0.0:
       return 'Asger is eating'
-    if self.food >= FOOD - 0.5:
+    if self.food >= FOOD - FULL_WITHIN:
       return 'Asger is full'
     self.eating, self.snacks = MUNCHING, self.snacks + 1
     self.bite, self.took = BAR, MUNCHING
@@ -203,6 +208,13 @@ class Vitals:
       self.reminded = True
       return True
     return False
+
+  @property
+  def full(self, ) -> bool:
+    """The 'full' property says whether he is fed full (user,
+    2026-11-17: "Asger must be seated and fully saturated for warp to be
+    permitted")."""
+    return self.food >= FOOD - FULL_WITHIN
 
   @property
   def eaten(self, ) -> float:

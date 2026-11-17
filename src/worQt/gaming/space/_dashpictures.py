@@ -15,22 +15,24 @@ from __future__ import annotations
 
 import math
 
-from ._cockpit import CAPS, CONSOLE_KEYS, DECK_KEYS, DIALS, DIAL_RADIUS
+from ._cockpit import CAPS, CHECK_AT, CHECK_LINE, CHECK_RADIUS
+from ._cockpit import CONSOLE_KEYS, DECK_KEYS, DIALS, DIAL_RADIUS
 from ._cockpit import FACE_HIGH, FACE_LOW, FRAME, GLOBE_ON, HOOD_HIGH
 from ._cockpit import HOOD_RADIUS, HOOD_SPAN, KEYS, KNOBS, KNOB_RADIUS
 from ._cockpit import LAMPS, LIT_KEYS, PANEL_RADIUS, PANEL_SPAN
-from ._cockpit import PAPER_AT, PAPER_HIGH, PAPER_WIDE, RANGE, SCREEN_AT
-from ._cockpit import SCREEN_HALF, SECTIONS, STATUS, THROTTLE_AT
-from ._cockpit import THROTTLE_LONG, panelWide
+from ._cockpit import PAPER_AT, PAPER_HIGH, PAPER_WIDE, RANGE
+from ._cockpit import PANEL_DIALS, PORT, SECTIONS, STATUS
+from ._cockpit import THROTTLE_AT, THROTTLE_KNOB, panelWide
 from ._ascentguidance import TARGETS
 from ._dashboard import DIAL_SCALES, LEGENDS, dialAngle, dialShare
 from ._dashboard import readoutLayout
 from ._looks import cacheFolder
+from ._quest import CHECKLIST
 
 #  The pictures' versions (a change paints them anew) and sizes, pixels:
 #  the face's across and up (as many a metre each way along its middle
 #  line and up its slant), the hood's, a dial's, a label's cell.
-VERSION = 15
+VERSION = 16
 FACE_ACROSS = 2.0 * PANEL_RADIUS * PANEL_SPAN
 HOOD_ACROSS = 2.0 * HOOD_RADIUS * HOOD_SPAN
 FACE = (4096, round(4096 * (FACE_HIGH - FACE_LOW) / FACE_ACROSS))
@@ -48,7 +50,7 @@ ORBIT_MARKS = tuple('%d' % (target / 1e3) for target in TARGETS)
 LIMIT_MARKS = ('\u00bc', '\u00bd', '\u00be', '1', '1\u00bd', '2', '3',
                '4')
 #  Each knob's marks and its unit, by its action.
-KNOB_MARKS = {'warp': (WARP_MARKS, ''), 'orbit': (ORBIT_MARKS, '  KM'),
+KNOB_MARKS = {'warp': (WARP_MARKS, ''), 'orbit': (ORBIT_MARKS, ''),
               'limit': (LIMIT_MARKS, '  G')}
 #  The keys' faces' names: the panel's (but the lit ones: 'LEGENDS'),
 #  the consoles' and the deck's (the deck's and the console's tape keys
@@ -60,8 +62,8 @@ KEY_NAMES = tuple(dict.fromkeys(
 SYMBOLS = {'PLAY': '\u25b6', 'STOP': '\u25a0', 'EJECT': '\u23cf',
            'UP': '\u25b2', 'DOWN': '\u25bc', 'LEFT': '\u25c0',
            'RIGHT': '\u25b6'}
-#  What is printed under the AUTOPILOT's two numbered keys.
-STEPS_SAID = {'ASCENT': 'TO ORBIT', 'RNDZ': 'TO TERRA PRIME'}
+#  The LAUNCH key's cap: white on signal red.
+LAUNCH_RED = (196, 30, 24)
 
 
 def picturesReady() -> dict:
@@ -137,8 +139,10 @@ class _Print:
     self.painter.restore()
 
   def text(self, right: float, up: float, words: str, size: float,
-           colour: str = '#1c1c1e', bold: bool = True) -> None:
-    """Prints 'words' centred at 'right', 'up', 'size' m high."""
+           colour: str = '#1c1c1e', bold: bool = True,
+           left: bool = False) -> None:
+    """Prints 'words' centred at 'right', 'up' (or beginning there:
+    'left'), 'size' m high."""
     from PySide6.QtCore import QRectF, Qt
     from PySide6.QtGui import QColor, QFont
     font = QFont('Sans')
@@ -149,8 +153,13 @@ class _Print:
     self.painter.setPen(QColor(colour))
     self.about(right, up)
     wide, high = self.metres(0.12), self.metres(size)
-    self.painter.drawText(QRectF(-wide, -high, 2 * wide, 2 * high),
-                          Qt.AlignmentFlag.AlignCenter, words)
+    if left:
+      self.painter.drawText(QRectF(0.0, -high, 2 * wide, 2 * high),
+                            Qt.AlignmentFlag.AlignLeft
+                            | Qt.AlignmentFlag.AlignVCenter, words)
+    else:
+      self.painter.drawText(QRectF(-wide, -high, 2 * wide, 2 * high),
+                            Qt.AlignmentFlag.AlignCenter, words)
     self.done()
 
 
@@ -217,6 +226,7 @@ def facePainted() -> object:
     sheet.text(left + 0.01 + 0.004 * len(title), top - 0.011, title,
                0.0095)
   for (u, v), (hw, hh), margin in ((STATUS[0], STATUS[1], 0.004),
+                                   (PORT[0], PORT[1], 0.004),
                                    (PAPER_AT, (0.5 * PAPER_WIDE,
                                                0.5 * PAPER_HIGH), 0.004)):
     x0, y0 = sheet.at(u - hw - margin, v + hh + margin)
@@ -226,12 +236,8 @@ def facePainted() -> object:
     painter.drawRoundedRect(QRectF(x0, y0, x1 - x0, y1 - y0), 10, 10)
   for name, key, action, (u, v), half in KEYS:
     sheet.text(u, v - half[1] - 0.009, key, 0.0062, '#3a3a3e', False)
-    if name in STEPS_SAID:
-      sheet.text(u, v + half[1] + 0.009, STEPS_SAID[name], 0.0065)
-  sheet.text(-0.362, 0.061, 'ATTITUDE', 0.0065)
-  sheet.text(0.475, 0.115, 'THRUSTERS', 0.0065)
-  sheet.text(SCREEN_AT[0], SCREEN_AT[1] - SCREEN_HALF[1] - 0.026, 'CCTV',
-             0.0065)
+  sheet.text(-0.358, 0.058, 'MODE', 0.0065)
+  sheet.text(0.565, -0.07, 'THRUSTERS', 0.0058)
   for name, key, action, (u, v), notches, near, step in KNOBS:
     marks, unit = KNOB_MARKS[action]
     sheet.text(u, v - KNOB_RADIUS - 0.026, '%s%s  %s' % (name, unit, key),
@@ -251,20 +257,40 @@ def facePainted() -> object:
       sheet.text(u + reach * math.sin(-angle) / wide,
                  v + reach * math.cos(angle), mark, 0.0062)
   u, v = THROTTLE_AT
-  for k in range(5):
-    at = v + THROTTLE_LONG * k / 4.0
-    sheet.about(u, at)
-    painter.setPen(QPen(QColor('#1c1c1e'), 4))
-    painter.drawLine(QPointF(-sheet.metres(0.024), 0.0),
-                     QPointF(-sheet.metres(0.012), 0.0))
-    sheet.done()
-    sheet.text(u - 0.036 / panelWide(at), at, '%d' % (25 * k), 0.0065)
-  sheet.text(u, v - 0.024, 'THRUST %', 0.0075)
-  sheet.text(u, v - 0.036, '+  \u2212', 0.0062, '#3a3a3e', False)
+  low = v - THROTTLE_KNOB - 0.012
+  sheet.text(u, low, 'THROTTLE', 0.0075)
+  sheet.text(u, low - 0.012, 'IN: MORE   OUT: LESS', 0.0052)
+  sheet.text(u, low - 0.022, '+  \u2212', 0.0062, '#3a3a3e', False)
+  for name, (u, v) in DIALS:
+    if name in PANEL_DIALS:
+      sheet.text(u, v - DIAL_RADIUS - 0.012, '%s  %s' % (
+        name, DIAL_SCALES[name][3]), 0.0068)
+  _checklistPrinted(painter, sheet)
   sheet.text(GLOBE_ON[0] + 0.66, FACE_LOW + 0.006, 'worQt', 0.007,
              '#d8b8a0', False)
   painter.end()
   return image
+
+
+def _checklistPrinted(painter: object, sheet: _Print) -> None:
+  """Prints the LAUNCH key's checklist ('_quest.CHECKLIST'): its title,
+  each line numbered beside its lamp's hole (the lamps are pieces of
+  their own, lit as each step is done)."""
+  from PySide6.QtCore import QPointF
+  from PySide6.QtGui import QColor, QPen
+  u, v = CHECK_AT
+  sheet.text(u - CHECK_RADIUS, v + 0.014, 'LAUNCH CHECKLIST', 0.0062,
+             '#1c1c1e', True, True)
+  for k, (_, line) in enumerate(CHECKLIST):
+    at = v - k * CHECK_LINE
+    sheet.about(u, at)
+    painter.setPen(QPen(QColor(40, 40, 44), 3))
+    painter.setBrush(QColor(14, 14, 14))
+    radius = sheet.metres(CHECK_RADIUS + 0.0012)
+    painter.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+    sheet.done()
+    sheet.text(u + CHECK_RADIUS + 0.004, at, '%d  %s' % (k + 1, line),
+               0.0054, '#1c1c1e', True, True)
 
 
 def hoodPainted() -> object:
@@ -286,6 +312,8 @@ def hoodPainted() -> object:
                                  HOOD[1] - 2 * border), 24, 24)
   pale = '#d8c8b0'
   for name, (u, v) in DIALS:
+    if name in PANEL_DIALS:
+      continue
     unit = DIAL_SCALES[name][3]
     sheet.text(u, v - DIAL_RADIUS - 0.012, '%s  %s' % (name, unit), 0.0068,
                pale)
@@ -329,10 +357,11 @@ def dialsPainted() -> object:
       a = dialAngle(share)
       return QPointF(cx + radius * math.sin(a), cy - radius * math.cos(a))
 
+    parts = 10 if turn is not None else 4
     for decade in range(len(ticks) - 1):
       low, high = ticks[decade][0], ticks[decade + 1][0]
-      for step in range(1, 10):
-        value = low + (high - low) * step / 10.0
+      for step in range(1, parts):
+        value = low + (high - low) * step / parts
         share = dialShare(name, value)
         painter.setPen(QPen(amber, 3))
         painter.drawLine(point(share, 0.42 * DIAL),
@@ -381,11 +410,13 @@ def labelsPainted() -> object:
       painter.setPen(QColor(255, 178, 70))
       painter.drawText(cell, Qt.AlignmentFlag.AlignCenter, words)
       continue
-    painter.fillRect(cell, QColor(208, 210, 213))
+    red = name == 'LAUNCH'
+    painter.fillRect(cell, QColor(*LAUNCH_RED) if red else QColor(
+      208, 210, 213))
     font.setPixelSize(54 if name in SYMBOLS else (40 if lines == 1
                                                   else 30))
     painter.setFont(font)
-    painter.setPen(QColor(24, 24, 26))
+    painter.setPen(QColor(250, 246, 240) if red else QColor(24, 24, 26))
     painter.drawText(QRectF(x, y + 6, CELL[0], 70),
                      Qt.AlignmentFlag.AlignCenter,
                      SYMBOLS.get(name, words))

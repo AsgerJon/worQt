@@ -23,9 +23,11 @@ from worQt.gaming.space._vessel import Vessel
 
 from . import SpaceTest
 
-#  The automatic docking's frame, s, and how long it may take at most.
+#  The automatic docking's frame, s, and how long it may take at most
+#  (user, 2026-11-17: "adjust the autodocking thing to use a high speed
+#  when closing in"; "DOCK: FINAL is moving so slooooooooow").
 STEP = 0.1
-LONGEST = 1800.0
+LONGEST = 600.0
 
 
 class TestDocking(SpaceTest):
@@ -69,7 +71,7 @@ class TestDocking(SpaceTest):
     self.assertFalse(port.caught(still))
     fast = dict(reading, closing=2.0)
     self.assertFalse(port.caught(fast))
-    port.latched(vessel, 0.0)
+    port.latched(vessel, system, 0.0)
     self.assertTrue(vessel.docked)
     port.heldOn(vessel, system, 30.0)
     later = port.readingOf(vessel, system, 30.0)
@@ -92,7 +94,7 @@ class TestDocking(SpaceTest):
   def test_auto(self) -> None:
     """From 1.5 km off the port, off its axis and drifting, the
     automatic docking brings the rocket in until the latch catches,
-    within half an hour, never closing fast."""
+    within ten minutes, never bumping, slow enough as it is caught."""
     system, station, port, vessel = self._near(300.0, 1500.0)
     vessel.placed(vessel.anchor, vessel.place, tuple(
       v + d for v, d in zip(vessel.velocity, (0.4, -0.3, 0.2))),
@@ -104,9 +106,8 @@ class TestDocking(SpaceTest):
     while t < LONGEST:
       reading = port.readingOf(vessel, system, t)
       if port.caught(reading):
+        fastest = reading['closing']
         break
-      if reading['distance'] < 20.0:
-        fastest = max(fastest, reading['closing'])
       guidance.acted(vessel, port, reading, t)
       flight.flown((vessel,), system, t, STEP, math.inf, station)
       self.assertEqual(vessel.bumped, 0.0)

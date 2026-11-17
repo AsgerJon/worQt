@@ -21,7 +21,7 @@ from worQt.gaming.sandbox import Pushbutton, Slider
 from ._cockpit import BALL_RADIUS, CAMERA_AT, CAMERA_LOOK, CAMERA_UP
 from ._cockpit import FLOOR, GLOBE_AT, GLOBE_AXES, GUARD_OPEN, LIT_KEYS
 from ._cockpit import panelPoint
-from ._dashboard import ALTIMETER, LEGENDS, ballCentre, dialAngle
+from ._dashboard import BUGS, LEGENDS, ballCentre, dialAngle
 from ._dashboard import dialAxes, dialCentre
 from ._dashboard import HATCH_HINGE, HATCH_OPEN, guardHinge, headPlace
 from ._dashboard import pieces
@@ -117,7 +117,7 @@ FLOOD_AT = (CAMERA_AT[0], CAMERA_AT[1], CAMERA_AT[2] + 0.15)
 #  going round below 'ROUND_BELOW' g (nothing carries their hot air
 #  up).
 NEEDLE_GLOW = 0.45
-GLINT_GLOWS = {'warp': 1.3}
+GLINT_GLOWS = {'warp': 1.3, 'action': 1.3}
 GLOWS = {'flames': 2.4, 'flames round': 2.0, 'shade': 0.55, 'bulbs': 1.8}
 ROUND_BELOW = 0.2
 #  How far the tape deck's stop and play knob turns from stop to play
@@ -357,6 +357,11 @@ class Scenery:
       angle = dialAngle(dash['needles'][what])
       return (there(dialCentre(what)), product(turn, aboutAxis(
         dialAxes(what)[2], -angle)), True, NEEDLE_GLOW)
+    if kind == 'glint' and isinstance(what.peep, Pushbutton):
+      peep = what.peep
+      shown = bool(dash['legends'][LEGENDS.index(what.name)])
+      return (there(tuple(p + peep.sunk() * a for p, a in zip(
+        peep.pivot, peep.axis))), turn, shown, GLINT_GLOWS[what.action])
     if kind == 'glint':
       peep = what.peep
       return (there(peep.pivot), product(turn, aboutAxis(peep.axis,
@@ -411,8 +416,14 @@ class Scenery:
       return (there((0.0, 0.0, 0.0)), turn, True,
               LEGEND_ON if dash['legends'][what] else LEGEND_OFF)
     if kind == 'bug':
-      return (there(dialCentre(ALTIMETER)), product(turn, aboutAxis(
-        dialAxes(ALTIMETER)[2], -dialAngle(dash['bug']))), True, 0.0)
+      dial = BUGS[what]
+      return (there(dialCentre(dial)), product(turn, aboutAxis(
+        dialAxes(dial)[2], -dialAngle(dash['bugs'][what]))), True, 0.0)
+    if kind == 'check':
+      checks = dash.get('checks', ())
+      lit = what < len(checks) and checks[what]
+      return (there((0.0, 0.0, 0.0)), turn, True,
+              LAMP_ON if lit else LAMP_OFF)
     if kind == 'deck':
       part, index, _, pivot = movingParts()[what][:4]
       angle = (dash['reels'][index] if part == 'reel'

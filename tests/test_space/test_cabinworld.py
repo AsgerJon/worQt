@@ -21,18 +21,20 @@ from __future__ import annotations
 import math
 
 from worQt.gaming.space._accelerometer import Accelerometer
-from worQt.gaming.space._bolts import holdOf, rocketBolts
+from worQt.gaming.space._bolts import rocketBolts
 from worQt.gaming.space._aerospike import G0
 from worQt.gaming.space._cabinworld import CabinWorld, restingLoose
 from worQt.gaming.space._cockpit import FLOOR, Cockpit
-from worQt.gaming.space._crewman import LOW, MIDDLE, PUSH, STEP, TALL
-from worQt.gaming.space._crewman import WIDE
+from worQt.gaming.space._crewman import HEFT, LOW, MIDDLE, PUSH, STEP
+from worQt.gaming.space._crewman import TALL, WIDE
+from worQt.gaming.space._furnishings import looseThings
+from worQt.gaming.space._gravgun import PULL, PULSE, PUNT, GravGun
 from worQt.gaming.space._launchtower import GROUND
 
 from . import FRAME, SpaceTest
 
 #  Asger's legs at rest: nothing wanted, no leap.
-STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0), 0)
+STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
 #  Where on the pad's open ground his box is tried (his soles), m.
 ARENA = (12.0, 12.0, GROUND)
 
@@ -51,7 +53,7 @@ class TestCabinWorld(SpaceTest):
     for k in range(int(round(seconds / FRAME))):
       leap = want[3] if k == 0 else (0.0, 0.0, 0.0)
       world.stepped(FRAME, meter, cockpit.crewman,
-                    want[:3] + (leap, want[4]))
+                    want[:3] + (leap,))
 
   def _moved(self, world: CabinWorld) -> float:
     """Returns how far the loose thing that moved most is from where it
@@ -64,7 +66,7 @@ class TestCabinWorld(SpaceTest):
     where they rest."""
     cockpit = Cockpit()
     for felt in ((0.0, 0.0, G0), (0.0, 0.0, 0.0)):
-      world, meter = CabinWorld('cpu'), Accelerometer()
+      world, meter = CabinWorld('cpu'), self.stillMeter()
       meter.felt = felt
       self._stepped(world, meter, cockpit, 1.0, STILL)
       self.assertLess(self._moved(world), 0.005, felt)
@@ -73,7 +75,7 @@ class TestCabinWorld(SpaceTest):
     """Up under four g he stands on the floor; in one g he walks back
     from his chair at most at his stride (a third of a second: then the
     hull leaning in over him meets his box's top)."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, 4.0 * G0)
     cockpit.gotUp()
@@ -86,7 +88,7 @@ class TestCabinWorld(SpaceTest):
     for _ in range(20):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
       want = crewman.wantOf({'back'}, cockpit.yaw, cockpit.pitch, pull)
-      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
     gone = began[0] - crewman.middle[0]
     self.assertGreater(gone, 0.7)
     self.assertLess(gone, 1.0)
@@ -94,7 +96,7 @@ class TestCabinWorld(SpaceTest):
   def test_floating(self) -> None:
     """Weightless he pushes off the floor and drifts on up, slowing
     only a little in the air."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, 0.0)
     cockpit.gotUp()
@@ -104,7 +106,7 @@ class TestCabinWorld(SpaceTest):
     leap = crewman.leapOf((0.0, 0.0, 0.0))
     self.assertClose(leap, (0.0, 0.0, PUSH), 1e-6)
     low = crewman.middle[2]
-    self._stepped(world, meter, cockpit, 0.3, STILL[:3] + (leap, 0))
+    self._stepped(world, meter, cockpit, 0.3, STILL[:3] + (leap,))
     self.assertGreater(crewman.middle[2] - low, 0.55)
     self.assertGreater(crewman.velocity[2], 0.95 * PUSH)
     self.assertFalse(crewman.touches)
@@ -112,7 +114,7 @@ class TestCabinWorld(SpaceTest):
   def test_thud(self) -> None:
     """Landing from a jump in one g thuds, and lands about as fast as
     he jumped."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, G0)
     cockpit.gotUp()
@@ -122,37 +124,110 @@ class TestCabinWorld(SpaceTest):
     before, landed = world.thuds, 0.0
     for k in range(60):
       world.stepped(FRAME, meter, crewman, STILL[:3] + (
-        leap if k == 0 else (0.0, 0.0, 0.0), 0))
+        leap if k == 0 else (0.0, 0.0, 0.0),))
       landed = max(landed, world.landed)
     self.assertGreater(world.thuds, before)
     self.assertLess(abs(landed - leap[2]), 0.5)
 
-  def test_towed(self) -> None:
-    """Weightless, the gravity gun pulls him to the nearest magic bolt on
-    the wall and holds him there, never faster than its speed."""
-    cockpit, meter = Cockpit(), Accelerometer()
+  def _gunned(self, world: CabinWorld, meter: Accelerometer,
+              crewman: object, gun: GravGun, there: object,
+              thing: int | None, seconds: float) -> float:
+    """Steps 'world' 'seconds' s weightless, the Grav-Gun 'gun' acting
+    from his middle on what is at 'there()' (a loose thing's index
+    'thing', None: a bolt the hull holds): its force on him over his
+    mass, the other way on the thing over its; returns his fastest."""
+    fastest = 0.0
+    for _ in range(int(round(seconds / FRAME))):
+      force = gun.pushOf(crewman.middle, there(), FRAME)
+      onThing = (0.0, 0.0, 0.0)
+      if thing is not None:
+        heft = looseThings()[thing][4]
+        onThing = tuple(-f / heft for f in force)
+      world.stepped(FRAME, meter, crewman, STILL, (tuple(
+        f / HEFT for f in force), thing, onThing))
+      fastest = max(fastest, math.hypot(*crewman.velocity))
+    return fastest
+
+  def test_field(self) -> None:
+    """Weightless, the Grav-Gun's field on the magic bolt on the ceiling
+    over him pulls him up to it, harder the further (user, 2026-11-17: "a force ...
+    that increases in magnitude with distance"): a spring's pull, so he
+    comes in no faster than it lets him (the root of its pull over his
+    mass times how far he was), meets the ceiling by the bolt, and slides
+    on along it as a spring swings (nothing takes his speed along it but
+    the cabin's air)."""
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
-    meter.felt = (0.0, 0.0, 0.0)
     cockpit.gotUp()
     crewman = cockpit.crewman
     bolts = rocketBolts()
-    walls = [j for j, (_, way) in enumerate(bolts) if abs(way[2]) < 0.5]
-    k = min(walls, key=lambda j: math.dist(holdOf(bolts[j]),
-                                           crewman.middle))
-    crewman.towed(k, holdOf(bolts[k]))
-    fastest = 0.0
-    for _ in range(int(round(4.0 / FRAME))):
-      world.stepped(FRAME, meter, crewman, STILL)
-      fastest = max(fastest, math.hypot(*crewman.velocity))
-    self.assertLess(math.dist(crewman.middle, holdOf(bolts[k])), 0.1)
-    self.assertLess(fastest, 6.1)
-    self.assertLess(math.hypot(*crewman.velocity), 0.1)
+    overhead = [j for j, (_, way) in enumerate(bolts) if way[2] < -0.5]
+    k = min(overhead, key=lambda j: math.dist(bolts[j][0], crewman.middle))
+    bolt = bolts[k][0]
+    far = math.dist(bolt, crewman.middle)
+    gun = GravGun()
+    gun.gripped(('bolt', k))
+    fastest, nearest, touched = 0.0, far, False
+    for _ in range(12):
+      fastest = max(fastest, self._gunned(world, meter, crewman, gun,
+                                          lambda: bolt, None, 0.5))
+      nearest = min(nearest, math.dist(crewman.middle, bolt))
+      touched = touched or crewman.touches
+    self.assertLess(nearest, 1.0)
+    self.assertTrue(touched)
+    self.assertLess(fastest, 1.05 * math.sqrt(PULL / HEFT) * far)
+    self.assertGreater(fastest, 0.5 * math.sqrt(PULL / HEFT) * far)
+
+  def test_pulse(self) -> None:
+    """Weightless, a pulse at a magic bolt pushes him off it, 'PUNT'
+    times the field's pull for 'PULSE' s: as fast as that impulse over
+    his mass; then the gun lets go."""
+    cockpit, meter = Cockpit(), self.stillMeter()
+    world = CabinWorld('cpu')
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    self._stepped(world, meter, cockpit, 0.1, STILL)
+    bolts = rocketBolts()
+    k = min(range(len(bolts)), key=lambda j: math.dist(
+      bolts[j][0], crewman.middle))
+    bolt = bolts[k][0]
+    far = math.dist(bolt, crewman.middle)
+    gun = GravGun()
+    gun.punted(('bolt', k))
+    self._gunned(world, meter, crewman, gun, lambda: bolt, None, 0.3)
+    want = PUNT * PULL * far * PULSE / HEFT
+    away = tuple(c - b for c, b in zip(crewman.middle, bolt))
+    size = math.hypot(*away)
+    speed = sum(v * a / size for v, a in zip(crewman.velocity, away))
+    self.assertAlmostEqual(speed, want, delta=0.15 * want)
+    self.assertIsNone(gun.acting)
+
+  def test_fetched(self) -> None:
+    """Weightless, the field on a loose thing pulls it to him and him a
+    hair to it: the same force each way, so the light thing does the
+    coming."""
+    cockpit, meter = Cockpit(), self.stillMeter()
+    world = CabinWorld('cpu')
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    self._stepped(world, meter, cockpit, 0.1, STILL)
+    places = [place for place, _ in world.shown()]
+    k = min(range(len(places)), key=lambda j: looseThings()[j][4] if (
+      math.dist(places[j], crewman.middle) < 6.0) else math.inf)
+    start = math.dist(places[k], crewman.middle)
+    gun = GravGun()
+    gun.gripped(('loose', k))
+    fastest = self._gunned(world, meter, crewman, gun,
+                           lambda: world.shown()[k][0], k, 1.0)
+    self.assertLess(math.dist(world.shown()[k][0], crewman.middle),
+                    0.5 * start)
+    self.assertLess(fastest, 0.1)
 
   def _arena(self, boxes: tuple) -> tuple:
     """Returns his cockpit (him up on the open ground at 'ARENA', facing
     x), the world with 'boxes' there (each its low and high corners from
     'ARENA') and the pad's pull (one g)."""
-    cockpit, meter = Cockpit(), Accelerometer()
+    cockpit, meter = Cockpit(), self.stillMeter()
     world = CabinWorld('cpu')
     meter.felt = (0.0, 0.0, G0)
     cockpit.gotUp()
@@ -183,7 +258,7 @@ class TestCabinWorld(SpaceTest):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
       crewman.righted(pull, FRAME)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
-      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0), 0))
+      world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
 
   def _soles(self, cockpit: Cockpit) -> tuple:
     """Returns his soles from 'ARENA'."""

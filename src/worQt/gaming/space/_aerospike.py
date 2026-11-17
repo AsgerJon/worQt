@@ -23,7 +23,9 @@ class Aerospike:
   engine control that restricts the engine output to a particular g";
   'limited'); what it pushes ('push', N: the throttle's share of its
   thrust, no more than 'most') and the fuel it burns doing so ('flow',
-  kg/s).
+  kg/s); whether it is 'lit' (user, 2026-11-17: "only after the launch
+  button will the rocket actually move": on the pad it stays dark,
+  however far it is opened, until the LAUNCH key lights it).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -35,6 +37,7 @@ class Aerospike:
   isp: float
   throttle: float
   most: float
+  lit: bool
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -44,7 +47,7 @@ class Aerospike:
     if thrust <= 0.0 or isp <= 0.0:
       raise ValueError('no engine pushes %r N at %r s' % (thrust, isp))
     self.thrust, self.isp, self.throttle = float(thrust), float(isp), 0.0
-    self.most = self.thrust
+    self.most, self.lit = self.thrust, True
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -53,7 +56,9 @@ class Aerospike:
   @property
   def push(self, ) -> float:
     """The 'push' property is the thrust at the throttle, no more than
-    the limiter lets it ('most'), N."""
+    the limiter lets it ('most'), N; nought unlit."""
+    if not self.lit:
+      return 0.0
     return min(self.most, self.thrust * self.throttle)
 
   @property

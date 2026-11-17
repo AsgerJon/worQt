@@ -79,13 +79,16 @@ class TestFurnishings(SpaceTest):
         light[2]) - WALL)
 
   def test_glint(self) -> None:
-    """The warp knob alone glints, on itself and on its guard's lid;
-    the cabin's lights are pieces of their own (they glow; the flames
-    round as well)."""
+    """The warp knob glints, on itself and on its guard's lid, and so
+    does WARP TO ACTION (user, 2026-11-17: "the same enchanted glint as
+    the general warp dial"), on its cap (no guard); nothing else; the
+    cabin's lights are pieces of their own (they glow; the flames round
+    as well)."""
     every = pieces(Cockpit().controls)
     glints = [(kind, what.action) for kind, what in every
               if kind.startswith('glint')]
-    self.assertEqual(glints, [('glint', 'warp'), ('glint lid', 'warp')])
+    self.assertEqual(glints, [('glint', 'warp'), ('glint lid', 'warp'),
+                              ('glint', 'action')])
     for kind in ('flames', 'flames round', 'shade', 'bulbs'):
       self.assertIn((kind, 0), every)
 

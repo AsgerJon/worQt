@@ -23,8 +23,13 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._dockingport import DockingPort
   from ._vessel import Vessel
 
-#  The docking thrusters push the rocket this hard, m/s² (each way).
+#  The docking thrusters push the rocket this hard by hand, m/s² (each
+#  way); the automatic docking's push its own, harder (user, 2026-11-17:
+#  "the "closing" phase can be very slow ... I know this is realistic and
+#  safe but also boring af. So adjust the autodocking thing to use a high
+#  speed when closing in").
 RCS_ACCEL = 0.15
+GUIDED_ACCEL = 1.0
 #  It docks from within 'REACH' m of the port, drifting no faster than
 #  'DRIFT_MOST' m/s from it.
 REACH = 5000.0
@@ -32,16 +37,26 @@ DRIFT_MOST = 50.0
 #  The final approach starts 'HOLD_OUT' m out on the station's axis,
 #  once the nose is within 'READY' (m, m/s, rad, rad/s: off the point,
 #  drifting, tilted, turning off the station's); then the nose comes in
-#  at 'FINAL_SPEED' m/s, kept on the axis 'CENTRING' a second.
+#  no faster than 'FINAL_FAST' m/s nor than it can slow braking at
+#  'FINAL_BRAKE' m/s² to 'FINAL_SPEED' m/s 'FINAL_NEAR' m out (user,
+#  2026-11-17: "DOCK: FINAL is moving so slooooooooow": it crept the
+#  whole 100 m at 0.3 m/s), kept on the axis 'CENTRING' a second, its
+#  drift brought to the speed it wants most of the way in
+#  'FINAL_SETTLE' s (braking, its drift lags the speed wanted by the
+#  braking times this: the latch takes no more than 1 m/s).
 HOLD_OUT = 100.0
 READY = (2.0, 0.2, math.radians(2.0), 0.01)
+FINAL_FAST = 5.0
+FINAL_BRAKE = 0.3
 FINAL_SPEED = 0.3
+FINAL_NEAR = 2.0
+FINAL_SETTLE = 1.0
 CENTRING = 0.2
 #  Closing in it goes no faster than 'APPROACH_FAST' m/s, nor than it can
 #  stop braking at 'BRAKE' m/s²; it brings its drift to the speed it
 #  wants most of the way in 'SETTLE' s.
-APPROACH_FAST = 5.0
-BRAKE = 0.08
+APPROACH_FAST = 30.0
+BRAKE = 0.5
 SETTLE = 2.0
 #  It never hurries time (user, 2026-11-17: "Warp should not be
 #  automatic!").
@@ -126,12 +141,15 @@ class DockingGuidance:
     else:
       along = reading['along']
       across = tuple(o - along * a for o, a in zip(offset, axis))
-      wanted = tuple(-CENTRING * c - FINAL_SPEED * a for c, a in zip(
+      speed = max(FINAL_SPEED, min(FINAL_FAST, math.sqrt(
+        2.0 * FINAL_BRAKE * max(0.0, along - FINAL_NEAR))))
+      wanted = tuple(-CENTRING * c - speed * a for c, a in zip(
         across, axis))
-    push = tuple((w - d) / SETTLE for w, d in zip(wanted, drift))
+    settle = SETTLE if self.phase == 'closing' else FINAL_SETTLE
+    push = tuple((w - d) / settle for w, d in zip(wanted, drift))
     size = norm(push)
-    if size > RCS_ACCEL:
-      push = tuple(p * RCS_ACCEL / size for p in push)
+    if size > GUIDED_ACCEL:
+      push = tuple(p * GUIDED_ACCEL / size for p in push)
     vessel.rcs = unrotated(vessel.turn, tuple(MASS * p for p in push))
 
   def stopped(self, vessel: Vessel) -> None:

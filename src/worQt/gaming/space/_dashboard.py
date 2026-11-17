@@ -28,13 +28,16 @@ from ._cockpit import CONSOLE_SWITCHES, DIAL_RADIUS
 from ._cockpit import DIALS, EYE, FACE_HIGH, FACE_LOW, GLASS, GLOBE_AT
 from ._cockpit import GLOBE_AXES, HOOD_DEEP, HOOD_HIGH, HOOD_RADIUS
 from ._cockpit import HOOD_SPAN, LEFT_CONSOLE, LIT_KEYS, NOSE, PANEL_AXES
-from ._cockpit import GUARD_KNOB, GUARD_SWITCH, LAMP_RADIUS
+from ._cockpit import GUARD_KNOB, GUARD_LAUNCH, GUARD_SWITCH, LAMP_RADIUS
+from ._cockpit import CHECK_AT, CHECK_LINE, CHECK_RADIUS
 from ._cockpit import LAMPS, LEGEND_HALF, MONITOR_OUT, PANEL_DEEP
 from ._cockpit import PANEL_RADIUS, PANEL_SPAN, PAPER_AT, RANGE, RISER
 from ._cockpit import PAPER_HIGH, PAPER_WIDE, RIGHT_CONSOLE, SCREEN_AT
-from ._cockpit import SCREEN_HALF, SIDEBOARD, SNACK_BAG, STATUS
-from ._cockpit import THROTTLE_AT, THROTTLE_LONG, TOP
+from ._cockpit import PORT, SCREEN_HALF, SIDEBOARD, SNACK_BAG, STATUS
+from ._cockpit import THROTTLE_AT, THROTTLE_KNOB, THROTTLE_TRAVEL, TOP
+from ._cockpit import dialFrame, dialPoint
 from ._cockpit import hoodAxes, hoodPoint, panelAxes, panelPoint
+from ._quest import CHECKLIST
 from ._deckmodel import movingParts
 from ._elevator import PLATE_HALVES
 from ._stationinterior import HATCH
@@ -54,9 +57,10 @@ TAU = 2.0 * math.pi
 #  Half a horizon mark's decal, m.
 DECAL = 0.02
 #  The dials' scales: each dial's name, the value its scale's log turns
-#  round at (a hundred metres, ten metres a second), its last value, its
-#  ticks (value and the number printed) and its unit; the needle sweeps
-#  'SWEEP' rad from its first tick (clockwise seen from before it).
+#  round at (a hundred metres, ten metres a second; None: the scale is
+#  even, the THRUST's in g), its last value, its ticks (value and the
+#  number printed) and its unit; the needle sweeps 'SWEEP' rad from its
+#  first tick (clockwise seen from before it).
 DIAL_SCALES = {
   'HEIGHT': (100.0, 1e6, ((0.0, '0'), (1e3, '1'), (1e4, '10'),
                           (1e5, '100'), (1e6, '1000')), 'KM'),
@@ -65,10 +69,15 @@ DIAL_SCALES = {
   'APOAPSIS': (100.0, 1e6, ((0.0, '0'), (1e3, '1'), (1e4, '10'),
                             (1e5, '100'), (1e6, '1000')), 'KM'),
   'PERIAPSIS': (100.0, 1e6, ((0.0, '0'), (1e3, '1'), (1e4, '10'),
-                             (1e5, '100'), (1e6, '1000')), 'KM')}
+                             (1e5, '100'), (1e6, '1000')), 'KM'),
+  'THRUST': (None, 4.0, ((0.0, '0'), (1.0, '1'), (2.0, '2'), (3.0, '3'),
+                         (4.0, '4')), 'G')}
 SWEEP = math.radians(270.0)
-#  The altimeter: the dial the guidance's target is marked on.
+#  The dials marked by a bug: the altimeter at the ascent's target
+#  (pink), the THRUST at the limiter's (amber).
 ALTIMETER = [name for name, _ in DIALS].index('HEIGHT')
+THRUSTMETER = [name for name, _ in DIALS].index('THRUST')
+BUGS = (ALTIMETER, THRUSTMETER)
 #  The lamps' colours (0 to 255) by name: amber but the orbit's green and
 #  the ground's red.
 LAMP_COLOURS = {'ENGINE': (255, 160, 40), 'AIR': (255, 160, 40),
@@ -110,7 +119,7 @@ LIGHTS = {'flames': flamesRows, 'flames round': roundFlamesRows,
 #  The knobs that glint, enchanted (user, 2026-11-16 of the warp: "give
 #  it a sort of enchantment glint, as it is kinda... magic"), by their
 #  actions.
-ENCHANTED = ('warp',)
+ENCHANTED = ('warp', 'action')
 #  The hatch's lid hinges on its rim, just under the ceiling, opening
 #  down 'HATCH_OPEN' rad; the space station's elevators (cages).
 HATCH_HINGE = (HATCH, 0.0, NOSE - 0.035)
@@ -134,6 +143,8 @@ def dialShare(name: str, value: float) -> float:
   one (its scale a logarithm's: a needle's travel for every tenfold)."""
   turn, most, _, _ = DIAL_SCALES[name]
   value = max(0.0, min(most, value))
+  if turn is None:
+    return value / most
   return math.log10(1.0 + value / turn) / math.log10(1.0 + most / turn)
 
 
@@ -171,11 +182,12 @@ def pieces(controls: tuple) -> tuple:
   out += [('lamp', k) for k in range(len(LAMPS))]
   out += [('legend', k) for k in range(len(LIT_KEYS), len(LEGENDS))]
   out += [('deck', k) for k in range(len(movingParts()))]
-  out += [('bug', 0), ('typehead', 0)]
+  out += [('bug', k) for k in range(len(BUGS))] + [('typehead', 0)]
   out += [('guard', control) for control in controls if guarded(control)]
   out += [(kind, control) for control in controls
-          if control.action in ENCHANTED for kind in ('glint',
-                                                       'glint lid')]
+          if control.action in ENCHANTED for kind in (
+            ('glint', 'glint lid') if guarded(control) else ('glint',))]
+  out += [('check', k) for k in range(len(CHECKLIST))]
   out += [('flames', 0), ('flames round', 0), ('shade', 0), ('bulbs', 0)]
   out += [('loose', k) for k in range(len(looseParts()))]
   out += [('gun', k) for k in range(len(gunParts()))]
@@ -192,16 +204,24 @@ def pieces(controls: tuple) -> tuple:
 def guarded(control: object) -> bool:
   """Returns whether 'control' has a guard over it: each switch and
   knob (user, 2026-11-16: "it should have a safety gaurd that is lifted
-  up when adjusted. same for all toggle switch")."""
+  up when adjusted. same for all toggle switch") and the LAUNCH key."""
   peep = control.peep
-  return type(peep).__name__ == 'FourthPeep' or isinstance(peep, Knob)
+  return type(peep).__name__ == 'FourthPeep' or isinstance(
+    peep, Knob) or control.action == 'launch'
+
+
+def guardHalf(control: object) -> tuple:
+  """Returns half the size of 'control''s guard (across, up, out)."""
+  if control.action == 'launch':
+    return GUARD_LAUNCH
+  return GUARD_KNOB if isinstance(control.peep, Knob) else GUARD_SWITCH
 
 
 def guardHinge(control: object) -> tuple:
   """Returns where 'control''s guard hinges: on its face, at its far
   edge (its up side)."""
-  half = GUARD_KNOB if isinstance(control.peep, Knob) else GUARD_SWITCH
-  return pointAlong(control.peep.pivot, control.axes[1], half[1])
+  return pointAlong(control.peep.pivot, control.axes[1],
+                    guardHalf(control)[1])
 
 
 def ballCentre() -> tuple:
@@ -210,14 +230,21 @@ def ballCentre() -> tuple:
 
 
 def dialCentre(index: int) -> tuple:
-  """Returns dial 'index''s middle on the hood's face."""
-  u, v = DIALS[index][1]
-  return hoodPoint(u, v, 0.004)
+  """Returns dial 'index''s middle on its face (the hood's, or the
+  panel's: the THRUST's)."""
+  return dialPoint(index, 0.004)
 
 
 def dialAxes(index: int) -> tuple:
-  """Returns dial 'index''s axes (the hood's there)."""
-  return hoodAxes(DIALS[index][1][0])
+  """Returns dial 'index''s axes (its face's there)."""
+  return dialFrame(index)
+
+
+def checkCentre(index: int) -> tuple:
+  """Returns the LAUNCH checklist's lamp 'index''s middle on the
+  panel's face."""
+  u, v = CHECK_AT
+  return panelPoint(u, v - index * CHECK_LINE, 0.002)
 
 
 def lampCentre(index: int) -> tuple:
@@ -249,13 +276,14 @@ def headPlace(column: float) -> tuple:
 
 def readoutLayout() -> dict:
   """Returns the readouts' canvas's layout, pixels: its 'width' and
-  'height', the status line's height on its top ('status') and the
-  range's under it ('range'), the range's 'groups' (each its 'label',
-  where its first tube begins ('from'), how many 'tubes', a tube's
-  width ('tube'))."""
-  status, far = STATUS[1], RANGE[1]
+  'height', the status line's height on its top ('status'), the range's
+  under it ('range') and the docking port's numbers' under that
+  ('port'), the range's 'groups' (each its 'label', where its first tube
+  begins ('from'), how many 'tubes', a tube's width ('tube'))."""
+  status, far, port = STATUS[1], RANGE[1], PORT[1]
   statusHigh = round(READOUT_PIXELS * status[1] / status[0])
   rangeHigh = round(READOUT_PIXELS * far[1] / far[0])
+  portHigh = round(READOUT_PIXELS * port[1] / port[0])
   tubes = sum(count for _, count in RANGE_GROUPS)
   tube = READOUT_PIXELS / (tubes + GROUP_GAP * (len(RANGE_GROUPS) + 1))
   groups, at = [], GROUP_GAP * tube
@@ -263,8 +291,10 @@ def readoutLayout() -> dict:
     groups.append({'label': label, 'from': at, 'tubes': count,
                    'tube': tube})
     at += (count + GROUP_GAP) * tube
-  return {'width': READOUT_PIXELS, 'height': statusHigh + rangeHigh,
-          'status': statusHigh, 'range': rangeHigh, 'groups': groups}
+  return {'width': READOUT_PIXELS,
+          'height': statusHigh + rangeHigh + portHigh,
+          'status': statusHigh, 'range': rangeHigh, 'port': portHigh,
+          'groups': groups}
 
 
 def paperLayout() -> dict:
@@ -489,19 +519,25 @@ def paperFrame() -> tuple:
 
 
 def readoutRows() -> tuple:
-  """Returns the readouts' windows, both on the readouts' canvas: the
-  AUTOPILOT's status line on the panel (the canvas's top half) and Terra
-  Prime's range on the hood (its bottom half)."""
+  """Returns the readouts' windows, all on the readouts' canvas (top
+  to bottom): the AUTOPILOT's status line on the panel, Terra Prime's
+  range on the hood, the docking port's numbers on the panel under the
+  CCTV."""
   layout = readoutLayout()
-  split = layout['range'] / layout['height']
+  low = layout['port'] / layout['height']
+  split = (layout['port'] + layout['range']) / layout['height']
   (u, v), (hw, hh) = STATUS
   status = _sheet(panelPoint, panelAxes, _span(u - hw, u + hw,
                                                PANEL_RADIUS),
                   (v - hh, v + hh), 0.002, (0.0, split, 1.0, 1.0))
   (u, v), (hw, hh) = RANGE
   far = _sheet(hoodPoint, hoodAxes, _span(u - hw, u + hw, HOOD_RADIUS),
-               (v - hh, v + hh), 0.002, (0.0, 0.0, 1.0, split))
-  return joined([status, far])
+               (v - hh, v + hh), 0.002, (0.0, low, 1.0, split))
+  (u, v), (hw, hh) = PORT
+  port = _sheet(panelPoint, panelAxes, _span(u - hw, u + hw,
+                                             PANEL_RADIUS),
+                (v - hh, v + hh), 0.002, (0.0, 0.0, 1.0, low))
+  return joined([status, far, port])
 
 
 def snackBag() -> tuple:
@@ -518,11 +554,15 @@ def snackTray() -> tuple:
   return boxRows(foot, (half[0] + 0.03, 0.004, half[2] + 0.03), axes)
 
 
-def sliderTrack() -> tuple:
-  """Returns the throttle lever's slot up the panel."""
+def throttleBush() -> tuple:
+  """Returns the push-pull throttle's bush on the panel's face: the
+  collar its shaft runs through."""
   u, v = THROTTLE_AT
-  return boxRows(panelPoint(u, v + 0.5 * THROTTLE_LONG, 0.001), (
-    0.007, 0.5 * THROTTLE_LONG + 0.012, 0.002), panelAxes(u))
+  axes = panelAxes(u)
+  return joined([cylinderRows(panelPoint(u, v, -0.002), axes[2], 0.0095,
+                              0.009, 24),
+                 ringRows(panelPoint(u, v, 0.0), axes, 0.0095, 0.014,
+                          0.003)])
 
 
 def consoleBases() -> tuple:
@@ -649,13 +689,17 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'sring':
     return ringPieceRows()
   if kind == 'bug':
-    axes = dialAxes(ALTIMETER)
+    dial = BUGS[what]
+    axes = dialAxes(dial)
     right, up, out = axes
-    centre = dialCentre(ALTIMETER)
+    centre = dialCentre(dial)
     middle = pointAlong(pointAlong(centre, up, 0.86 * DIAL_RADIUS), out,
                         0.004)
     return boxRows(middle, (0.0024, 0.13 * DIAL_RADIUS, 0.0012), axes,
                    None, centre)
+  if kind == 'check':
+    return discRows(checkCentre(what), panelAxes(CHECK_AT[0]),
+                    CHECK_RADIUS, 16, None)
   return boxRows((0.0, 0.0, 0.0), HEAD_HALF, PANEL_AXES)
 
 
@@ -670,7 +714,7 @@ def pivotOf(piece: tuple) -> tuple:
   if kind == 'deck':
     return movingParts()[what][3]
   if kind == 'bug':
-    return dialCentre(ALTIMETER)
+    return dialCentre(BUGS[what])
   if kind == 'guard':
     return guardHinge(what)
   if kind == 'glint':
@@ -714,8 +758,7 @@ def _guardRows(control: object) -> tuple:
   input: a thin lid, its two sides and a lip at its free end (open at
   the hinge and underneath)."""
   right, up, out = control.axes
-  hx, hy, hz = GUARD_KNOB if isinstance(control.peep, Knob) else (
-    GUARD_SWITCH)
+  hx, hy, hz = guardHalf(control)
   hinge = guardHinge(control)
   t = GUARD_WALL
   middle = pointAlong(pointAlong(hinge, up, -hy), out, hz)
@@ -732,9 +775,16 @@ def _glintRows(control: object) -> tuple:
   """Returns an enchanted knob's glint (user, 2026-11-16, the warp: "give
   it a sort of enchantment glint, as it is kinda... magic"): a shell a
   hair round the knob about its pivot, its picture wrapped round its
-  side and across its top (the glint's streaks slide over it)."""
+  side and across its top (the glint's streaks slide over it); an
+  enchanted key's (WARP TO ACTION's) a box a hair over its cap."""
   right, up, out = control.axes
   pivot = control.peep.pivot
+  if isinstance(control.peep, Pushbutton):
+    half = control.half
+    return boxRows(pointAlong(pivot, out, 0.006), (half[0] + 0.0008,
+                                                   half[1] + 0.0008,
+                                                   0.0068),
+                   control.axes, (0.0, 0.0, 1.0, 1.0), pivot)
   radius, high = 1.07 * control.peep.length, 0.0175
   rows, faces = [], []
   sides = 40
@@ -797,11 +847,13 @@ def _inputRows(control: object, cells: dict) -> tuple:
                   cells.get(control.name))
     return joined([cap], pivot)
   if isinstance(peep, Slider):
-    stem = boxRows(pointAlong(pivot, out, 0.006), (0.004, 0.004, 0.006),
-                   control.axes)
-    grip = boxRows(pointAlong(pivot, out, 0.02), (0.03, 0.011, 0.009),
-                   control.axes)
-    return joined([stem, grip], pivot)
+    #  The push-pull knob: pushed in (nought along) it sits just off the
+    #  bush; its shaft runs back into the panel as far as it pulls out.
+    shaft = cylinderRows(pointAlong(pivot, out, -THROTTLE_TRAVEL), out,
+                         0.0045, THROTTLE_TRAVEL + 0.014, 16)
+    knob = frustumRows(pointAlong(pivot, out, 0.012), out, 0.8 *
+                       THROTTLE_KNOB, THROTTLE_KNOB, 0.02, 32)
+    return joined([shaft, knob], pivot)
   bat = cylinderRows(pivot, out, 0.0035, BAT_LONG, 12)
   tip = cylinderRows(tuple(p + BAT_LONG * n for p, n in zip(pivot, out)),
                      out, 0.006, 0.006, 12)

@@ -144,7 +144,6 @@ class CabinWorld:
     self.pushes = self._sent(numpy.zeros((len(masses), 3)), vec3)
     self.twists = self._sent(numpy.zeros((len(masses), 3)), vec3)
     self.asger = self._sent(numpy.zeros((2, 3)), vec3)
-    self.met = self._sent(numpy.zeros((2, 3)), vec3)
     self.thudding = self._sent([0.0, 0.0], wp.float32)
     self.landing = self._sent([0.0], wp.float32)
     self.body = self._sent(numpy.zeros((1, 3)), vec3)
@@ -161,13 +160,14 @@ class CabinWorld:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def stepped(self, seconds: float, accelerometer: Accelerometer,
-              crewman: Crewman, want: tuple) -> None:
+              crewman: Crewman, want: tuple, gun: tuple = None) -> None:
     """The 'stepped' method moves the cabin's bodies 'seconds' s on (real
     time), feeling what 'accelerometer' read; Asger ('crewman') too,
     unless he sits, his legs as 'want' asks ('Crewman.wantOf' and a leap:
-    the velocity wanted, walking, wanting, the leap's velocity, whether
-    it leaps touching nothing: off a magic bolt), or the gravity gun
-    pulling him to 'Crewman.towTo'."""
+    the velocity wanted, walking, wanting, the leap's velocity); and the
+    Grav-Gun's push ('gun': its force on Asger over his mass, m/s², the
+    loose thing it acts on (its index in 'shown', None: none) and its
+    force on that over its mass; None: no push), its own axes."""
     if seconds <= 0.0:
       return
     wp = self.wp
@@ -181,17 +181,16 @@ class CabinWorld:
     felt, turning, speeding = (vec3(*accelerometer.felt),
                                vec3(*accelerometer.turning),
                                vec3(*accelerometer.speeding))
+    onAsger, thing, onThing = gun or ((0.0, 0.0, 0.0), None,
+                                      (0.0, 0.0, 0.0))
     if present:
-      wanted, walking, wanting, leap, sure = want
+      wanted, walking, wanting, leap = want
       walked = self._walked
-      towing = 0 if crewman.towTo is None else 1
       for name, value in (
           ('felt', felt), ('turning', turning), ('speeding', speeding),
           ('wanted', vec3(*wanted)), ('leap', vec3(*leap)),
           ('up', vec3(*crewman.up)), ('walking', int(walking)),
-          ('wanting', int(wanting)),
-          ('towTo', vec3(*(crewman.towTo or (0.0, 0.0, 0.0)))),
-          ('towing', towing), ('sure', int(sure)),
+          ('wanting', int(wanting)), ('gun', vec3(*onAsger)),
           ('crouch', 1 if crewman.crouching else 0),
           ('docked', 1 if self.docked else 0), ('outside', self.outside),
           ('seconds', float(seconds))):
@@ -207,7 +206,9 @@ class CabinWorld:
     step = seconds / steps
     moved = self._moved
     for name, value in (('felt', felt), ('turning', turning),
-                        ('speeding', speeding), ('step', float(step))):
+                        ('speeding', speeding), ('step', float(step)),
+                        ('gunBody', -1 if thing is None else thing + 1),
+                        ('gun', vec3(*onThing))):
       moved.set_param_by_name(name, value)
     for k in range(steps):
       self._pressed.set_param_by_name('elapsed', float(k * step))
@@ -285,7 +286,7 @@ class CabinWorld:
       self.thudding, self.solidMiddles, self.solidTurns, self.solidHalves,
       self.solidVelocities, self.ways, self.near, self.nearCount, zero,
       zero, zero, zero, zero,
-      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, 0, 0, 0, 0, 0, self.own,
+      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, 0, 0, 0, self.own,
       1.0 / 60.0], [], [], [], device, None, False, False, True)
     pressed = wp.launch(kernels.pressed, self.pointCount, [
       self.places, self.turns, self.velocities, self.spins, self.masses,
@@ -297,9 +298,8 @@ class CabinWorld:
                       True)
     moved = wp.launch(kernels.moved, len(self._places), [
       self.places, self.turns, self.velocities, self.spins, self.masses,
-      self.inertias, self.pushes, self.twists, self.asger, self.met,
-      zero, zero, zero, zero, zero, zero, 0, 0, 0, zero, 0, 0, 0.0], [],
-                      [], [], device, None, False, False, True)
+      self.inertias, self.pushes, self.twists, self.asger, zero, zero,
+      zero, -1, zero, 0.0], [], [], [], device, None, False, False, True)
     return pressed, moved, walked, nearby
 
   def _asgerSent(self, crewman: Crewman) -> None:

@@ -74,7 +74,7 @@ class Flight:
     preloadedFlight(device)
     self.wp, self.kernels, self.device = wp, _flight_kernels, device
     self._sky, self._skyOf = None, None
-    self._fleet, self._fleetKey = None, None
+    self._fleet, self._fleetKey, self._dragless = None, None, False
     self.lastSteps, self.lastMs = 0, 0.0
     self._near = numpy.zeros(0, numpy.int32)
 
@@ -84,10 +84,12 @@ class Flight:
 
   def flown(self, vessels: tuple, system: SolarSystem, start: float,
             seconds: float, longest: float = math.inf,
-            station: Station = None) -> None:
+            station: Station = None, dragless: bool = False) -> None:
     """The 'flown' method moves 'vessels' 'seconds' s on through
     'system' from its time 'start' (s since its last leap), no step
-    longer than 'longest' s, meeting 'station's solids (if given), and
+    longer than 'longest' s, meeting 'station's solids (if given), the
+    air not dragging them if 'dragless' (time warped: user, 2026-11-17,
+    "When warp is activated we disregard drag from the atmosphere"), and
     hands each to the body it is then near."""
     if seconds <= 0.0 or not vessels:
       return
@@ -95,6 +97,7 @@ class Flight:
     wp = self.wp
     sky = self._skyFor(system)
     fleet = self._fleetOf(vessels, system)
+    self._draggedOrNot(fleet, len(vessels), bool(dragless))
     self._stationFor(fleet, vessels, system, station, start, seconds)
     wp.launch(self.kernels.flown, len(vessels), [
       sky, fleet, float(start), float(seconds),
@@ -158,6 +161,7 @@ class Flight:
     key = count, len(system.bodies)
     if self._fleetKey != key:
       self._fleet, self._fleetKey = self._fleetMade(count, key[1]), key
+      self._dragless = False
     rows = numpy.zeros((count, k.STATE), numpy.float32)
     for row, vessel in zip(rows, vessels):
       place = numpy.array(vessel.place, numpy.float64)
@@ -185,6 +189,17 @@ class Flight:
       row[k.ANCHOR] = vessel.anchor
     self._fleet.states.assign(rows)
     return self._fleet
+
+  def _draggedOrNot(self, fleet: object, count: int,
+                    dragless: bool) -> None:
+    """Gives the vessels their drag, or none ('dragless'), when that
+    changes."""
+    if dragless == self._dragless:
+      return
+    from ._vessel import DRAG
+    drag = (0.0, 0.0) if dragless else DRAG
+    fleet.drags.assign(numpy.asarray([drag] * count, numpy.float32))
+    self._dragless = dragless
 
   def _fleetMade(self, count: int, bodies: int) -> object:
     """Returns the fleet's arrays on the device for 'count' vessels in a
@@ -294,6 +309,8 @@ class Flight:
                     tuple(row[k.SPIN:k.SPIN + 3].tolist()))
       vessel.touching = int(row[k.TOUCHING])
       vessel.bumped = float(row[k.BUMP])
+      vessel.felt = tuple(row[k.FELT:k.FELT + 3].tolist())
+      vessel.spinning = tuple(row[k.SPINNING:k.SPINNING + 3].tolist())
       steps = max(steps, int(row[k.STEPS]))
     self.lastSteps = steps
 

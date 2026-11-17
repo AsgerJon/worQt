@@ -27,15 +27,28 @@ STEPS = (
   ('rested', 'Eat a ration, chill out on the sofa', False),
   ('read', 'Read the warning manual by the door', False),
   ('seated', 'Get ready: sit in your chair', False),
-  ('armed', 'Set the controls to rendezvous with Terra Prime (AUTO)',
-   True),
-  ('launched', 'Launch!', False),
+  ('armed', 'Set the autopilot to ORBIT (J) and engage it (C)', True),
+  ('launched', 'Launch! (Space: the red LAUNCH key)', False),
   ('orbit', 'Stay seated to avoid damage, into orbit', False),
-  ('docked', 'At Terra Prime: auto docking or dock by hand', False),
+  ('docked', 'At Terra Prime: the autopilot\'s RNDZ (H), then DOCK (N);'
+   ' or dock by hand', False),
   ('hub', 'Use the bolts to get into Terra Prime', False),
   ('deck', 'Take the elevator down to the deck', False))
 #  The parts of a step done once all of them are: eating and the sofa.
 PARTS = {'ate': 'rested', 'lounged': 'rested'}
+#  The LAUNCH key's checklist on the dashboard: the first eight steps as
+#  a checklist says them (user, 2026-11-17: "the relevant items from teh
+#  quests take diegetic shape in the form of a check list next it that
+#  includes the first 8 items (the eat and chill being reworded to be
+#  more formal on the checklist, whilst retaining the original relaxed
+#  wording on the quest)"): each step's name and its line.
+CHECKLIST = (('aboard', 'CREW ABOARD'), ('locked', 'HATCH LOCKED'),
+             ('dismissed', 'WALKWAY RETRACTED'),
+             ('rested', 'CREW FED AND RESTED'),
+             ('read', 'SAFETY BRIEFING READ'),
+             ('seated', 'PILOT SEATED, HARNESS ON'),
+             ('armed', 'AUTOPILOT SET (OPTIONAL)'),
+             ('launched', 'LAUNCH'))
 
 
 class Quest:

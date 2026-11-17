@@ -94,7 +94,13 @@ SLOTS = 5
 #  the path); out, its legs touching and the steps taken; in again, its
 #  docking thrusters' push (N, its own axes: user, 2026-11-17, docking)
 #  and the spin its held turn turns at (rad/s, the ecliptic's axes:
-#  matching the station's, 'MATCH').
+#  matching the station's, 'MATCH'); out, what the frame's forces but
+#  gravity pushed it a kilogram, on the average over the frame (m/s², its
+#  own axes: thrust, drag, the legs on the ground, the thrusters, the
+#  station's solids; what anything in it feels: user, 2026-11-17, "there
+#  better be a physically simulated such fucking thing every where it
+#  needs to be calculated") and how fast its spin changed over it
+#  (rad/s², its own axes).
 PLACE_HI, PLACE_LO, SPEED_HI, SPEED_LO = 0, 3, 6, 9
 TURN, SPIN, HEIGHT, PUSH, STEER = 12, 16, 19, 20, 21
 MODE, HELD, ANCHOR = 24, 25, 29
@@ -102,7 +108,8 @@ AIM_PITCH, AIM_TURN, AIM_HEADING, AIM_TRAVEL = 30, 31, 32, 33
 TOUCHING, STEPS = 34, 35
 RCS, MATCH_SPIN = 36, 39
 BUMP = 42
-STATE = 43
+FELT, SPINNING = 43, 46
+STATE = 49
 #  The shortest step, s, and the most a launch takes (a guard).
 LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
@@ -636,6 +643,8 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   vlo = vecAt(states, i, SPEED_LO)
   q = quatAt(states, i, TURN)
   w = vecAt(states, i, SPIN)
+  spun = w
+  felt = wp.vec3(0.0, 0.0, 0.0)
   base = hi + lo
   baseHi = hi
   baseLo = lo
@@ -870,6 +879,8 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
         if steer[k] != 0.0:
           wanted[k] = steer[k] * wheels[k]
       own = own + wanted
+    # what pushes it but gravity, felt in its own axes over the step
+    felt = felt + wp.quat_rotate_inv(q, force / mass) * dt
     # kick
     pair = pairAdded(vhi, vlo, (accel + force / mass) * dt)
     vhi = pair[0]
@@ -918,3 +929,6 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   states[i, TOUCHING] = float(touching)
   states[i, STEPS] = float(steps)
   states[i, BUMP] = bump
+  lasted = wp.max(done, LEAST_STEP)
+  vecPut(states, i, FELT, felt / lasted)
+  vecPut(states, i, SPINNING, (w - spun) / lasted)

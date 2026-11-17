@@ -13,7 +13,7 @@ from ._looks import cacheFolder
 
 #  The icons' version (a change paints them anew), their pixels a side,
 #  how wide each is painted.
-VERSION = 1
+VERSION = 2
 PIXELS = 16
 SCALE = 4
 #  The colours (0 to 255, then how opaque) the pixel maps name.
@@ -23,11 +23,15 @@ PALETTE = {'K': (40, 40, 44, 255), 'k': (82, 82, 90, 255),
            'b': (130, 92, 30, 255), 'L': (255, 228, 140, 255),
            'G': (125, 185, 255, 255), 'D': (50, 40, 30, 255),
            'M': (85, 100, 45, 255), 'm': (52, 62, 28, 255),
-           'Y': (232, 200, 60, 255), 'w': (205, 212, 165, 255)}
+           'Y': (232, 200, 60, 255), 'w': (205, 212, 165, 255),
+           'R': (196, 44, 32, 255), 'r': (110, 22, 16, 255),
+           'P': (228, 196, 136, 255), 'p': (170, 118, 62, 255)}
 #  Each item's pixels, a row a string from the top ('.': clear): the
 #  gravity gun (dark, its orange claws, the violet glow of a magic
 #  bolt at its muzzle), the telescope (brass, its glass at the far end),
-#  the commando bar (olive wrapper, a yellow band, crimped ends).
+#  the commando bar (olive wrapper, a yellow band, crimped ends), the
+#  bag of pork scratchings (red, crimped on top, the rinds seen through
+#  its window, a yellow band).
 ICONS = {
   'gravgun': ('................',
               '................',
@@ -76,7 +80,23 @@ ICONS = {
                '.m.m.m.m.m.m.m..',
                '................',
                '................',
-               '................')}
+               '................'),
+  'scratchings': ('................',
+                  '...r.r.r.r.r.r..',
+                  '...rrrrrrrrrrr..',
+                  '...rRRRRRRRRRr..',
+                  '..rRRwwwwwwwRRr.',
+                  '..rRwPPpPPpPwRr.',
+                  '..rRwPpPPPpPwRr.',
+                  '..rRwPPPpPPPwRr.',
+                  '..rRwpPPPpPPwRr.',
+                  '..rRwwwwwwwwwRr.',
+                  '..rRRYYYYYYYRRr.',
+                  '..rRRRRRRRRRRRr.',
+                  '..rRRRRRRRRRRRr.',
+                  '...rrrrrrrrrrr..',
+                  '................',
+                  '................')}
 
 
 def itemPictures() -> dict:

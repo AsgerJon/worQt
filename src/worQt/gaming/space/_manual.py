@@ -13,22 +13,25 @@ it.
 from __future__ import annotations
 
 TITLE = 'WARNING'
-SUBTITLE = 'MAGIC BOLTS AND THE TEMU GRAVITY GUN'
+SUBTITLE = 'MAGIC BOLTS AND THE GRAV-GUN'
 LEAD = 'Read this before you leave the ground.'
 ITEMS = (
   ('MAGIC BOLTS', 'The bolts with the violet glow are magic. Nothing '
    'pulls them loose: not your hands, not the gun, not the end of the '
    'world.'),
-  ('THE GUN', 'Point the Temu gravity gun at a magic bolt and hold the '
-   'right button. The gun tries to pick the bolt up. The bolt will not '
-   'budge, so the gun pulls YOU to the bolt instead. Let go on the way and '
-   'you drift on; reach the bolt and the gun holds you there.'),
-  ('LETTING GO', 'Space pushes you off the bolt you are held at. Right '
-   'click lets go.'),
+  ('THE GRAV-GUN', 'Officially the Zero Point Energy Field Manipulator, if '
+   'you really want to. Point it at a magic bolt or at anything loose and '
+   'right click: a field pulls the two of you together, the harder the '
+   'further apart. A bolt will not budge, so it pulls YOU. A mug comes to '
+   'you. Right click again: the field is off.'),
+  ('THE PULSE', 'Left click sends a pulse the other way, ten times as '
+   'hard: you push off the bolt, the mug flies. The pulse ends the '
+   'field.'),
   ('NEVER UNDER GRAVITY', 'Never use the gun where things fall: on Terra, '
-   'on the pad, or with the engine burning. It holds you at the bolt '
-   'until you let go, and then you fall. Falls past 1.5 Asger heights '
-   'hurt. Twelve Asger heights, and it is over.'),
-  ('IN SPACE', 'Weightless, the gun is how you get about: bolt to bolt, in '
-   'the rocket and aboard Terra Prime.'))
+   'on the pad, or with the engine burning. A pulse throws you, and then '
+   'you fall. Falls past 1.5 Asger heights hurt. Twelve Asger heights, '
+   'and it is over.'),
+  ('IN SPACE', 'Weightless, the gun is how you get about: the field to '
+   'go, a pulse to stop or to push off. From far off you come in fast: '
+   'let go of the field on the way and pulse to brake.'))
 SMALL_PRINT = 'Made in China. Not for children under 3.'

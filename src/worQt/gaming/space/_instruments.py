@@ -25,7 +25,7 @@ from ._ascentguidance import TARGET
 from ._aerospike import G0
 from ._tapedeck import LEAD_IN, TapeDeck
 from ._cockpit import DIALS, GUARD_HOLD, KEYS, LAMPS, LIMITS, LIT_KEYS
-from ._dashboard import LEGENDS, dialShare
+from ._dashboard import LEGENDS, dialShare, guarded
 from ._flightlog import FlightLog
 from ._teleprinter import WIDTH, Teleprinter
 from ._timekeeper import WARPS
@@ -67,9 +67,12 @@ class Instruments:
   the 'legends' (lit or not); and the counts the sound
   plays one of as they grow: the keys' 'clicks', the switches' 'snaps',
   the knobs' 'ticks', the lamps' 'relays'; how fast the slide moves;
-  'switched', what the window keeps that a switch or a latched key shows
-  ('autodock': the automatic docking flies, 'camera': the monitor shows
-  the nose's docking camera).
+  'switched', what the window keeps that a switch or a lit or latched
+  key shows, by the key's action (the autopilot's mode chosen: 'ap
+  orbit', 'ap rendezvous', 'ap dock'; 'engage': it has the controls;
+  'action': it waits for a burn, WARP TO ACTION may warp; 'camera': the
+  monitor shows the nose's docking camera); the limiter's setting
+  ('limit', g).
   'pressed' presses an input's key; 'acted' keeps everything to the
   flight a frame on; 'dash' and 'told' hand the view and the sound what
   they show and play.
@@ -90,7 +93,10 @@ class Instruments:
     self.slide, self.knob, self.target = 0.0, 0.0, TARGET
     self.guards, self._held = {}, {}
     self.flicker, self._flame = 1.0, random.Random(1980)
-    self.switched = {'autodock': False, 'camera': False}
+    self.switched = {'ap orbit': True, 'ap rendezvous': False,
+                     'ap dock': False, 'engage': False, 'action': False,
+                     'camera': False}
+    self.limit = LIMITS[-1]
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -103,6 +109,8 @@ class Instruments:
     if control is not None and isinstance(control.peep, Pushbutton):
       control.peep.used()
       self.clicks += 1
+      if guarded(control):
+        self._held[action] = GUARD_HOLD
 
   def acted(self, real: float, vessel: Vessel, system: SolarSystem,
             keeper: Timekeeper, guidance: AscentGuidance, mapOpen: bool,
@@ -120,11 +128,11 @@ class Instruments:
     self.printer.acted(real)
     self.deck.acted(real)
     states = {mode: vessel.autopilot.mode == mode for mode in MODES}
-    states.update({'ascent': guidance.on, 'map': mapOpen,
-                   'view': inside})
+    states.update({'map': mapOpen, 'view': inside})
     states.update(self.switched)
+    self.limit = LIMITS[limitNotch(vessel.engine)]
     latched = {'play': self.deck.playing, 'camera': self.switched[
-      'camera']}
+      'camera'], 'launch': vessel.engine.lit}
     latched.update({action: bool(states.get(action))
                     for action in LIT_ACTIONS})
     slid = 0.0
@@ -147,7 +155,7 @@ class Instruments:
           self._held[control.action] = GUARD_HOLD
       elif isinstance(peep, Slider):
         before = peep.value
-        peep.slid(vessel.engine.throttle)
+        peep.slid(1.0 - vessel.engine.throttle)
         slid = before
       elif control.action in latched and (
           peep.latched != latched[control.action]):
@@ -177,7 +185,8 @@ class Instruments:
     return {'needles': list(self.needles), 'lamps': list(self.lamps),
             'legends': list(self.legends), 'reels': self.deck.reels,
             'column': min(1.0, column / WIDTH), 'knob': self.knob,
-            'bug': dialShare('HEIGHT', self.target),
+            'bugs': [dialShare('HEIGHT', self.target),
+                     dialShare('THRUST', self.limit)],
             'guards': dict(self.guards), 'flicker': self.flicker}
 
   def told(self, vessel: Vessel, system: SolarSystem,
@@ -238,7 +247,7 @@ class Instruments:
     """The 'valuesOf' method returns what each dial shows, by its
     name: the height, the speed (over the ground in the air, round the
     body above it), the apoapsis and the periapsis over the ground (none
-    below it; 1e9: no closed orbit)."""
+    below it; 1e9: no closed orbit), the engine's push (g)."""
     body = system.bodies[vessel.anchor]
     conic = vessel.conicOf(system)
     height = vessel.heightOver(system)
@@ -249,7 +258,7 @@ class Instruments:
       0.0 if conic is None else 1e9)
     peri = conic.periapsis - body.radius if conic else 0.0
     return {'HEIGHT': height, 'SPEED': speed, 'APOAPSIS': apo,
-            'PERIAPSIS': peri}
+            'PERIAPSIS': peri, 'THRUST': vessel.engine.push / (MASS * G0)}
 
   def _needlesEased(self, real: float, vessel: Vessel,
                     system: SolarSystem) -> None:
@@ -275,7 +284,8 @@ class Instruments:
       conic.periapsis - body.radius) > top
     lit = {'ENGINE': vessel.engine.push > 0.0, 'AIR': inAir,
            'GROUND': vessel.touching > 0, 'WARP': keeper.factor > 1,
-           'GUIDE': guidance.on, 'ORBIT': orbit, 'DOCK': vessel.docked}
+           'GUIDE': self.switched['engage'], 'ORBIT': orbit,
+           'DOCK': vessel.docked}
     now = [lit[name] for name, _ in LAMPS]
     self.relays += sum(1 for a, b in zip(now, self.lamps) if a != b)
     self.lamps = now

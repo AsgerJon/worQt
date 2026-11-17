@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from ._aerospike import G0
 from ._turns import dot, norm, unit
 from ._vessel import MASS
 
@@ -57,11 +58,22 @@ CLIMB_UNTIL = 80e3
 CLIMB_GAIN = 0.1
 #  The compass heading of the launch: east, with the ground's turning.
 LAUNCH_HEADING = 90.0
-#  Coasting, the apoapsis is topped up in the air when it sags this far
-#  under the target, m; the round burn starts half its time before the
-#  apoapsis; a warp of his stops 'WARP_LEAD' s before that (user,
-#  2026-11-17: "Warp should not be automatic!": it never warps itself).
-SAGGED = 500.0
+#  Coasting in the air, the drag lowers the apoapsis: it is topped up to
+#  the target only while it falls faster than 'FALL_FAST' m a second (its
+#  fall eased over 'FALL_EASE' s; user, 2026-11-17: "the auto pilot
+#  should not give tiny engine bursts to keep the AP at an exact value.
+#  As long as AP is not dropping quickly because of atmospheric drag, we
+#  just accept ending at a slightly lower AP because of loss to drag"),
+#  and the round burn rounds the orbit at the apoapsis reached. The
+#  round burn starts half its time before the apoapsis; a warp of his
+#  stops 'WARP_LEAD' s before that (user, 2026-11-17: "Warp should not be
+#  automatic!": it never warps itself).
+FALL_FAST = 100.0
+FALL_EASE = 1.0
+#  A top up pushes no harder than this, g, and only with Asger in his
+#  chair (user, 2026-11-17: "'top up' bursts ... should be limited to 1g
+#  AND require Asger to be seated").
+TOP_UP = 1.0
 WARP_LEAD = 10.0
 #  The round burn ends once the periapsis is this near the target (m),
 #  or once the apoapsis has risen this far past it; it throttles down
@@ -78,8 +90,10 @@ class AscentGuidance:
   anchor's ground: each frame ('acted', before the flight steps) it sets
   the vessel's throttle and its autopilot (the aim mode in the climb and
   the turn, prograde coasting, the aim level along the path in the round
-  burn) and warps time to the round burn. 'phase' says where it is (one
-  of 'PHASES'); off, it leaves the vessel alone. Any key on the vessel
+  burn) and stops a warp before the round burn. 'phase' says where it
+  is (one of 'PHASES'); 'rounding' the height the round burn rounds the
+  orbit at (the apoapsis reached: under the target by what the air took
+  coasting); off, it leaves the vessel alone. Any key on the vessel
   takes it off (the window's: you take the controls).
   """
 
@@ -90,13 +104,15 @@ class AscentGuidance:
   #  Public Variables
   target: float
   phase: str
+  rounding: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.target, self.phase = TARGET, 'off'
+    self.target, self.phase, self.rounding = TARGET, 'off', TARGET
+    self._fall, self._last, self._topping = 0.0, None, False
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -115,6 +131,8 @@ class AscentGuidance:
     """The 'started' method takes the vessel up from where it is: from
     the climb on the ground or low, else from the turn or the coast."""
     height = vessel.heightOver(system)
+    self.rounding, self._topping = self.target, False
+    self._fall, self._last = 0.0, None
     if height < TURN_START:
       self.phase = 'climb'
     elif self._apoapsis(vessel, system) < self.target:
@@ -143,9 +161,10 @@ class AscentGuidance:
                key=lambda k: abs(TARGETS[k] - self.target))
 
   def acted(self, vessel: Vessel, system: SolarSystem,
-            keeper: Timekeeper) -> None:
+            keeper: Timekeeper, seated: bool = True) -> None:
     """The 'acted' method flies the vessel a frame on: sets its throttle,
-    its autopilot, and the time's warp, as its phase asks."""
+    its autopilot, and stops a warp, as its phase asks (coasting in the
+    air it tops up the apoapsis only with Asger 'seated')."""
     if not self.on:
       return
     body = system.bodies[vessel.anchor]
@@ -171,7 +190,7 @@ class AscentGuidance:
         engine.throttled(0.0)
         self.phase = 'coast'
     if self.phase == 'coast':
-      self._coasted(vessel, system, keeper, body, height)
+      self._coasted(vessel, system, keeper, body, height, seated)
     if self.phase == 'round':
       self._rounded(vessel, system, body)
 
@@ -219,17 +238,23 @@ class AscentGuidance:
     return conic.apoapsis - system.bodies[vessel.anchor].radius
 
   def _coasted(self, vessel: Vessel, system: SolarSystem,
-               keeper: Timekeeper, body: object, height: float) -> None:
+               keeper: Timekeeper, body: object, height: float,
+               seated: bool) -> None:
     """Coasts to the round burn: the nose along the path; in the air the
-    apoapsis topped up when it sags; above it, time warped to the burn's
-    start; the burn started half its time before the apoapsis."""
+    apoapsis topped up only while the drag drops it fast; above it, a
+    warp stopped before the burn's start; the burn started half its time
+    before the apoapsis."""
     pilot, engine = vessel.autopilot, vessel.engine
     pilot.engaged('prograde', vessel.turn)
     air = body.air
     inAir = air is not None and height < air.top
     apoapsis = self._apoapsis(vessel, system)
     if inAir:
-      engine.throttled(1.0 if apoapsis < self.target - SAGGED else 0.0)
+      fall = self._falling(apoapsis, keeper.elapsed)
+      self._topping = seated and apoapsis < self.target and (
+        self._topping or fall > FALL_FAST)
+      engine.throttled(TOP_UP * G0 * MASS / engine.thrust
+                       if self._topping else 0.0)
       return
     engine.throttled(0.0)
     conic = vessel.conicOf(system)
@@ -238,25 +263,36 @@ class AscentGuidance:
     left = conic.timeToApoapsis(0.0) - 0.5 * self._burnTime(vessel, system)
     if left <= 0.0 or left > 0.5 * conic.period:
       keeper.realtime()
-      self.phase = 'round'
+      self.phase, self.rounding = 'round', apoapsis
       return
     if left > WARP_LEAD + 1.0:
       keeper.stopAt(left - WARP_LEAD)
     else:
       keeper.realtime()
 
+  def _falling(self, apoapsis: float, now: float) -> float:
+    """Returns how fast the apoapsis falls ('apoapsis' at time 'now'),
+    m/s, eased over 'FALL_EASE' s."""
+    last, self._last = self._last, (apoapsis, now)
+    if last is None or now <= last[1]:
+      return self._fall
+    seconds = now - last[1]
+    share = 1.0 - math.exp(-seconds / FALL_EASE)
+    self._fall += share * ((last[0] - apoapsis) / seconds - self._fall)
+    return self._fall
+
   def _rounded(self, vessel: Vessel, system: SolarSystem,
                body: object) -> None:
     """Burns level along the path to the round orbit's speed, easing off
-    at the end; done once the periapsis has come up to the target (or the
-    apoapsis has risen past it)."""
+    at the end; done once the periapsis has come up to the height it
+    rounds at (or the apoapsis has risen past it)."""
     pilot, engine = vessel.autopilot, vessel.engine
     pilot.aimedAt(0.0, 0.0, pilot.heading, True)
     conic = vessel.conicOf(system)
     periapsis = conic.periapsis - body.radius if conic else -body.radius
     apoapsis = self._apoapsis(vessel, system)
-    if periapsis >= self.target - ROUNDED or (
-        apoapsis > self.target + OVERSHOT):
+    if periapsis >= self.rounding - ROUNDED or (
+        apoapsis > self.rounding + OVERSHOT):
       engine.throttled(0.0)
       pilot.engaged('prograde', vessel.turn)
       self.phase = 'done'

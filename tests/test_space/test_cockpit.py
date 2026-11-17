@@ -26,12 +26,12 @@ from worQt.gaming.space._cockpit import BACKREST, BALL_RADIUS, BAT_ON
 from worQt.gaming.space._cockpit import CUSHION, EYE, GLASS, GLOBE_AT
 from worQt.gaming.space._cockpit import GLOBE_AXES
 from worQt.gaming.space._cockpit import FIGURE, FLOOR, KEY_TRAVEL
-from worQt.gaming.space._cockpit import DECK_KEYS, LAMPS, LEFT_CONSOLE
+from worQt.gaming.space._cockpit import DECK_KEYS, DIALS, LAMPS, LEFT_CONSOLE
 from worQt.gaming.space._cockpit import GLOBE_ON, LIT_KEYS, PANEL_RADIUS
 from worQt.gaming.space._cockpit import PANEL_SPAN, PAPER_AT, PAPER_HIGH
 from worQt.gaming.space._cockpit import SNACK_BAG
 from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE
-from worQt.gaming.space._cockpit import THROTTLE_LONG, panelPoint
+from worQt.gaming.space._cockpit import THROTTLE_TRAVEL, panelPoint
 from worQt.gaming.space._cockpit import WALL, Cockpit, capsuleRadius
 from worQt.gaming.space._cabinworld import restingLoose
 from worQt.gaming.space._cockpit import SIDEBOARD, inWindow, seated
@@ -55,7 +55,7 @@ DECK_PLACES = tuple((x, y) for _, _, _, (x, y) in DECK_KEYS)
 
 #  The dashboard's still meshes, by their makers' names.
 STILL = ('panelFace', 'panelBody', 'hoodFace', 'hoodBody', 'dialFaces',
-         'bezels', 'monitorBody', 'screenRows', 'paperRows', 'sliderTrack',
+         'bezels', 'monitorBody', 'screenRows', 'paperRows', 'throttleBush',
          'consoleBases', 'domeRows', 'monitorInset', 'globeMount',
          'globeCowl', 'readoutRows', 'sideboardRows', 'sideboardTop',
          'paperFrame', 'snackBag', 'snackTray')
@@ -103,15 +103,16 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 32 inputs, each its own action and key
+    """The dashboard has its 36 inputs, each its own action and key
     (but the tape deck's own keys: the right console's work the same):
     the view's and the map's switches, three knobs (warp, orbit, the
-    engine's limit), 26 keys (the AUTOPILOT's lit modes among them, the
-    docking's six thrusters, the monitor's feed, undock; the tape's on
-    the console and on the deck), the throttle's lever; the switches
-    plain FourthPeeps, the rest their kinds."""
+    engine's limit), 30 keys (the AUTOPILOT's three modes, ENGAGE and
+    WARP TO ACTION, the ASSISTS, LAUNCH, the docking's six thrusters, the
+    monitor's feed, undock; the tape's on the console and on the deck),
+    the push-pull throttle; the switches plain FourthPeeps, the rest
+    their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 32)
+    self.assertEqual(len(controls), 36)
     own = [control for control in controls if not _atDeck(control)]
     self.assertEqual(len(own), len(controls) - len(DECK_KEYS))
     actions = [control.action for control in own]
@@ -122,7 +123,7 @@ class TestCockpit(SpaceTest):
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 2, 'Knob': 3, 'Pushbutton': 26,
+    self.assertEqual(kinds, {'FourthPeep': 2, 'Knob': 3, 'Pushbutton': 30,
                              'Slider': 1})
     self.assertIs(type(Cockpit().controlOf('view').peep), FourthPeep)
     for name in LIT_KEYS:
@@ -413,10 +414,10 @@ class TestCockpit(SpaceTest):
     slide.peep.slid(1.0)
     cockpit.acted(1.0)
     self.assertAlmostEqual(math.dist(parts()[at][0], plain[at][0]),
-                           THROTTLE_LONG, 9)
+                           THROTTLE_TRAVEL, 9)
     dash['needles'][1] = 0.5
     dash['lamps'][0] = True
-    dash['legends'][0] = True
+    dash['legends'][LEGENDS.index('HOLD')] = True
     dash['legends'][len(LIT_KEYS)] = True
     now = parts()
     want = product(turn, aboutAxis(dialAxes(1)[2], -dialAngle(0.5)))
@@ -479,9 +480,9 @@ class TestCockpit(SpaceTest):
     system = self.systemOf()
     cockpit, scenery = Cockpit(), Scenery()
     every = pieces(cockpit.controls)
-    dash = {'needles': [0.0] * 4, 'lamps': [False] * len(LAMPS),
+    dash = {'needles': [0.0] * len(DIALS), 'lamps': [False] * len(LAMPS),
             'legends': [False] * len(LEGENDS), 'reels': (0.0, 0.0),
-            'column': 0.0, 'knob': 0.0, 'bug': 0.5, 'guards': {},
+            'column': 0.0, 'knob': 0.0, 'bugs': [0.5, 0.5], 'guards': {},
             'flicker': 1.0}
     dash.update(_resting())
     vessel = self.padded(system)
@@ -529,10 +530,10 @@ class TestCockpit(SpaceTest):
     system = self.systemOf()
     cockpit, scenery = Cockpit(), Scenery()
     every = pieces(cockpit.controls)
-    dash = {'needles': [0.0] * 4, 'lamps': [False] * len(LAMPS),
+    dash = {'needles': [0.0] * len(DIALS), 'lamps': [False] * len(LAMPS),
             'legends': [False] * len(LEGENDS), 'reels': (0.0, 0.0),
             'column': 0.0,
-            'knob': 0.0, 'bug': 0.5, 'guards': {}, 'flicker': 1.0}
+            'knob': 0.0, 'bugs': [0.5, 0.5], 'guards': {}, 'flicker': 1.0}
     dash.update(_resting())
     held, marked = [], 0
     for nose in ('up', 'ahead'):

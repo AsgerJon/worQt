@@ -79,6 +79,21 @@ class TestVitals(SpaceTest):
       vitals.lived(lasts / 2.0, gees)
       self.assertAlmostEqual(vitals.food, FOOD / 2.0, 6, gees)
 
+  def test_warped(self) -> None:
+    """Time warped, he grows no hungrier (user, 2026-11-17: "During
+    warp, Asger does not lose hunger"); full as far as he eats no more,
+    he is fed full for a warp ("fully saturated")."""
+    vitals = Vitals()
+    vitals.lived(FOOD_LASTS / 2.0, 1.0, True, True)
+    self.assertEqual(vitals.food, FOOD)
+    self.assertTrue(vitals.full)
+    vitals.food = FOOD - 0.4
+    self.assertTrue(vitals.full)
+    self.assertEqual(vitals.ate(), 'Asger is full')
+    vitals.food = FOOD - 0.6
+    self.assertFalse(vitals.full)
+    self.assertEqual(vitals.ate(), '')
+
   def test_eating(self) -> None:
     """A ration takes 'EATING' s and feeds 'RATION'; full, dead or
     already eating he eats none."""

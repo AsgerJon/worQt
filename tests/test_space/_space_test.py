@@ -44,6 +44,16 @@ class SpaceTest(BaseTest):
       if keeper.stopsAt is not None:
         keeper.stopAt(keeper.stopsAt - keeper.elapsed)
 
+  def stillMeter(self, ) -> object:
+    """Returns an accelerometer reading a vessel that feels nothing and
+    does not turn (the cabin's tests set the push they mean: the test's
+    own situation, not the flight's)."""
+    from worQt.gaming.space._accelerometer import Accelerometer
+    meter = Accelerometer()
+    meter.felt, meter.turning = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    meter.speeding = (0.0, 0.0, 0.0)
+    return meter
+
   def flightOf(self, ) -> Flight:
     """Returns the flight on the CPU."""
     return Flight('cpu')

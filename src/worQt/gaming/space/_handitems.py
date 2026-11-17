@@ -6,7 +6,7 @@ some commandobars in Asgers inventory"): each item's meshes in his eyes'
 frame (right, up, back: as the gravity gun's, '_gunmodel'), low on his
 right: the gravity gun, the telescope (a brass tube narrowing to its
 eyepiece, its glass ahead), a commando bar (its olive wrapper, its
-yellow band). Qt-free.
+yellow band), a bag of pork scratchings. Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -24,6 +24,8 @@ RINGS = ((70, 52, 24), 0.4, 0.5)
 LENS = ((140, 190, 255), 0.0, 0.08)
 WRAPPER = ((85, 100, 45), 0.0, 0.7)
 BAND = ((232, 200, 60), 0.0, 0.6)
+BAG = ((196, 44, 32), 0.1, 0.45)
+RINDS = ((228, 196, 136), 0.0, 0.8)
 #  The telescope in his hand: its eyepiece's end, the way it points
 #  (ahead, a little in and up), how long, its radius at the eyepiece and
 #  at its glass, m.
@@ -34,6 +36,9 @@ NARROW, WIDE = 0.016, 0.028
 #  The bar in his hand: its middle, half its size, m.
 BAR_AT = (0.2, -0.14, -0.4)
 BAR_HALF = (0.055, 0.014, 0.022)
+#  The bag of pork scratchings in his hand: its middle, half its size, m.
+BAG_AT = (0.2, -0.15, -0.42)
+BAG_HALF = (0.045, 0.06, 0.016)
 
 
 @functools.lru_cache(maxsize=4)
@@ -47,6 +52,8 @@ def heldParts(kind: str) -> tuple:
     return _telescopeParts()
   if kind == 'commando':
     return _barParts()
+  if kind == 'scratchings':
+    return _bagParts()
   raise KeyError('no %s held' % kind)
 
 
@@ -73,6 +80,17 @@ def _barParts() -> tuple:
   band = boxRows(BAR_AT, (0.3 * BAR_HALF[0], BAR_HALF[1] + 0.001,
                           BAR_HALF[2] + 0.001), axes)
   return ((WRAPPER, '') + wrapper, (BAND, '') + band)
+
+
+def _bagParts() -> tuple:
+  """Returns a bag of pork scratchings: red, a window of rinds on its
+  face toward him."""
+  axes = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+  bag = boxRows(BAG_AT, BAG_HALF, axes)
+  window = boxRows(tuple(a + d for a, d in zip(BAG_AT, (
+    0.0, 0.006, BAG_HALF[2]))), (0.7 * BAG_HALF[0], 0.45 * BAG_HALF[1],
+                                  0.001), axes)
+  return ((BAG, '') + bag, (RINDS, '') + window)
 
 
 def _axesOut(way: tuple) -> tuple:

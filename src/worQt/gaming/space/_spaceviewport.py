@@ -108,11 +108,15 @@ MECHANISM_LOOKS = ('brass', 'brass', 'chrome')
 SEE_THROUGH = 0.99
 #  The altimeter's mark: pink, as the aim is.
 BUG_COLOUR = (255, 90, 200)
+#  The THRUST dial's bug at the limiter's setting: amber; the LAUNCH
+#  checklist's lamps: green, lit as each step is done.
+LIMIT_BUG = (255, 170, 40)
+CHECK_COLOUR = (90, 255, 110)
 #  The enchanted knobs' glint: its picture (the cabin's pictures') and
 #  how many times its streaks slide across the knob in the glint's loop
 #  ('space.qml'), by the knob's action; see-through (Qt blends a screen
 #  only so), black adding nothing.
-GLINT_LOOKS = {'warp': ('glint', 1.0)}
+GLINT_LOOKS = {'warp': ('glint', 1.0), 'action': ('glint', 0.6)}
 #  The cabin's furnishings' looks (user, 2026-11-16: "the contents of a
 #  camping cabin ... the same 'hygge'"): warm woods, wool, cream and rust
 #  cushions, wax, ceramics, green leaves, books; the rug and the blanket
@@ -520,22 +524,26 @@ class SpaceViewport(QWidget):
 
   def boardShown(self, board: dict) -> None:
     """The 'boardShown' method shows the control board: its 'throttle',
-    'mode', 'warp', 'toAp', 'ascent', 'phase', 'target', 'map', the
-    engine's 'limit' (its words), whether Asger is 'up' out of his
-    chair, the docking's: 'match' (turning with the station), 'docking'
-    (the automatic docking's phase, or 'docked'), 'nose' (the monitor
-    on the nose's camera), 'thrusting' (the docking thrusters fire),
-    and the keys 'held' (their names)."""
+    'launched' (the engine lit), the assists' 'mode', 'warp', 'toAp',
+    'action' (WARP TO ACTION may warp), the autopilot's mode ('apMode'),
+    whether it is 'engaged' and its status line ('phase'), the orbit's
+    'target', 'map', the engine's 'limit' (its words), whether Asger is
+    'up' out of his chair, the docking's: 'match' (turning with the
+    station), 'nose' (the monitor on the nose's camera), 'thrusting'
+    (the docking thrusters fire), and the keys 'held' (their names)."""
     root = self._root()
     if root is None:
       return
     for name, key in (('throttle', 'boardThrottle'), ('mode', 'boardMode'),
                       ('warp', 'boardWarp'), ('toAp', 'boardToAp'),
-                      ('ascent', 'boardAscent'), ('phase', 'boardPhase'),
+                      ('apMode', 'boardApMode'),
+                      ('engaged', 'boardEngaged'), ('phase', 'boardPhase'),
+                      ('action', 'boardAction'),
+                      ('launched', 'boardLaunched'),
                       ('target', 'boardTarget'), ('map', 'boardMap'),
                       ('up', 'boardUp'),
                       ('limit', 'boardLimit'), ('match', 'boardMatch'),
-                      ('docking', 'boardDocking'), ('nose', 'boardNose'),
+                      ('nose', 'boardNose'),
                       ('thrusting', 'boardThrusting')):
       root.setProperty(key, board[name])
     root.setProperty('boardHeld', '|' + '|'.join(board['held']) + '|')
@@ -639,20 +647,20 @@ class SpaceViewport(QWidget):
       root.setProperty('sleepShade', float(shade))
 
   def cockpitShown(self, inside: bool, prompt: tuple | None,
-                   paper: tuple, stamp: str, readout: tuple) -> None:
+                   paper: tuple, readout: tuple) -> None:
     """The 'cockpitShown' method shows the view from Asger's eyes
     ('inside': the overlays hidden, a dot in the middle, the cabin's
     nearest cut) or not; the input he looks at ('prompt': its key ('':
     none, a value read) and what working it does, None: none); the
     teleprinter's paper ('paper': its lines printed and the line being
-    typed, 'Teleprinter.paper'); the closed circuit picture's time
-    ('stamp'); the readouts ('readout': the AUTOPILOT's status line and
-    Terra Prime's range's groups' figures, each as its tubes show it)."""
+    typed, 'Teleprinter.paper'); the readouts ('readout': the
+    AUTOPILOT's status line,
+    Terra Prime's range's groups' figures, each as its tubes show it, and
+    the docking port's numbers under the CCTV)."""
     root = self._root()
     if root is None:
       return
     root.setProperty('cockpitOn', inside)
-    root.setProperty('cctvStamp', stamp)
     root.setProperty('nearClip', EYES_NEAR if inside else CHASE_NEAR)
     root.setProperty('promptKey', prompt[0] if prompt else '')
     root.setProperty('promptName', prompt[1] if prompt else '')
@@ -660,22 +668,22 @@ class SpaceViewport(QWidget):
       self._readout = readout
       root.setProperty('readoutStatus', readout[0])
       root.setProperty('readoutRange', list(readout[1]))
+      root.setProperty('readoutPort', readout[2])
     lines, typing = paper[0], paper[1]
     if (lines, typing) != self._paper:
       self._paper = lines, typing
       root.setProperty('paperLines', lines)
       root.setProperty('paperTyping', typing)
 
-  def monitorShown(self, nose: bool, docking: str) -> None:
+  def monitorShown(self, nose: bool) -> None:
     """The 'monitorShown' method shows the monitor's feed: the nose's
-    docking camera ('nose', a cross over it) or the hull's looking aft,
-    and the docking's numbers over it ('docking', '' none)."""
+    docking camera ('nose', a cross over it) or the hull's looking
+    aft."""
     root = self._root()
     if root is None:
       return
     root.setProperty('cctvLabel', 'CAM 2  NOSE' if nose else 'CAM 1  AFT')
     root.setProperty('cctvNose', nose)
-    root.setProperty('dockText', docking)
 
   def takesClick(self, at: QPointF) -> bool:
     """The 'takesClick' method says whether the scene takes a click at
@@ -728,7 +736,7 @@ class SpaceViewport(QWidget):
              ('chrome', _dashboard.paperFrame(), ''),
              ('wood', _dashboard.monitorBody(), pictures['wood']),
              ('black', _dashboard.monitorInset(), ''),
-             ('black', _dashboard.sliderTrack(), ''),
+             ('chrome', _dashboard.throttleBush(), ''),
              ('aluminium', _dashboard.consoleBases(), ''),
              ('aluminium', _dashboard.snackTray(), ''),
              ('snacks', _dashboard.snackBag(), ''),
@@ -861,7 +869,10 @@ class SpaceViewport(QWidget):
         what][2])
       return look, picture, False, None, opacity
     if kind == 'bug':
-      return (BUG_COLOUR, 0.0, 1.0), '', True, None, 1.0
+      return ((BUG_COLOUR, LIMIT_BUG)[what], 0.0, 1.0), '', True, None, 1.0
+    if kind == 'check':
+      dark = tuple(int(UNLIT * c) for c in CHECK_COLOUR)
+      return (dark, 0.0, 0.3), '', False, CHECK_COLOUR, 1.0
     if kind == 'loose':
       return HYGGE_LOOKS[looseParts()[what][1]], '', False, None, 1.0
     if kind == 'gun':

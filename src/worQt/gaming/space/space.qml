@@ -184,22 +184,23 @@ Item {
   //  number tubes, one canvas ('Dashboard.readoutLayout'), its mesh.
   property string readoutStatus: ""
   property var readoutRange: []
+  property string readoutPort: ""
   property var readoutGeometry: null
   property var readoutLayout: null
   onReadoutStatusChanged: readoutCanvas.requestPaint()
   onReadoutRangeChanged: readoutCanvas.requestPaint()
+  onReadoutPortChanged: readoutCanvas.requestPaint()
   onReadoutLayoutChanged: readoutCanvas.requestPaint()
   property var screenGeometry: null
   property vector3d cctvPlace: Qt.vector3d(0, 0, 0)
   property quaternion cctvTurn: Qt.quaternion(1, 0, 0, 0)
-  property string cctvStamp: ""
   //  The monitor's feed (user, 2026-11-17: "The CCTV shall have two
   //  possible feeds: The one it has now, AND one that aims the
   //  docking"): its label, whether it is the nose's docking camera (a
-  //  cross in its middle) and the docking's numbers over it.
+  //  cross in its middle; the docking's numbers are under the monitor:
+  //  'readoutPort').
   property string cctvLabel: "CAM 1  AFT"
   property bool cctvNose: false
-  property string dockText: ""
   //  The ground under the eye: its mesh (a cap, the body's own axes), its
   //  body's picture, its place and turn, whether it shows
   property var capGeometry: null
@@ -257,13 +258,15 @@ Item {
   property string boardMode: "off"
   property int boardWarp: 1
   property bool boardToAp: false
-  property bool boardAscent: false
+  property string boardApMode: "orbit"
+  property bool boardEngaged: false
   property string boardPhase: ""
+  property bool boardAction: false
+  property bool boardLaunched: false
   property string boardTarget: ""
   property bool boardMap: false
   property string boardLimit: "4 g"
   property bool boardMatch: false
-  property string boardDocking: "off"
   property bool boardNose: false
   property bool boardThrusting: false
   property bool boardUp: false
@@ -625,11 +628,15 @@ Item {
                 0.6 * at.status, 0.94 * width / (0.6 * Math.max(
                   16, said.length)))) + "px '" + root.paperFont + "'"
               ctx.textBaseline = "middle"
-              ctx.shadowColor = "#ff8a1c"
-              ctx.shadowBlur = 0.12 * at.status
+              //  The glow a wide faint stroke under the letters: the
+              //  Canvas's 'shadowBlur' is blurred in software, each
+              //  letter, and took seconds a paint.
+              ctx.lineJoin = "round"
+              ctx.strokeStyle = "rgba(255, 138, 28, 0.3)"
+              ctx.lineWidth = 0.08 * at.status
+              ctx.strokeText(said, 0.03 * at.status, 0.54 * at.status)
               ctx.fillStyle = "#ffb63c"
-              ctx.fillText(root.readoutStatus, 0.03 * at.status,
-                           0.54 * at.status)
+              ctx.fillText(said, 0.03 * at.status, 0.54 * at.status)
               var top = at.status
               for (var g = 0; g < at.groups.length; ++g) {
                 var group = at.groups[g]
@@ -645,7 +652,6 @@ Item {
                 }
                 var pad = Math.max(0, group.tubes - digits.length)
                 while (digits.length < group.tubes) digits.unshift(" ")
-                ctx.shadowBlur = 0
                 for (var k = 0; k < group.tubes; ++k) {
                   var x = group.from + k * group.tube
                   ctx.fillStyle = "#2a1c14"
@@ -661,8 +667,11 @@ Item {
                                                1.45 * group.tube))
                            + "px '" + root.paperFont + "'"
                 ctx.textAlign = "center"
-                ctx.shadowColor = "#ff5a10"
-                ctx.shadowBlur = 0.1 * at.range
+                ctx.strokeStyle = "rgba(255, 90, 16, 0.3)"
+                ctx.lineWidth = 0.07 * at.range
+                for (k = 0; k < group.tubes; ++k)
+                  ctx.strokeText(digits[k], group.from + (k + 0.5)
+                                 * group.tube, top + 0.52 * at.range)
                 ctx.fillStyle = "#ff9a40"
                 for (k = 0; k < group.tubes; ++k)
                   ctx.fillText(digits[k], group.from + (k + 0.5)
@@ -675,10 +684,26 @@ Item {
                     ctx.arc(mx, top + ys[y] * at.range, 0.035 * at.range,
                             0, 2 * Math.PI)
                     ctx.fill()
+                    ctx.stroke()
                   }
                 }
                 ctx.textAlign = "start"
               }
+              //  The docking port's numbers under the CCTV: green on
+              //  black, a line or two.
+              var foot = at.status + at.range
+              ctx.fillStyle = "#050806"
+              ctx.fillRect(0, foot, width, at.port)
+              var lines = root.readoutPort.split("\n")
+              var size = Math.round(Math.min(
+                0.8 * at.port / Math.max(1, lines.length),
+                0.94 * width / (0.6 * Math.max(24, lines[0].length))))
+              ctx.font = "bold " + size + "px '" + root.paperFont + "'"
+              ctx.textBaseline = "middle"
+              ctx.fillStyle = "#9dffb0"
+              for (var l = 0; l < lines.length; ++l)
+                ctx.fillText(lines[l], 0.04 * at.port, foot + at.port
+                             * (l + 0.5) / lines.length)
             }
           }
         }
@@ -964,30 +989,6 @@ Item {
                   border.width: 2
                   opacity: 0.8
                 }
-              }
-              Text {
-                visible: root.dockText !== ""
-                x: 34
-                y: parent.height - height - 48
-                text: root.dockText
-                color: "#d0ffd0"
-                style: Text.Outline
-                styleColor: "#000000"
-                font.family: "monospace"
-                font.pixelSize: 16
-                font.bold: true
-                lineHeight: 1.1
-              }
-              Text {
-                x: parent.width - width - 34
-                y: parent.height - height - 20
-                text: root.cctvStamp
-                color: "#f2f2f2"
-                style: Text.Outline
-                styleColor: "#000000"
-                font.family: "monospace"
-                font.pixelSize: 18
-                font.bold: true
               }
             }
           }
@@ -1344,9 +1345,11 @@ Item {
                lit: root.boardLimit !== "4 g" }
         Lamp { label: "Cut"; keys: ["X"]; action: "cut"; tint: "#ffb347"
                lit: root.boardThrottle <= 0.0 }
+        Lamp { label: lit ? "Launched" : "Launch"; keys: ["Space"]
+               action: "launch"; tint: "#ff6a50"; lit: root.boardLaunched }
       }
       Group {
-        title: "AUTOPILOT"
+        title: "ASSISTS"
         Lamp { label: "Hold: " + (lit ? "on" : "off"); keys: ["T"]
                action: "hold"; lit: root.boardMode === "hold" }
         Lamp { label: "Prograde: " + (lit ? "on" : "off"); keys: ["F"]
@@ -1356,10 +1359,9 @@ Item {
         Lamp { label: "Aim: " + (lit ? "on" : "off")
                keys: ["W", "S", "A", "D"]; action: "aim"
                tint: "#ff8be0"; lit: root.boardMode === "aim" }
-        Lamp { label: "Roll"; keys: ["Q", "E"]; action: ""
+        Lamp { label: "Roll"; keys: ["Q"]; action: ""
                tint: "#8fd3ff"
-               lit: root.boardHeld.indexOf("|Q|") >= 0
-                    || root.boardHeld.indexOf("|E|") >= 0 }
+               lit: root.boardHeld.indexOf("|Q|") >= 0 }
       }
       Group {
         title: "TIME"
@@ -1369,15 +1371,26 @@ Item {
                tint: "#8fd3ff"; lit: root.boardWarp === 1 }
         Lamp { label: "To Ap: " + (lit ? "on" : "off"); keys: ["G"]
                action: "toAp"; tint: "#8fd3ff"; lit: root.boardToAp }
+        Lamp { label: "Warp to action"; keys: ["Enter"]; action: "action"
+               tint: "#c59bff"; lit: root.boardAction }
       }
       Group {
-        title: "2 RENDEZVOUS AND DOCKING"
+        title: "AUTOPILOT"
+        Lamp { label: "Orbit"; keys: ["J"]; action: "ap orbit"
+               tint: "#c59bff"; lit: root.boardApMode === "orbit" }
+        Lamp { label: "Rendezvous"; keys: ["H"]; action: "ap rendezvous"
+               tint: "#c59bff"; lit: root.boardApMode === "rendezvous" }
+        Lamp { label: "Dock"; keys: ["N"]; action: "ap dock"
+               tint: "#c59bff"; lit: root.boardApMode === "dock" }
+        Lamp { label: root.boardPhase; keys: ["C"]; action: "engage"
+               tint: "#7dff9a"; lit: root.boardEngaged }
+        Lamp { label: "Orbit " + root.boardTarget; keys: ["[", "]"]
+               action: "higher"; tint: "#c59bff"; lit: false }
+      }
+      Group {
+        title: "MANUAL DOCKING"
         Lamp { label: "Match: " + (lit ? "on" : "off"); keys: ["L"]
                action: "match"; tint: "#7dff9a"; lit: root.boardMatch }
-        Lamp { label: "Rendezvous, dock: " + root.boardDocking
-               keys: ["C"]
-               action: "autodock"; tint: "#7dff9a"
-               lit: root.boardDocking !== "off" }
         Lamp { label: "Thrusters"
                keys: ["\u2191", "\u2193", "\u2190", "\u2192", "PgUp",
                       "PgDn"]
@@ -1389,23 +1402,13 @@ Item {
                tint: "#e8ecf0"; lit: false }
       }
       Group {
-        title: "1 ASCENT TO ORBIT"
-        Lamp { label: "Ascent: " + (lit ? "on" : "off"); keys: ["J"]
-               action: "ascent"; tint: "#c59bff"; lit: root.boardAscent }
-        Lamp { label: "Orbit " + root.boardTarget; keys: ["[", "]"]
-               action: "higher"; tint: "#c59bff"; lit: false }
-        Lamp { label: root.boardPhase === "" ? "\u2014" : root.boardPhase
-               keys: []; action: ""; tint: "#c59bff"
-               lit: root.boardAscent }
-      }
-      Group {
         title: "VIEW"
         Lamp { label: "Map: " + (lit ? "on" : "off"); keys: ["M"]
                action: "map"; tint: "#e8ecf0"; lit: root.boardMap }
         Lamp { label: "Back to pad"; keys: ["\u232b"]; action: "pad"
                tint: "#e8ecf0"; lit: false }
         Lamp { label: root.boardUp ? "Up: sit down" : "Seated: get up"
-               keys: root.boardUp ? ["E"] : ["Shift"]; action: "buckle"
+               keys: root.boardUp ? ["B"] : ["Shift"]; action: "buckle"
                tint: "#ffd27a"; lit: root.boardUp }
       }
     }

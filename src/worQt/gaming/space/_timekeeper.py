@@ -71,6 +71,14 @@ class Timekeeper:
     self.aimed = None
     self.factor = WARPS[min(len(WARPS) - 1, WARPS.index(self.factor) + 1)]
 
+  def fastest(self, ) -> None:
+    """The 'fastest' method runs time at the fastest warp (his own:
+    WARP TO ACTION), the moment it stops at ('stopAt') easing it off."""
+    self.aimed = None
+    self.factor = WARPS[-1]
+    if self.stopsAt is not None:
+      self._capped()
+
   def slower(self, ) -> None:
     """The 'slower' method runs time at the next warp down."""
     self.aimed = None
