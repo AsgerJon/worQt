@@ -51,6 +51,9 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_names',
                'tests.test_space.test_mouse',
                'tests.test_space.test_tally',
+               'tests.test_space.test_egg',
+               'tests.test_space.test_jetpack',
+               'tests.test_space.test_pushedback',
                'tests.test_sandbox.test_peepkinds',
                'tests.test_sandbox.test_mousetrail')
 

@@ -280,6 +280,19 @@ class Crewman:
     way = unit(tuple(ahead * k + aside * l for k, l in zip(look, left)))
     return tuple(PUSH * w for w in way), 0, 1
 
+  def wayOf(self, held: set, yaw: float, pitch: float) -> tuple:
+    """The 'wayOf' method returns the way the keys 'held' ('MOVES'
+    names) ask of him in space, his head turned 'yaw' and 'pitch' (a
+    unit vector: ahead where he looks, aside across it; nought: none,
+    or ahead and back held at once): his jetpack's ('_jetpack')."""
+    ahead = sum(MOVES[name][0] for name in held if name in MOVES)
+    aside = sum(MOVES[name][1] for name in held if name in MOVES)
+    if not (ahead or aside):
+      return 0.0, 0.0, 0.0
+    look = self.lookOf(yaw, pitch)
+    left = cross(self.up, self.facing(yaw))
+    return unit(tuple(ahead * k + aside * l for k, l in zip(look, left)))
+
   def leapOf(self, pull: tuple) -> tuple:
     """The 'leapOf' method returns the velocity a jump adds: walking,
     up as high as 'JUMP' against the pull; floating, a push off what he

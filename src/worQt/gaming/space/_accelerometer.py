@@ -60,8 +60,8 @@ class Accelerometer:
 
   def measured(self, vessel: Vessel, seconds: float) -> None:
     """The 'measured' method reads 'vessel' after a frame of 'seconds' s
-    of the game's time: its simulated push and spin, and a jolt it took
-    between frames felt over this one (then spent)."""
+    of the game's time: its simulated push and spin, and a jolt and a
+    twirl it took between frames felt over this one (then spent)."""
     if vessel.felt is None or vessel.spinning is None:
       raise ValueError('the vessel has not been simulated yet: nothing '
                        'to feel')
@@ -71,9 +71,14 @@ class Accelerometer:
       own = unrotated(vessel.turn, jolt)
       felt = tuple(f + j / seconds for f, j in zip(felt, own))
       vessel.jolt = (0.0, 0.0, 0.0)
+    speeding = tuple(vessel.spinning)
+    twirl = vessel.twirl
+    if any(twirl) and seconds > 0.0:
+      speeding = tuple(s + w / seconds for s, w in zip(speeding, twirl))
+      vessel.twirl = (0.0, 0.0, 0.0)
     self.felt = felt
     self.turning = tuple(vessel.spin)
-    self.speeding = tuple(vessel.spinning)
+    self.speeding = speeding
 
   def pullAt(self, place: tuple, velocity: tuple) -> tuple:
     """The 'pullAt' method returns the pull on something loose at

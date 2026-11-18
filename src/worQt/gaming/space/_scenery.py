@@ -36,6 +36,7 @@ from ._bolts import axesOf
 from ._walkwaymeshes import hallLight
 from ._orrery import SPAN
 from ._planets import PAD
+from ._stationinterior import FAR_HIGH
 from ._stationmeshes import beaconTips
 from ._turns import aboutAxis, cross, dot, matrixBack, matrixTimes, norm
 from ._turns import product, quaternionOf, rotated, unit, unrotated
@@ -118,6 +119,9 @@ FLOOD_AT = (CAMERA_AT[0], CAMERA_AT[1], CAMERA_AT[2] + 0.15)
 #  up).
 NEEDLE_GLOW = 0.45
 GLINT_GLOWS = {'warp': 1.3, 'action': 1.3}
+#  How brightly the gravity egg's marble glows (user, 2026-11-18: "a ball
+#  that emits light").
+EGG_GLOW = 2.0
 GLOWS = {'flames': 2.4, 'flames round': 2.0, 'shade': 0.55, 'bulbs': 1.8}
 ROUND_BELOW = 0.2
 #  How far the tape deck's stop and play knob turns from stop to play
@@ -236,7 +240,10 @@ class Scenery:
     (the cabin's lamp's
     place), 'lamp' (the panel's flood lamp's), 'flood' (the hull's
     floodlight: its place, the way it shines, its up), 'hygge' (the
-    floor lamp's light's place, the candles', their flicker) and
+    floor lamp's light's place, the candles', their flicker), 'egg' (the
+    gravity egg's marble, where 'dash''s 'egg' has it: its light),
+    'headlamp' (Asger's, as 'dash''s 'headlamp' has it: whether it is
+    on, its place, the way it shines, its up) and
     'camera' (the closed circuit camera feeding the monitor, the
     nose's if 'dash''s 'nose' else the hull's: its place, the way it
     looks and its picture's up, from the eye)."""
@@ -278,6 +285,9 @@ class Scenery:
                       rotated(turn, CAMERA_UP)),
             'hygge': (there(lampLight()), there(candleLight()),
                       dash['flicker']),
+            'egg': there(dash['egg']),
+            'headlamp': self._headlampOf(there, turn, dash.get(
+              'headlamp', HEADLAMP_OFF)),
             'camera': self._cameraOf(there, turn, dash['nose']),
             'aboard': dash.get('aboard', False),
             'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
@@ -288,6 +298,14 @@ class Scenery:
                                                         SWING_AWAY)),
             'outdoor': (there(hallLight()), dash.get('swing', SWING_AWAY)
                         < SWING_AWAY)}
+
+  def _headlampOf(self, there: object, turn: tuple, lamp: tuple) -> tuple:
+    """Returns Asger's headlamp ('lamp' the window's: on, his eyes,
+    the way they look, their up, the vessel's own axes) from the eye:
+    whether it shines, its place, the way it shines, its up."""
+    on, eye, look, up = lamp
+    return (bool(on), there(eye), rotated(turn, unit(look)),
+            rotated(turn, unit(up)))
 
   def _beamOf(self, there: object, turn: tuple, beam: tuple) -> tuple:
     """Returns the gravity gun's beam ('_gunbeam'; 'beam' the window's:
@@ -380,6 +398,8 @@ class Scenery:
       shown, eye, held = dash['gun'][:3]
       return there(eye), product(turn, held), shown and not dash.get(
         'inside', False), 0.0
+    if kind == 'egg ball':
+      return there(dash['egg']), turn, True, EGG_GLOW
     if kind == 'hatch':
       return there(HATCH_HINGE), product(turn, aboutAxis(
         (0.0, 1.0, 0.0), -HATCH_OPEN * dash.get('hatch', 0.0))), True, 0.0
@@ -391,13 +411,21 @@ class Scenery:
       held = quaternionOf(tuple(zip(*axesOf(way))))
       return there(place), product(turn, held), True, (
         BOLT_GLOW if kind == 'sring' else 0.0)
-    if kind == 'lift':
+    if kind in ('lift', 'lift glass'):
       place, held, shown = dash.get('lift', (((0.0, 0.0, 0.0), (
-        1.0, 0.0, 0.0, 0.0), False),) * 2)[what]
-      return there(place), product(turn, held), shown, 0.15
+        1.0, 0.0, 0.0, 0.0), False),) * 4)[what + (
+          2 if kind == 'lift glass' else 0)]
+      return there(place), product(turn, held), shown, (
+        0.15 if kind == 'lift' else 0.0)
     if kind == 'door':
       return there((0.0, 0.0, 0.0)), product(turn, leafTurn(dash.get(
         'door', 0.0))), True, DOOR_FILL
+    if kind == 'door glass':
+      return there((0.0, 0.0, 0.0)), product(turn, leafTurn(dash.get(
+        'door', 0.0))), True, 0.0
+    if kind == 'port door':
+      return there((0.0, 0.0, FAR_HIGH - 0.05)), turn, bool(dash.get(
+        'aboard', False)), 0.0
     if kind == 'car':
       cars = dash.get('cars', ())
       if what >= len(cars):
@@ -539,6 +567,11 @@ class Scenery:
     high = -dot(unit(eye), sun)
     day = max(0.0, min(1.0, 6.0 * high + 0.3))
     return tuple(thick * day * x for x in SKY)
+
+
+#  Asger's headlamp when the window tells nothing of it: off, at his eye
+#  and looking ahead.
+HEADLAMP_OFF = (False, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
 
 
 def decalTurnOf(normal: tuple) -> tuple:

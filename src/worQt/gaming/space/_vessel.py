@@ -89,7 +89,9 @@ class Vessel:
   where it needs to be calculated"); 'jolt', how its velocity was
   changed between frames by what held it (m/s, the ecliptic's axes: the
   latch catching it, pushing it off: 'jolted'; felt over the next
-  frame, then spent). The flight's kernel moves it ('Flight').
+  frame, then spent) and 'twirl', how its spin was (rad/s, its own
+  axes: what moves in its cabin pushing it back, 'kicked'; likewise).
+  The flight's kernel moves it ('Flight').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -98,7 +100,8 @@ class Vessel:
 
   #  What a saved game keeps of it ('_savegame'): its fields, its parts.
   SAVED = ('steer', 'anchor', 'place', 'velocity', 'turn', 'spin',
-           'touching', 'rcs', 'docked', 'bumped', 'felt', 'spinning', 'jolt')
+           'touching', 'rcs', 'docked', 'bumped', 'felt', 'spinning', 'jolt',
+           'twirl')
   PARTS = ('engine', 'autopilot')
 
   #  Public Variables
@@ -117,6 +120,7 @@ class Vessel:
   felt: tuple | None
   spinning: tuple | None
   jolt: tuple
+  twirl: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -130,6 +134,7 @@ class Vessel:
     self.turn, self.spin = (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.rcs, self.docked, self.bumped = (0.0, 0.0, 0.0), False, 0.0
     self.felt, self.spinning, self.jolt = None, None, (0.0, 0.0, 0.0)
+    self.twirl = (0.0, 0.0, 0.0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -150,6 +155,19 @@ class Vessel:
     velocity by 'change' between frames (m/s, the ecliptic's axes): it
     is felt over the next frame."""
     self.jolt = tuple(a + float(b) for a, b in zip(self.jolt, change))
+
+  def kicked(self, push: tuple, twist: tuple) -> None:
+    """The 'kicked' method gives the vessel the push 'push' (N s) and
+    the twist 'twist' about its middle (N m s), its own axes, between
+    frames (what moved in its cabin pushed it back: '_cabinworld'): its
+    velocity and spin changed at once by them over its mass and its
+    moments, felt over the next frame ('jolt', 'twirl')."""
+    change = rotated(self.turn, tuple(float(p) / MASS for p in push))
+    spun = tuple(float(w) / i for w, i in zip(twist, INERTIA))
+    self.velocity = tuple(v + c for v, c in zip(self.velocity, change))
+    self.spin = tuple(s + w for s, w in zip(self.spin, spun))
+    self.jolted(change)
+    self.twirl = tuple(a + w for a, w in zip(self.twirl, spun))
 
   def placed(self, anchor: int, place: tuple, velocity: tuple,
              turn: tuple, spin: tuple) -> None:

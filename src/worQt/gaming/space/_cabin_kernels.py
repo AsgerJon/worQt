@@ -391,6 +391,47 @@ def thudOf(depth: float, closing: float, before: int, heft: float,
   return 1
 
 
+#  The most solids near a loose body a frame ('bodiesNear': its points
+#  look at those alone; each point reading all four hundred solids each
+#  1/1200 s step, most of them the station's empty slots, took 0.15 ms a
+#  step: 10-20 ms a frame. More near than this, it reads them all.) And
+#  how much further than its own reach and its speed may take it in the
+#  frame it looks, m, and as if pulled how hard besides what it feels,
+#  m/s² (the frame's turning and pushes).
+BODY_NEAR_MOST = 48
+BODY_SLACK = _single(1.0)
+BODY_PULL = _single(20.0)
+
+
+@wp.kernel
+def bodiesNear(places: wp.array(dtype=wp.vec3),
+               velocities: wp.array(dtype=wp.vec3),
+               reaches: wp.array(dtype=wp.float32),
+               solidMiddles: wp.array(dtype=wp.vec3),
+               solidHalves: wp.array(dtype=wp.vec3),
+               solidVelocities: wp.array(dtype=wp.vec3),
+               near: wp.array2d(dtype=wp.int32),
+               nearCount: wp.array(dtype=wp.int32), felt: float,
+               seconds: float):
+  """Lists the solids each loose body (a thread a body and a solid) may
+  meet this frame: within its reach ('reaches': its points' farthest
+  from its middle and their round), how far it may go in 'seconds' (its
+  speed, and pulled 'felt' and 'BODY_PULL' m/s²) and 'BODY_SLACK', and
+  the solid's as far as it moves; at most 'BODY_NEAR_MOST' in its row
+  of 'near', how many in 'nearCount' (emptied before)."""
+  body, k = wp.tid()
+  if body == 0:
+    return
+  going = (wp.length(velocities[body]) * seconds
+           + 0.5 * (felt + BODY_PULL) * seconds * seconds)
+  reach = (reaches[body] + going + BODY_SLACK + wp.length(solidHalves[k])
+           + wp.length(solidVelocities[k]) * seconds)
+  if wp.length(solidMiddles[k] - places[body]) < reach:
+    slot = wp.atomic_add(nearCount, body, 1)
+    if slot < BODY_NEAR_MOST:
+      near[body, slot] = k
+
+
 @wp.kernel
 def pressed(places: wp.array(dtype=wp.vec3),
             turns: wp.array(dtype=wp.quat),
@@ -406,6 +447,8 @@ def pressed(places: wp.array(dtype=wp.vec3),
             solidHalves: wp.array(dtype=wp.vec3),
             solidVelocities: wp.array(dtype=wp.vec3),
             ways: wp.array(dtype=wp.vec3),
+            bodyNear: wp.array2d(dtype=wp.int32),
+            bodyNearCount: wp.array(dtype=wp.int32),
             touched: wp.array(dtype=wp.int32),
             pushes: wp.array(dtype=wp.vec3),
             twists: wp.array(dtype=wp.vec3),
@@ -423,7 +466,9 @@ def pressed(places: wp.array(dtype=wp.vec3),
   (their share pushed back); counts Asger's meetings ('asger' 0: their
   count in x, 1: their normals summed: he touches what is within 'NEAR'
   of him; his legs or the gun at work ('legs'), they hold him, not the
-  rubbing), the fastest he met anything ('landing') and the thuds."""
+  rubbing), the fastest he met anything ('landing') and the thuds. A
+  loose body's points look at the solids listed near it this frame
+  ('bodiesNear'), all of them if more than it lists."""
   i = wp.tid()
   body = owners[i]
   middle = places[body]
@@ -458,7 +503,15 @@ def pressed(places: wp.array(dtype=wp.vec3),
     normals = normals + normal
     if depth > margin:
       push = push + meetingPush(depth - margin, normal, moving, heft, grip)
-  for j in range(solidMiddles.shape[0]):
+  listed = int(1)
+  total = bodyNearCount[body]
+  if body == 0 or total > BODY_NEAR_MOST:
+    listed = 0
+    total = solidMiddles.shape[0]
+  for m in range(total):
+    j = m
+    if listed == 1:
+      j = bodyNear[body, m]
     half = solidHalves[j]
     there = solidMiddles[j] + solidVelocities[j] * elapsed
     if wp.length(point - there) < wp.length(half) + radius:
@@ -515,6 +568,7 @@ def moved(places: wp.array(dtype=wp.vec3),
           pushes: wp.array(dtype=wp.vec3),
           twists: wp.array(dtype=wp.vec3),
           asger: wp.array(dtype=wp.vec3),
+          reaction: wp.array(dtype=wp.vec3),
           felt: wp.vec3, turning: wp.vec3, speeding: wp.vec3,
           gunBody: int, gun: wp.vec3, step: float):
   """Moves each loose body (a thread a body) a 'step' on: pushed, and
@@ -523,7 +577,12 @@ def moved(places: wp.array(dtype=wp.vec3),
   rad/s) and its turning faster ('speeding', rad/s²); body 'gunBody'
   also by the Grav-Gun ('gun': its force on it over its mass, m/s²,
   '_gravgun'). Body nought is no body (Asger's box is moved by
-  'walked'). Its pushes are spent (made nought for the next step)."""
+  'walked'). Its pushes are spent (made nought for the next step).
+  What really pushed it (the meetings, the gun, the air; not what the
+  vessel's own moving makes it feel) pushes the vessel back as hard
+  ('reaction' 2: the push, N s; 3: its twist about the vessel's middle,
+  N m s; the vessel's own axes: the walls and the air are the
+  vessel's, a push between two loose bodies cancels)."""
   b = wp.tid()
   push = pushes[b]
   twist = twists[b]
@@ -538,8 +597,10 @@ def moved(places: wp.array(dtype=wp.vec3),
   velocity = velocities[b]
   feel = (push / heft - felt - wp.cross(turning, wp.cross(turning, place))
           - 2.0 * wp.cross(turning, velocity) - wp.cross(speeding, place))
+  real = push - AIR * heft * velocity
   if b == gunBody:
     feel = feel + gun
+    real = real + gun * heft
   velocity = velocity + (feel - AIR * velocity) * step
   places[b] = place + velocity * step
   velocities[b] = velocity
@@ -550,9 +611,14 @@ def moved(places: wp.array(dtype=wp.vec3),
   held = wp.cw_mul(inertia, spin)
   spin = spin + wp.cw_div(torque - wp.cross(spin, held), inertia) * step
   spin = wp.quat_rotate(turn, spin)
+  aired = -AIR_SPIN * step * wp.quat_rotate(turn, wp.cw_mul(
+    inertia, wp.quat_rotate_inv(turn, spin)))
   spin = spin + (-speeding - wp.cross(turning, spin)
                  - AIR_SPIN * spin) * step
   spins[b] = spin
+  wp.atomic_add(reaction, 2, -real * step)
+  wp.atomic_add(reaction, 3, -(wp.cross(place, real) + twist) * step
+                - aired)
   turned = turn + wp.quat(spin[0], spin[1], spin[2], 0.0) * turn * (
     0.5 * step)
   turns[b] = wp.normalize(turned)
@@ -568,6 +634,8 @@ def moved(places: wp.array(dtype=wp.vec3),
 #  levels up its sides it looks for walls (and three a side round each);
 #  a meeting's normal up its 'up' past 'FLOORED' stands on it.
 BOX_HALF = _single(crew.WIDE * 0.5)
+#  His mass, kg (what his meetings push the vessel back by: 'walked').
+ASGER_HEFT = _single(crew.HEFT)
 BOX_TALL = _single(crew.TALL)
 BOX_LOW = _single(crew.LOW)
 BOX_MIDDLE = _single(crew.MIDDLE)
@@ -934,10 +1002,11 @@ def walked(place: wp.array(dtype=wp.vec3),
            ways: wp.array(dtype=wp.vec3),
            near: wp.array(dtype=wp.int32),
            nearCount: wp.array(dtype=wp.int32),
+           reaction: wp.array(dtype=wp.vec3),
            felt: wp.vec3, turning: wp.vec3, speeding: wp.vec3,
            wanted: wp.vec3, leap: wp.vec3, up: wp.vec3, walking: int,
-           wanting: int, gun: wp.vec3, crouch: int, docked: int,
-           outside: int, own: int, seconds: float):
+           wanting: int, gun: wp.vec3, jet: wp.vec3, crouch: int,
+           docked: int, outside: int, own: int, seconds: float):
   """Moves Asger's box a frame ('seconds' s) on, one thread: what is
   felt there moves it (as a loose thing: 'felt', 'turning', 'speeding'),
   his legs while he touches something ('wanted', 'walking', 'wanting',
@@ -946,7 +1015,8 @@ def walked(place: wp.array(dtype=wp.vec3),
   on the side of an elevator's cage running 30 m/s out his legs held him
   still to the station, the cage's roof and floor beat him to death),
   the Grav-Gun's field or pulse ('gun': its force on him
-  over his mass, m/s², '_gravgun'); in parts of the frame no longer than
+  over his mass, m/s², '_gravgun'), his jetpack ('jet': likewise,
+  '_jetpack'); in parts of the frame no longer than
   'MOVE_MOST',
   first along his up, then across, each pushed out of what it meets
   ('pushedOut'): what it meets stops it and it slides along (Minecraft's
@@ -960,7 +1030,13 @@ def walked(place: wp.array(dtype=wp.vec3),
   the host ('place': his soles, not his middle: his up turning, he turns
   about his feet); the thuds; its
   box into the solids' slot 'own' (moving as it does through the frame)
-  for the loose things."""
+  for the loose things. Whatever really changed his speed (his legs on
+  what he stands on, the leap, what he met, the gun, the jetpack's and
+  the air's pushes: all but what the vessel's own moving makes him
+  feel) pushes the vessel back as hard ('reaction' 0: the push, N s; 1:
+  its twist about the vessel's middle, N m s, his mass at his middle;
+  the vessel's own axes): the walls, the bolts and the air are the
+  vessel's."""
   v = velocity[0]
   under = ground[0]
   up = wp.normalize(up)
@@ -1009,14 +1085,18 @@ def walked(place: wp.array(dtype=wp.vec3),
   normals = wp.vec3(0.0, 0.0, 0.0)
   floors = wp.vec3(0.0, 0.0, 0.0)
   meetings = int(0)
+  pushedBack = wp.vec3(0.0, 0.0, 0.0)
+  twistedBack = wp.vec3(0.0, 0.0, 0.0)
   for k in range(count):
     t = float(k + 1) * dt
     body = soles + BOX_MIDDLE * up
     feel = (-felt - wp.cross(turning, wp.cross(turning, body))
             - 2.0 * wp.cross(turning, v) - wp.cross(speeding, body))
+    framed = feel
+    began = v
     if k == 0 and touching == 1:
       v = v + leap
-    feel = feel + gun
+    feel = feel + gun + jet
     if touching == 1:
       rel = v - under
       legs = (wanted - rel) / LEGS_TIME
@@ -1172,6 +1252,11 @@ def walked(place: wp.array(dtype=wp.vec3),
     if was == 0:
       hardest = wp.max(hardest, closing)
       landing = wp.max(landing, closing)
+    really = ASGER_HEFT * ((v - began) - framed * dt)
+    pushedBack = pushedBack - really
+    twistedBack = twistedBack - wp.cross(body, really)
+  wp.atomic_add(reaction, 0, pushedBack)
+  wp.atomic_add(reaction, 1, twistedBack)
   if hardest > THUD:
     wp.atomic_add(thuds, 0, 1.0)
     wp.atomic_max(thuds, 1, hardest)

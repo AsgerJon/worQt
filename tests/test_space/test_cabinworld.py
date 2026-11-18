@@ -1,8 +1,9 @@
 """
 TestCabinWorld covers what moves in the cabin, on the device (the CPU
 here; user, 2026-11-17: "when can Asger get up and float around in
-micro-gravity?"; the loose things "FAFO rules"): the loose things rest
-where they are, on the pad or weightless; Asger up stands on the floor
+micro-gravity?"): loose things (the cabin has none since 2026-11-18:
+the tests' own on its floor, 'THINGS') rest where they are, on the pad
+or weightless; Asger up stands on the floor
 under four g, walks in one, pushes off weightless and drifts on, thuds
 landing from a jump (as fast as he jumped: it may hurt him); the
 Grav-Gun pulls him to a magic bolt and holds him there, and a loose
@@ -28,11 +29,23 @@ from worQt.gaming.space._cabinworld import STILL, CabinWorld, restingLoose
 from worQt.gaming.space._cockpit import FLOOR, Cockpit
 from worQt.gaming.space._crewman import HEFT, LOW, MIDDLE, PUSH, STEP
 from worQt.gaming.space._crewman import TALL, WIDE
-from worQt.gaming.space._furnishings import looseThings
 from worQt.gaming.space._gravgun import NEAR, PULL, PULSE, PUNT, GravGun
 from worQt.gaming.space._launchtower import GROUND
 
 from . import FRAME, SpaceTest
+
+#  The cabin has no loose things (user, 2026-11-18: "remove them
+#  completely"); these, on its floor clear of everything, try the loose
+#  bodies' physics: each its name, middle, half sizes, axes and mass.
+_UPRIGHT = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+THINGS = (('mug', (0.5, 0.0, FLOOR + 0.05), (0.042, 0.042, 0.05),
+           _UPRIGHT, 0.35),
+          ('kettle', (-0.5, 0.5, FLOOR + 0.115), (0.1, 0.1, 0.115),
+           _UPRIGHT, 1.2),
+          ('pillow', (0.3, -0.7, FLOOR + 0.06), (0.15, 0.15, 0.06),
+           _UPRIGHT, 0.35),
+          ('mug', (-0.6, -0.4, FLOOR + 0.05), (0.042, 0.042, 0.05),
+           _UPRIGHT, 0.35))
 
 #  Where on the pad's open ground his box is tried (his soles), m.
 ARENA = (12.0, 12.0, GROUND)
@@ -58,17 +71,43 @@ class TestCabinWorld(SpaceTest):
     """Returns how far the loose thing that moved most is from where it
     rests, m."""
     return max(math.dist(now[0], rest[0]) for now, rest in zip(
-      world.shown(), restingLoose()))
+      world.shown(), restingLoose(THINGS)))
 
   def test_resting(self) -> None:
     """On the pad (one g up) and weightless alike the loose things stay
     where they rest."""
     cockpit = Cockpit()
     for felt in ((0.0, 0.0, G0), (0.0, 0.0, 0.0)):
-      world, meter = CabinWorld('cpu'), self.stillMeter()
+      world, meter = CabinWorld('cpu', THINGS), self.stillMeter()
       meter.felt = felt
       self._stepped(world, meter, cockpit, 1.0, STILL)
       self.assertLess(self._moved(world), 0.005, felt)
+
+  def test_near(self) -> None:
+    """Each loose body's points look only at the solids listed near it
+    this frame (user, 2026-11-18: "10 to 30 fps bro...?": each point read
+    all four hundred solids each step); none it could meet is left out:
+    every solid whose round comes within its reach is listed, and few
+    besides."""
+    import numpy
+    from worQt.gaming.space._cabin_kernels import BODY_NEAR_MOST
+    world, meter = CabinWorld('cpu', THINGS), self.stillMeter()
+    meter.felt = (0.0, 0.0, G0)
+    cockpit = Cockpit()
+    self._stepped(world, meter, cockpit, 2.0 * FRAME, STILL)
+    counts = world.bodyNearCount.numpy()
+    near = world.bodyNear.numpy()
+    reaches = world.reaches.numpy()
+    places = world.places.numpy()
+    middles = world.solidMiddles.numpy()
+    halves = numpy.linalg.norm(world.solidHalves.numpy(), axis=1)
+    for body in range(1, len(places)):
+      self.assertLessEqual(counts[body], BODY_NEAR_MOST, body)
+      listed = set(near[body, :counts[body]].tolist())
+      apart = numpy.linalg.norm(middles - places[body], axis=1)
+      meets = set(numpy.nonzero(apart < reaches[body] + halves)[0].tolist())
+      self.assertLessEqual(meets, listed, body)
+      self.assertLess(len(listed), len(middles) // 4, body)
 
   def test_standing(self) -> None:
     """Up under four g he stands on the floor; in one g he walks back
@@ -141,7 +180,7 @@ class TestCabinWorld(SpaceTest):
     for _ in range(int(round(seconds / FRAME))):
       heft, moving = HEFT, (0.0, 0.0, 0.0)
       if thing is not None:
-        mass = looseThings()[thing][4]
+        mass = THINGS[thing][4]
         heft = HEFT * mass / (HEFT + mass)
         moving = world.movingOf(thing)
       moving = tuple(m - v for m, v in zip(moving, crewman.velocity))
@@ -149,7 +188,7 @@ class TestCabinWorld(SpaceTest):
                          moving, heft, FRAME)
       onThing = (0.0, 0.0, 0.0)
       if thing is not None:
-        onThing = tuple(-f / looseThings()[thing][4] for f in force)
+        onThing = tuple(-f / THINGS[thing][4] for f in force)
       world.stepped(FRAME, meter, crewman, STILL, (tuple(
         f / HEFT for f in force), thing, onThing))
       fastest = max(fastest, math.hypot(*crewman.velocity))
@@ -217,12 +256,12 @@ class TestCabinWorld(SpaceTest):
     coming; come near, it is held before the gun, at rest with him
     (user, 2026-11-18: "until the item is picked up")."""
     cockpit, meter = Cockpit(), self.stillMeter()
-    world = CabinWorld('cpu')
+    world = CabinWorld('cpu', THINGS)
     cockpit.gotUp()
     crewman = cockpit.crewman
     self._stepped(world, meter, cockpit, 0.1, STILL)
     places = [place for place, _ in world.shown()]
-    k = min(range(len(places)), key=lambda j: looseThings()[j][4] if (
+    k = min(range(len(places)), key=lambda j: THINGS[j][4] if (
       math.dist(places[j], crewman.middle) < 6.0) else math.inf)
     start = math.dist(places[k], crewman.middle)
     gun = GravGun()
@@ -243,14 +282,14 @@ class TestCabinWorld(SpaceTest):
     """The loose things kept (a saved game) and put into a fresh world
     are where they were, turned and moving as they were."""
     cockpit, meter = Cockpit(), self.stillMeter()
-    world = CabinWorld('cpu')
+    world = CabinWorld('cpu', THINGS)
     world.stepped(FRAME, meter, cockpit.crewman, STILL)
     gun = GravGun()
     gun.punted(('loose', 2))
     self._gunned(world, meter, cockpit.crewman, gun,
                  lambda: world.shown()[2][0], 2, 0.2)
     kept = world.kept()
-    again = CabinWorld('cpu')
+    again = CabinWorld('cpu', THINGS)
     again.keptFrom(kept)
     for (place, turn), (there, turned) in zip(world.shown(),
                                               again.shown()):

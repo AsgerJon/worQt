@@ -20,7 +20,7 @@ import numpy
 from ._cabinsolids import solids
 from ._crewman import HEFT, MIDDLE
 from ._furnishings import looseThings
-from ._turns import quaternionOf
+from ._turns import cross, quaternionOf
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._accelerometer import Accelerometer
@@ -59,16 +59,28 @@ class CabinWorld:
   CabinWorld steps the cabin's bodies on 'device' ('stepped'): Asger's
   box a frame at a time ('_cabin_kernels.walked': left out while he
   sits), his box then a moving solid for the loose things (the last
-  solid's slot); each of '_furnishings.looseThings' (bodies from 1: body
-  0 is kept empty) every frame as long as the real time passed, in steps
-  of 'STEP'. Docked to the space station ('stationed')
-  its rooms join the cabin's and its solids (moving, some) the cabin's
-  own. 'shown' says where each loose thing is and
+  solid's slot); each of its loose things ('things'; the cabin's:
+  '_furnishings.looseThings', none since the user's "remove them
+  completely", 2026-11-18; bodies from 1: body 0 is kept empty) every
+  frame as long as the real time passed, in steps of 'STEP' (none, no
+  steps: Asger's box alone, a step a frame). Docked to the space
+  station ('stationed') its rooms join the cabin's and its solids
+  (moving, some) the cabin's own. 'shown' says where each loose thing
+  is and
   how it is turned from how it rests; 'thuds' counts the meetings begun
   hard and 'loudest' says how hard the loudest of the last frame was
   (m/s, by its heft); 'landed' how fast Asger met anything the last
   frame (m/s: it may hurt him); 'lastSteps' and 'lastMs' how many steps
   the last frame took and how long, ms (the debug view's).
+
+  What pushes Asger and the loose things pushes back as hard what
+  pushed them (user, 2026-11-18: "PHYSICS MUST BE REAL"; his jetpack
+  blows the air, which carries its push to the walls): 'pushedBack' is
+  what the last frame's loose things pushed the vessel by, and his
+  chair stopping him as he sat down, its push (N s) and the twist about
+  its middle (N m s), its own axes; 'asgerPushed' what Asger out of his
+  chair pushed back likewise (the vessel's while he is in its cabin;
+  outside it, on the pad, the tower's and the ground's).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -77,18 +89,21 @@ class CabinWorld:
 
   #  Public Variables
   device: str
+  things: tuple
   pointCount: int
   thuds: int
   loudest: float
   landed: float
   lastSteps: int
   lastMs: float
+  pushedBack: tuple
+  asgerPushed: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, device: str) -> None:
+  def __init__(self, device: str, things: tuple = None) -> None:
     import warp as wp
 
     from . import _cabin_kernels
@@ -96,10 +111,14 @@ class CabinWorld:
     self.wp, self.kernels, self.device = wp, _cabin_kernels, device
     self.thuds, self.loudest, self.landed, self._present = 0, 0.0, 0.0, 0
     self.lastSteps, self.lastMs = 0, 0.0
+    self.pushedBack = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    self.asgerPushed = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     self.docked, self.outside = False, 0
-    things = looseThings()
+    things = looseThings() if things is None else tuple(things)
+    self.things = things
     rest = [_turnOf(axes) for _, _, _, axes, _ in things]
-    self._rest = numpy.array(rest, numpy.float64)
+    self._rest = numpy.array(rest, numpy.float64).reshape(-1, 4)
     self._places = numpy.array([(0.0, 0.0, 0.0)] + [
       middle for _, middle, _, _, _ in things], numpy.float64)
     self._turns = numpy.array([(1.0, 0.0, 0.0, 0.0)] + rest,
@@ -162,22 +181,41 @@ class CabinWorld:
     self.bodyMet = self._sent(numpy.zeros((3, 3)), vec3)
     self.near = self._sent([0] * _cabin_kernels.NEAR_MOST, wp.int32)
     self.nearCount = self._sent([0], wp.int32)
+    self.reaction = self._sent(numpy.zeros((4, 3)), vec3)
+    reaches = [0.0] * len(masses)
+    for owner, local, radius in zip(owners, locals_, radii):
+      reaches[owner] = max(reaches[owner], math.hypot(*local) + radius)
+    self.reaches = self._sent(reaches, wp.float32)
+    self.bodyNear = wp.zeros((len(masses), _cabin_kernels.BODY_NEAR_MOST),
+                             wp.int32, device)
+    self.bodyNearCount = self._sent([0] * len(masses), wp.int32)
     self._pressed, self._moved, self._walked, self._nearby = (
       self._recorded())
+    self._bodiesNear = wp.launch(
+      _cabin_kernels.bodiesNear, (len(masses), len(self._middles)), [
+        self.places, self.velocities, self.reaches, self.solidMiddles,
+        self.solidHalves, self.solidVelocities, self.bodyNear,
+        self.bodyNearCount, 0.0, 1.0 / 60.0], [], [], [], device, None,
+      False, False, True)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def stepped(self, seconds: float, accelerometer: Accelerometer,
-              crewman: Crewman, want: tuple, gun: tuple = None) -> None:
+              crewman: Crewman, want: tuple, gun: tuple = None,
+              jet: tuple = (0.0, 0.0, 0.0)) -> None:
     """The 'stepped' method moves the cabin's bodies 'seconds' s on (real
     time), feeling what 'accelerometer' read; Asger ('crewman') too,
     unless he sits, his legs as 'want' asks ('Crewman.wantOf' and a leap:
-    the velocity wanted, walking, wanting, the leap's velocity); and the
+    the velocity wanted, walking, wanting, the leap's velocity); the
     Grav-Gun's push ('gun': its force on Asger over his mass, m/s², the
     loose thing it acts on (its index in 'shown', None: none) and its
-    force on that over its mass; None: no push), its own axes."""
+    force on that over its mass; None: no push) and his jetpack's
+    ('jet': its force on him over his mass, m/s²), its own axes; and
+    says what they pushed back by ('pushedBack', 'asgerPushed')."""
+    self.pushedBack = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    self.asgerPushed = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     if seconds <= 0.0:
       return
     began = time.perf_counter()
@@ -185,9 +223,12 @@ class CabinWorld:
     present = 0 if crewman.sitting else 1
     if present and not self._present:
       self._asgerSent(crewman)
+    seated = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     if self._present and not present:
+      seated = self._seated()
       self._asgerAway()
     self._present = present
+    self.reaction.zero_()
     vec3 = wp.vec3
     felt, turning, speeding = (vec3(*accelerometer.felt),
                                vec3(*accelerometer.turning),
@@ -202,6 +243,7 @@ class CabinWorld:
           ('wanted', vec3(*wanted)), ('leap', vec3(*leap)),
           ('up', vec3(*crewman.up)), ('walking', int(walking)),
           ('wanting', int(wanting)), ('gun', vec3(*onAsger)),
+          ('jet', vec3(*jet)),
           ('crouch', 1 if crewman.crouching else 0),
           ('docked', 1 if self.docked else 0), ('outside', self.outside),
           ('seconds', float(seconds))):
@@ -213,8 +255,19 @@ class CabinWorld:
         nearby.set_param_by_name(name, value)
       nearby.launch()
       walked.launch()
+    if not self.pointCount:
+      self._taken(crewman, present, seated)
+      self.lastSteps = present
+      self.lastMs = 1e3 * (time.perf_counter() - began)
+      return
     steps = max(1, min(MOST_STEPS, math.ceil(seconds / STEP)))
     step = seconds / steps
+    self.bodyNearCount.zero_()
+    near = self._bodiesNear
+    near.set_param_by_name('felt', float(math.sqrt(sum(
+      x * x for x in accelerometer.felt))))
+    near.set_param_by_name('seconds', float(seconds))
+    near.launch()
     moved = self._moved
     for name, value in (('felt', felt), ('turning', turning),
                         ('speeding', speeding), ('step', float(step)),
@@ -225,7 +278,7 @@ class CabinWorld:
       self._pressed.set_param_by_name('elapsed', float(k * step))
       self._pressed.launch()
       moved.launch()
-    self._taken(crewman, present)
+    self._taken(crewman, present, seated)
     self.lastSteps = steps
     self.lastMs = 1e3 * (time.perf_counter() - began)
 
@@ -263,7 +316,8 @@ class CabinWorld:
     every[first:first + count] = velocities
     self.solidVelocities.assign(every)
     self.docked = bool(docked)
-    self._pressed.set_param_by_name('docked', 1 if docked else 0)
+    if self._pressed is not None:
+      self._pressed.set_param_by_name('docked', 1 if docked else 0)
 
   def walked(self, outside: int) -> None:
     """The 'walked' method joins the rooms outside the rocket on the pad
@@ -271,7 +325,8 @@ class CabinWorld:
     tunnel and the tower's platform; two, the doorway)."""
     if int(outside) != self.outside:
       self.outside = int(outside)
-      self._pressed.set_param_by_name('outside', self.outside)
+      if self._pressed is not None:
+        self._pressed.set_param_by_name('outside', self.outside)
 
   def solidBoxes(self, ) -> tuple:
     """The 'solidBoxes' method returns the solids in the world now, as
@@ -335,6 +390,7 @@ class CabinWorld:
     self.stationed(False, (), ())
     self._asgerAway()
     self._present = 0
+    self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
   def shown(self, ) -> tuple:
     """The 'shown' method returns each loose thing's place (its middle,
@@ -361,22 +417,24 @@ class CabinWorld:
       self.body, self.bodyVelocity, self.ground, self.contact,
       self.bodyMet,
       self.thudding, self.solidMiddles, self.solidTurns, self.solidHalves,
-      self.solidVelocities, self.ways, self.near, self.nearCount, zero,
-      zero, zero, zero, zero,
-      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, 0, 0, 0, self.own,
+      self.solidVelocities, self.ways, self.near, self.nearCount,
+      self.reaction, zero, zero, zero, zero, zero,
+      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, zero, 0, 0, 0, self.own,
       1.0 / 60.0], [], [], [], device, None, False, False, True)
     pressed = wp.launch(kernels.pressed, self.pointCount, [
       self.places, self.turns, self.velocities, self.spins, self.masses,
       self.halves, self.owners, self.locals, self.radii,
       self.solidMiddles, self.solidTurns, self.solidHalves,
-      self.solidVelocities, self.ways, self.touched,
+      self.solidVelocities, self.ways, self.bodyNear,
+      self.bodyNearCount, self.touched,
       self.pushes, self.twists, self.asger, self.thudding, self.landing,
       zero, 0, 0, 0, 0, 0.0], [], [], [], device, None, False, False,
                       True)
     moved = wp.launch(kernels.moved, len(self._places), [
       self.places, self.turns, self.velocities, self.spins, self.masses,
-      self.inertias, self.pushes, self.twists, self.asger, zero, zero,
-      zero, -1, zero, 0.0], [], [], [], device, None, False, False, True)
+      self.inertias, self.pushes, self.twists, self.asger, self.reaction,
+      zero, zero, zero, -1, zero, 0.0], [], [], [], device, None, False,
+      False, True)
     return pressed, moved, walked, nearby
 
   def _asgerSent(self, crewman: Crewman) -> None:
@@ -398,9 +456,23 @@ class CabinWorld:
     self.solidMiddles.assign(middles)
     self.solidVelocities.assign(velocities)
 
-  def _taken(self, crewman: Crewman, present: int) -> None:
+  def _seated(self, ) -> tuple:
+    """Returns what Asger sitting down pushes the vessel by: his chair
+    stops him as he moved at the last frame's end (his push, N s, and
+    its twist about the vessel's middle, N m s, its own axes)."""
+    middle, velocity = self._last
+    moving = tuple(HEFT * v for v in velocity)
+    return moving, cross(middle, moving)
+
+  def _taken(self, crewman: Crewman, present: int,
+             seated: tuple) -> None:
     """Takes the bodies back from the device: the loose things' places
-    and turns, Asger's body (if he is up), the thuds."""
+    and turns, Asger's body (if he is up), the thuds, and what they
+    pushed the vessel by (with what his chair took, 'seated')."""
+    back = self.reaction.numpy().astype(numpy.float64)
+    self.asgerPushed = tuple(tuple(row.tolist()) for row in back[:2])
+    self.pushedBack = tuple(tuple((row + numpy.asarray(extra)).tolist())
+                            for row, extra in zip(back[2:], seated))
     self._places = self.places.numpy().astype(numpy.float64)
     self._velocities = self.velocities.numpy().astype(numpy.float64)
     x, y, z, w = self.turns.numpy().astype(numpy.float64).T
@@ -410,9 +482,11 @@ class CabinWorld:
       met = self.bodyMet.numpy().astype(numpy.float64)
       contact = self.contact.numpy()[0]
       soles = self.body.numpy()[0].astype(numpy.float64).tolist()
-      crewman.placed(tuple(s + MIDDLE * u for s, u in zip(
-        soles, crewman.up)), tuple(self.bodyVelocity.numpy()[0].astype(
-          numpy.float64).tolist()), int(round(met[0][0])),
+      middle = tuple(s + MIDDLE * u for s, u in zip(soles, crewman.up))
+      velocity = tuple(self.bodyVelocity.numpy()[0].astype(
+        numpy.float64).tolist())
+      self._last = middle, velocity
+      crewman.placed(middle, velocity, int(round(met[0][0])),
                      tuple(met[1].tolist()), bool(contact[2] > 0.5),
                      float(met[0][1]), tuple(met[2].tolist()))
       self.landed = float(met[0][2])
@@ -429,11 +503,13 @@ class CabinWorld:
     return wp.array(host, kind, None, None, None, None, self.device)
 
 
-def restingLoose() -> tuple:
-  """Returns the loose things as they rest, as 'CabinWorld.shown' says
+def restingLoose(things: tuple = None) -> tuple:
+  """Returns the loose things ('things'; None: the cabin's,
+  '_furnishings.looseThings') as they rest, as 'CabinWorld.shown' says
   where they are: each its middle and no turn."""
+  things = looseThings() if things is None else things
   return tuple((middle, (1.0, 0.0, 0.0, 0.0))
-               for _, middle, _, _, _ in looseThings())
+               for _, middle, _, _, _ in things)
 
 
 def _turnOf(axes: tuple) -> tuple:

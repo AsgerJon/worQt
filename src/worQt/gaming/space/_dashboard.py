@@ -43,13 +43,14 @@ from ._elevator import PLATE_HALVES
 from ._stationinterior import HATCH
 from ._teleprinter import LINE, PITCH, WIDTH
 from ._gunmodel import gunParts, sideMark
-from ._walkwaymeshes import leafRows
+from ._walkwaymeshes import doorGlassRows, leafRows
 from ._bolts import STATION_BOLTS, boltPieceRows, ringPieceRows
-from ._launchtower import PLATE, SHAFT
+from ._towerlift import carHalves, carWindow
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
 from ._shapes import roundedSlabRows, sheetRows
+from ._egg import marbleRows
 from ._furnishings import bulbsRows, flamesRows, looseParts
 from ._furnishings import looseThings, roundFlamesRows, shadeRows
 
@@ -124,6 +125,10 @@ ENCHANTED = ('warp', 'action')
 #  down 'HATCH_OPEN' rad; the space station's elevators (cages).
 HATCH_HINGE = (HATCH, 0.0, NOSE - 0.035)
 HATCH_OPEN = math.radians(100.0)
+#  The far docking port's closed door (user, 2026-11-18: "Fix the far
+#  port stuff": its docking ring's hatch showed space): how much wider
+#  than the hatch's hole it is, m.
+PORT_DOOR_RIM = 0.15
 CARS = 4
 #  The guards' walls' thickness, m.
 GUARD_WALL = 0.0022
@@ -171,10 +176,16 @@ def pieces(controls: tuple) -> tuple:
   gravity gun in his hands ('gun', its index in '_gunmodel.gunParts':
   about his eyes, in their frame; 'gun mark': the 3 on its side), the
   hatch's lid in the ceiling
-  ('hatch': open docked to the space station), the station's elevators'
+  ('hatch': open docked to the space station), the gravity egg's
+  glowing marble ('egg ball', about its middle: '_egg'), the station's
+  elevators'
   cages' plates ('car', six a cage: '_elevator.PLATE_HALVES'), the
-  door's leaf ('door': it slides round into the wall, '_walkway'), the
-  launch tower's lift's car's floor and roof ('lift', '_towerlift'), the
+  door's leaf ('door': it slides round into the wall, '_walkway') and
+  its window's pane ('door glass'), the far docking port's closed door
+  ('port door': docked, the port the rocket is not in), the
+  launch tower's lift's car's floor, roof and two walls ('lift',
+  '_towerlift'; the walls' windows cut) and the walls' panes ('lift
+  glass'), the
   space station's magic bolts, docked ('sbolt', 'sring': each its steel
   and its ring, '_bolts.stationBolts')."""
   out = [('control', control) for control in controls]
@@ -193,12 +204,38 @@ def pieces(controls: tuple) -> tuple:
   out += [('gun', k) for k in range(len(gunParts()))]
   out += [('gun mark', 0)]
   out += [('hatch', 0)]
+  out += [('egg ball', 0)]
   out += [('car', k) for k in range(CARS * len(PLATE_HALVES))]
-  out += [('door', 0)]
-  out += [('lift', k) for k in range(2)]
+  out += [('door', 0), ('door glass', 0)]
+  out += [('port door', 0)]
+  out += [('lift', k) for k in range(4)]
+  out += [('lift glass', k) for k in range(2)]
   out += [(kind, k) for k in range(STATION_BOLTS)
           for kind in ('sbolt', 'sring')]
   return tuple(out)
+
+
+def _liftRows(what: int) -> tuple:
+  """Returns the lift's car's piece 'what' about its middle: its floor
+  and roof plates (nought, one), its west and south walls (two, three),
+  each wall's window cut through it ('_towerlift.carWindow')."""
+  half = carHalves()[what]
+  if what < 2:
+    return boxRows((0.0, 0.0, 0.0), half, UNTURNED)
+  wall = what - 2
+  along = 1 if wall == 0 else 0
+  (a, b), (low, high) = carWindow(wall)
+  long, tall = half[along], half[2]
+  pieces = []
+  for (s0, s1), (z0, z1) in (((-long, long), (-tall, low)),
+                             ((-long, long), (high, tall)),
+                             ((-long, a), (low, high)),
+                             ((b, long), (low, high))):
+    middle, size = [0.0, 0.0, 0.5 * (z0 + z1)], list(half)
+    middle[along], size[along] = 0.5 * (s0 + s1), 0.5 * (s1 - s0)
+    size[2] = 0.5 * (z1 - z0)
+    pieces.append(boxRows(tuple(middle), tuple(size), UNTURNED))
+  return joined(pieces)
 
 
 def guarded(control: object) -> bool:
@@ -679,13 +716,28 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
                    UNTURNED)
   if kind == 'door':
     return leafRows()
+  if kind == 'egg ball':
+    return marbleRows()
+  if kind == 'door glass':
+    return doorGlassRows()
+  if kind == 'port door':
+    return joined([cylinderRows((0.0, 0.0, -0.03), (0.0, 0.0, 1.0),
+                                HATCH + PORT_DOOR_RIM, 0.03, 48),
+                   boxRows((0.0, 0.0, -0.05), (0.25, 0.02, 0.02),
+                           UNTURNED)])
   if kind == 'sbolt':
     return boltPieceRows()
   if kind == 'lift':
-    (x0, y0, _), (x1, y1, _) = SHAFT
-    return boxRows((0.0, 0.0, 0.0), (0.5 * (x1 - x0) - 0.02,
-                                     0.5 * (y1 - y0) - 0.02, PLATE),
-                   UNTURNED)
+    return _liftRows(what)
+  if kind == 'lift glass':
+    (a, b), (low, high) = carWindow(what)
+    half = list(carHalves()[2 + what])
+    half[1 if what == 0 else 0] = 0.5 * (b - a)
+    half[0 if what == 0 else 1] = 0.005
+    half[2] = 0.5 * (high - low)
+    middle = [0.0, 0.0, 0.5 * (low + high)]
+    middle[1 if what == 0 else 0] = 0.5 * (a + b)
+    return boxRows(tuple(middle), tuple(half), UNTURNED)
   if kind == 'sring':
     return ringPieceRows()
   if kind == 'bug':

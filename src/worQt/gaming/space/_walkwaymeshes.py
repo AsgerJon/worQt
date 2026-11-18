@@ -7,7 +7,7 @@ where on a picture), each by its look:
 - 'towerParts': the tower on the pad (the pad's own axes: x east, y
   north, z up from the ground): the red steel tower under the hall's
   east end, the hall (windows, a light panel, the walkway's opening),
-  the stair tower west of it (its walls with window slits, the stairs'
+  the stair tower west of it (its walls with windows, the stairs'
   steps on their ramps, the landings, the wall between the lanes,
   handrails, lamps, the lift's shaft), lamps over its doors outside,
   floodlights on the hall's roof, the EXIT sign;
@@ -34,8 +34,9 @@ from ._shapes import UNTURNED, boxRows, joined, quadRows
 from ._launchtower import EXIT_SIGN, FLIGHTS, GROUND, HALL, LANDING, LANES
 from ._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT, STAIR_FOOT, STAIR_TOP
 from ._launchtower import STAIRWELL, TOWER, TOWER_LEGS, TOWER_TOP
-from ._launchtower import STEPS, flightOf, landingLevel
-from ._walkway import DOOR_HIGH, DOOR_SPAN, PAD_UP, SLOPE, TUNNEL_FROM
+from ._launchtower import STEPS, flightOf, landingLevel, rise
+from ._walkway import DOOR_HIGH, DOOR_SPAN, DOOR_WINDOW, PAD_UP, SLOPE
+from ._walkway import TUNNEL_FROM
 from ._walkway import TUNNEL_HALF, TUNNEL_HIGH
 
 #  The hall's floor's height over the ground (the cabin's floor's), m.
@@ -66,6 +67,18 @@ INSIDE_KEYS = (('DOOR', 'E', 'door', -0.08),
                ('WALKWAY', 'E', 'walkway', 0.08))
 KEY_HALF = (0.025, 0.025, 0.012)
 PLACARD = (160.5, 1.5, (0.21, 0.297))
+#  The stair tower's and the lift shaft's windows (user, 2026-11-18:
+#  "Give the staircase and elevator and elevatorshaft windows"): their
+#  sill and head over where one stands (a landing, a flight's middle, a
+#  storey of the shaft: the landings' heights), m; across them: the
+#  stairwell's south windows along its flights' middle (x), its west
+#  and east ones across its lanes (y), the shaft's across it (x north
+#  and through the wall to the stairs, y east), m.
+SILL_OVER, HEAD_OVER = 0.9, 2.0
+STAIR_ALONG = (-22.8, -20.4)
+STAIR_ACROSS = (-2.4, -0.6)
+SHAFT_ALONG = (-20.6, -19.0)
+SHAFT_ACROSS = (0.7, 2.3)
 
 
 @functools.lru_cache(maxsize=1)
@@ -197,7 +210,8 @@ def _stairTower(put: object) -> None:
   stairs' doorway out west, the lift's north), its roof, its east wall
   the hall's west (the stairs' and the lift's doorways into it), the
   wall between the stairwell and the lift, the lift's shaft's west
-  wall, window slits up the stairwell, a lamp over each door outside."""
+  wall; their windows, a pane of glass in each ('towerWindows'); a lamp
+  over each door outside."""
   (tx0, ty0), (tx1, ty1) = TOWER
   ground, top = z_(GROUND), z_(TOWER_TOP)
   (sx0, sy0, _), (sx1, sy1, _) = STAIRWELL
@@ -205,29 +219,71 @@ def _stairTower(put: object) -> None:
                              top - 0.1), (0.5 * (tx1 - tx0),
                                           0.5 * (ty1 - ty0), 0.1),
                             UNTURNED))
+  windows = towerWindows()
   foot = STAIR_FOOT
-  _wall(put, 'tower wall', (tx0, ty0, ground), (sx0, ty1, top), (
-    ((foot[0][1], ground), (foot[1][1], ground + 2.2)),))
-  _wall(put, 'tower wall', (tx0, ty0, ground), (tx1, sy0, top), ())
+  walls = {'west': ((tx0, ty0, ground), (sx0, ty1, top), [
+             ((foot[0][1], ground), (foot[1][1], ground + 2.2))]),
+           'south': ((tx0, ty0, ground), (tx1, sy0, top), [])}
   lift = LIFT_FOOT
   (hx0, hy0, _), (hx1, hy1, _) = SHAFT
-  _wall(put, 'tower wall', (tx0, hy1, ground), (tx1, ty1, top), (
-    ((lift[0][0], ground), (lift[1][0], ground + 2.2)),))
+  walls['north'] = ((tx0, hy1, ground), (tx1, ty1, top), [
+    ((lift[0][0], ground), (lift[1][0], ground + 2.2))])
   stair, door = STAIR_TOP, LIFT_TOP
   floor = z_(FLOOR)
-  _wall(put, 'tower wall', (sx1, ty0, ground), (tx1, ty1, top), (
+  walls['east'] = ((sx1, ty0, ground), (tx1, ty1, top), [
     ((stair[0][1], floor), (stair[1][1], floor + 2.2)),
-    ((door[0][1], floor), (door[1][1], floor + 2.2))))
-  _wall(put, 'tower wall', (sx0, sy1, ground), (sx1, hy0, top), ())
-  _wall(put, 'tower wall', (sx0, hy0, ground), (hx0, hy1, top), ())
-  for k in range(1, FLIGHTS, 2):
-    z = z_(landingLevel(k)) + 1.6
-    put('glass', boxRows((sx1 - 2.5, ty0 + 0.1, z), (0.6, 0.11, 0.4),
-                         UNTURNED))
+    ((door[0][1], floor), (door[1][1], floor + 2.2))])
+  walls['between'] = ((sx0, sy1, ground), (sx1, hy0, top), [])
+  walls['shaft west'] = ((sx0, hy0, ground), (hx0, hy1, top), [])
+  for name, (low, high, holes) in walls.items():
+    cut = [((a, z0), (b, z1)) for wall, (a, b), (z0, z1) in windows
+           if wall == name]
+    _wall(put, 'tower wall', low, high, tuple(holes + cut))
+    for wall, (a, b), (z0, z1) in windows:
+      if wall != name:
+        continue
+      middle = [0.5 * (l + h) for l, h in zip(low, high)]
+      half = [0.01, 0.01, 0.5 * (z1 - z0)]
+      along = 0 if high[0] - low[0] >= high[1] - low[1] else 1
+      middle[along], half[along] = 0.5 * (a + b), 0.5 * (b - a)
+      middle[2] = 0.5 * (z0 + z1)
+      put('glass', boxRows(tuple(middle), tuple(half), UNTURNED))
   put('lamp', boxRows((foot[0][0] - 0.05, 0.5 * (foot[0][1] + foot[1][1]),
                        ground + 2.5), (0.05, 0.3, 0.06), UNTURNED))
   put('lamp', boxRows((0.5 * (lift[0][0] + lift[1][0]), ty1 + 0.05,
                        ground + 2.5), (0.3, 0.05, 0.06), UNTURNED))
+
+
+@functools.lru_cache(maxsize=1)
+def towerWindows() -> tuple:
+  """Returns the stair tower's windows (the pad's axes): each its wall
+  ('south', 'west', 'east', 'north', 'between': the stairwell's and the
+  shaft's), its span across the wall (along its long side) and its sill
+  and head. The stairwell: on its south wall along each flight climbing
+  there (from its middle), on its west and east walls at each landing
+  there (the top one the hall's doorway); the shaft: a window a storey
+  (the landings' heights) on its north wall (over the door at its foot)
+  and its east wall (below the hall), and through to the stairwell, so
+  the lift is seen from the stairs and the stairs from the lift."""
+  out = []
+  for k in range(0, FLIGHTS, 2):
+    stand = z_(landingLevel(k)) + 0.5 * rise()
+    out.append(('south', STAIR_ALONG, (stand + SILL_OVER,
+                                       stand + HEAD_OVER)))
+  for k in range(1, FLIGHTS):
+    stand = z_(landingLevel(k))
+    out.append(('west' if k % 2 == 0 else 'east', STAIR_ACROSS, (
+      stand + SILL_OVER, stand + HEAD_OVER)))
+  hall = z_(FLOOR) - 0.4
+  for k in range(FLIGHTS + 1):
+    stand = z_(landingLevel(k))
+    sill, head = stand + SILL_OVER, stand + HEAD_OVER
+    if k > 0:
+      out.append(('north', SHAFT_ALONG, (sill, head)))
+    if head < hall:
+      out.append(('east', SHAFT_ACROSS, (sill, head)))
+    out.append(('between', SHAFT_ALONG, (sill, head)))
+  return tuple(out)
 
 
 def _stairs(put: object) -> None:
@@ -344,17 +400,35 @@ def outsideKey() -> tuple:
 def leafRows() -> tuple:
   """Returns the door's leaf closed, in the wall's cut (the rocket's own
   axes; it turns about the axis): its outer face, inner face and edges,
-  in steps round."""
+  in steps round, its window ('DOOR_WINDOW') open through it, lined
+  ('doorGlassRows': its pane)."""
   a0, a1 = (math.radians(a) for a in DOOR_SPAN)
+  (w0, w1), (low, high) = DOOR_WINDOW
+  w0, w1 = math.radians(w0), math.radians(w1)
   steps = 6
   angles = [a0 + (a1 - a0) * k / steps for k in range(steps + 1)]
+  bands = ((FLOOR + 0.004, low), (low, high), (high, DOOR_HIGH - 0.004))
   parts = []
   for out, sign in ((0.003, 1.0), (WALL - 0.003, -1.0)):
     for b0, b1 in zip(angles[:-1], angles[1:]):
-      corners = [_onWall(b, z, out) for b, z in (
-        (b0, FLOOR + 0.004), (b1, FLOOR + 0.004), (b1, DOOR_HIGH - 0.004),
-        (b0, DOOR_HIGH - 0.004))]
-      parts.append(_quadOf(corners, sign))
+      glazed = b0 >= w0 - 1e-9 and b1 <= w1 + 1e-9
+      for k, (z0, z1) in enumerate(bands):
+        if glazed and k == 1:
+          continue
+        corners = [_onWall(b, z, out) for b, z in (
+          (b0, z0), (b1, z0), (b1, z1), (b0, z1))]
+        parts.append(_quadOf(corners, sign))
+  middle = _onWall(0.5 * (w0 + w1), 0.5 * (low + high), 0.5 * WALL)
+  for b0, b1 in zip(angles[:-1], angles[1:]):
+    if b0 >= w0 - 1e-9 and b1 <= w1 + 1e-9:
+      for z in (low, high):
+        parts.append(_facing([_onWall(b, z, out) for b, out in (
+          (b0, 0.003), (b1, 0.003), (b1, WALL - 0.003),
+          (b0, WALL - 0.003))], middle))
+  for b in (w0, w1):
+    parts.append(_facing([_onWall(b, z, out) for z, out in (
+      (low, 0.003), (low, WALL - 0.003), (high, WALL - 0.003),
+      (high, 0.003))], middle))
   for b, sign in ((a0, -1.0), (a1, 1.0)):
     corners = [_onWall(b, z, out) for z, out in (
       (FLOOR + 0.004, 0.003), (FLOOR + 0.004, WALL - 0.003),
@@ -426,6 +500,30 @@ def _onWall(angle: float, z: float, depth: float) -> tuple:
   (rad) and 'z'."""
   r = capsuleRadius(z) - depth
   return r * math.cos(angle), r * math.sin(angle), z
+
+
+def doorGlassRows() -> tuple:
+  """Returns the door's window's pane closed, in the middle of the
+  leaf's thickness (the rocket's own axes; it turns with the leaf), a
+  face each way (seen from in and out)."""
+  (w0, w1), (low, high) = DOOR_WINDOW
+  angles = numpy.linspace(math.radians(w0), math.radians(w1), 5)
+  parts = []
+  for b0, b1 in zip(angles[:-1], angles[1:]):
+    corners = [_onWall(b, z, 0.5 * WALL) for b, z in (
+      (b0, low), (b1, low), (b1, high), (b0, high))]
+    parts += [_quadOf(corners, 1.0), _quadOf(corners, -1.0)]
+  return joined(parts)
+
+
+def _facing(corners: list, toward: tuple) -> tuple:
+  """Returns a quad through four 'corners' facing 'toward' (a point
+  on its front's side)."""
+  rows, faces = _quadOf(corners, 1.0)
+  middle = numpy.mean(rows[:, :3], 0)
+  if float(numpy.dot(rows[0, 3:6], numpy.array(toward) - middle)) < 0.0:
+    return _quadOf(corners, -1.0)
+  return rows, faces
 
 
 def _quadOf(corners: list, sign: float) -> tuple:

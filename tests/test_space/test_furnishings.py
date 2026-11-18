@@ -1,18 +1,17 @@
 """
 TestFurnishings covers the cabin round Asger's corner (user, 2026-11-16:
 "Have the rest of it have the contents of a camping cabin. Not a fire
-place, but the same ... 'hygge'"; the warp knob "kinda... magic"; the
-the loose things "FAFO rules"): every
-piece, still or loose, inside the capsule's wall and over its floor,
-clear of his corner (his chair, desk, globe and sideboard), its warm
-lights in the room; the loose things resting free of what is solid;
-the glint on the warp knob alone.
+place, but the same ... 'hygge'"; the warp knob "kinda... magic"):
+every piece inside the capsule's wall and over its floor, clear of his
+corner (his chair, desk, globe and sideboard), its warm lights in the
+room; nothing loose (user, 2026-11-18: "remove them completely. Do not
+have items that look like they should be floating in microgravity when
+they don't"); the glint on the warp knob alone.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
-import itertools
 import math
 
 import numpy
@@ -24,7 +23,6 @@ from worQt.gaming.space._furnishings import bulbsRows, candleLight
 from worQt.gaming.space._furnishings import flamesRows, furnishings
 from worQt.gaming.space._furnishings import lampLight, looseParts
 from worQt.gaming.space._furnishings import looseThings, shadeRows
-from worQt.gaming.space._cabinsolids import solids
 
 from . import SpaceTest
 
@@ -68,9 +66,6 @@ class TestFurnishings(SpaceTest):
                  'bulbs'):
       self.assertIn(name, meshes)
       self.assertGreater(len(meshes[name][0]), 0, name)
-    looks = {look for _, look, _, _ in looseParts()}
-    for look in ('leaf', 'ceramic', 'rust', 'black'):
-      self.assertIn(look, looks)
     self.assertIn('book red', meshes)
     self.assertIn('brass', meshes)
     for light in (lampLight(), candleLight()):
@@ -92,27 +87,14 @@ class TestFurnishings(SpaceTest):
     for kind in ('flames', 'flames round', 'shade', 'bulbs'):
       self.assertIn((kind, 0), every)
 
-  def test_resting(self) -> None:
-    """Each loose thing rests free of every solid box (its corners at
-    most a hair into one: it would jump at the start) and has a mass."""
-    held = solids()
-    for name, middle, half, axes, mass in looseThings():
-      self.assertGreater(mass, 0.0, name)
-      for sx, sy, sz in itertools.product((-1.0, 1.0), repeat=3):
-        corner = tuple(m + sx * half[0] * a + sy * half[1] * b
-                       + sz * half[2] * c for m, a, b, c in zip(
-          middle, *axes))
-        for box, (inner, size, turned) in enumerate(held):
-          off = tuple(p - q for p, q in zip(corner, inner))
-          local = [sum(o * t for o, t in zip(off, way)) for way in turned]
-          into = min(h - abs(x) for h, x in zip(size, local))
-          self.assertLess(into, 1e-6, (name, box, corner))
-
-  def test_books_held(self) -> None:
-    """The books are none of the loose things (user, 2026-11-17: "Let's
-    lock that down. It's only funny if it is stuff Asger could have had
-    a reasonable chance of securing before take off"); what he could
-    have put away still is."""
-    names = {name for name, _, _, _, _ in looseThings()}
-    self.assertNotIn('book', names)
-    self.assertTrue(names >= {'mug', 'kettle'}, names)
+  def test_none_loose(self) -> None:
+    """Nothing in the cabin is loose, and nothing is there that looks as
+    if it should float weightless and does not (user, 2026-11-18: "no,
+    remove them completely"): no mug, kettle, coffee pot, pillow or
+    plant; the books are held in their shelf."""
+    self.assertEqual(looseThings(), ())
+    self.assertEqual(looseParts(), ())
+    meshes = self._meshes()
+    for look in ('leaf', 'terracotta', 'ceramic'):
+      self.assertNotIn(look, meshes)
+    self.assertIn('book red', meshes)

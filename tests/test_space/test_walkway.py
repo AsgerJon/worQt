@@ -83,6 +83,41 @@ class TestWalkway(SpaceTest):
     self.assertNotEqual(walkway.locking(), '')
     self.assertTrue(Walkway(False).away)
 
+  def test_window(self) -> None:
+    """The main door has a window at his eyes (user, 2026-11-18: "Put a
+    window in the main door"): within the door, the leaf open there
+    (none of its faces across it), its pane filling it in the middle of
+    the wall's thickness."""
+    from worQt.gaming.space._cockpit import WALL
+    from worQt.gaming.space._walkway import DOOR_HIGH, DOOR_SPAN
+    from worQt.gaming.space._walkway import DOOR_WINDOW
+    from worQt.gaming.space._walkwaymeshes import doorGlassRows, leafRows
+    (w0, w1), (low, high) = DOOR_WINDOW
+    self.assertLess(DOOR_SPAN[0], w0)
+    self.assertLess(w1, DOOR_SPAN[1])
+    cockpit = Cockpit()
+    cockpit.gotUp()
+    eye = cockpit.eye()[2]
+    self.assertLess(low, eye)
+    self.assertLess(eye, high)
+    self.assertLess(high, DOOR_HIGH)
+    rows, faces = leafRows()
+    for k in range(0, len(faces), 3):
+      middle = numpy.mean(rows[faces[k:k + 3], :3], 0)
+      angle = math.degrees(math.atan2(middle[1], middle[0])) % 360.0
+      inside = (w0 + 0.1 < angle < w1 - 0.1
+                and low + 0.01 < middle[2] < high - 0.01)
+      self.assertFalse(inside, (angle, middle[2]))
+    glass, _ = doorGlassRows()
+    angles = numpy.degrees(numpy.arctan2(glass[:, 1], glass[:, 0])) % 360.0
+    self.assertAlmostEqual(float(angles.min()), w0, 6)
+    self.assertAlmostEqual(float(angles.max()), w1, 6)
+    self.assertAlmostEqual(float(glass[:, 2].min()), low, 9)
+    self.assertAlmostEqual(float(glass[:, 2].max()), high, 9)
+    for row in glass:
+      self.assertAlmostEqual(math.hypot(row[0], row[1]), capsuleRadius(
+        row[2]) - 0.5 * WALL, 9)
+
   def test_cut(self) -> None:
     """No face of either wall lies in the door's opening (behind him,
     from the floor up)."""

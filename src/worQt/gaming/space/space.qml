@@ -75,6 +75,16 @@ Item {
   property int hotbarSelected: 0
   property bool inventoryOpen: false
   property bool hotbarShown: false
+  //  Asger's gear in the open inventory (user, 2026-11-18: the jetpack,
+  //  "Put some controls for it in the inventory"; the headlamp,
+  //  "activated in inventory"): the jetpack on, its push (N), the lamp
+  //  on; and the lamp's light, from the eye: shining, where, its turn.
+  property bool jetpackOn: false
+  property real jetpackThrust: 0
+  property bool headlampOn: false
+  property bool headlampShines: false
+  property vector3d headlampPlace: Qt.vector3d(0, 0, 0)
+  property quaternion headlampTurn: Qt.quaternion(1, 0, 0, 0)
   property var carriedRow: ({kind: "", count: 0})
   property var itemIcons: ({})
   //  The debug menu's warps under the open inventory (user, 2026-11-18:
@@ -106,6 +116,9 @@ Item {
   property vector3d lampLight: Qt.vector3d(0, 0, 0)
   property vector3d candleLight: Qt.vector3d(0, 0, 0)
   property real candleGlow: 1.0
+  //  The gravity egg's marble's light (user, 2026-11-18: "a ball that
+  //  emits light"): where it is.
+  property vector3d eggLight: Qt.vector3d(0, 0, 0)
   property real glintPhase: 0.0
   //  Asger's bars (user, 2026-11-17: "AsgerJon should have a health bar
   //  and hunger bar like in minecraft"): health and food, points of
@@ -286,6 +299,7 @@ Item {
   signal boardPicked(string action)
   signal inventoryClicked(int slot, bool right)
   signal teleportPicked(string where)
+  signal gearPicked(string what)
   //  The board's keys float a little, all together
   property real bob: 0
   SequentialAnimation on bob {
@@ -534,6 +548,32 @@ Item {
       constantFade: 1.0
       linearFade: 0.0
       quadraticFade: 400
+    }
+    //  Asger's headlamp (user, 2026-11-18: "a strong lamp attached to
+    //  Asger pointing in the looked at direction"): from his eyes along
+    //  his look, a white beam, half as bright some 13 m off.
+    SpotLight {
+      position: root.headlampPlace
+      rotation: root.headlampTurn
+      visible: root.headlampShines
+      color: "#f4f7ff"
+      brightness: 6.0
+      coneAngle: 40
+      innerConeAngle: 14
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 60
+    }
+    //  The gravity egg's marble: a little warm light round it, the egg's
+    //  glass and the pedestal's top lit, the room a touch.
+    PointLight {
+      position: root.eggLight
+      visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+      color: "#ffecc8"
+      brightness: 0.5
+      constantFade: 1.0
+      linearFade: 0.0
+      quadraticFade: 120000
     }
     PointLight {
       position: root.lampLight
@@ -1660,6 +1700,37 @@ Item {
 
   //  A slot as Minecraft draws it: grey, sunk, the item's icon (pixels
   //  unsmoothed), its count when more than one.
+  //  A gear control in the open inventory: its words, lit while what it
+  //  switches is on ('lit'), its name said when pressed.
+  component GearButton: Rectangle {
+    id: gearButton
+    property string label: ""
+    property string what: ""
+    property bool lit: false
+    objectName: "gear " + what
+    width: Math.max(gearText.implicitWidth + 20, 34)
+    height: 30
+    radius: 3
+    color: lit ? "#d9a441" : (gearArea.containsMouse ? "#707070"
+                                                     : "#4a4a4a")
+    border.width: 1
+    border.color: lit ? "#ffe3a0" : "#909090"
+    Text {
+      id: gearText
+      anchors.centerIn: parent
+      text: gearButton.label
+      color: gearButton.lit ? "#2a1a00" : "#d8d8d8"
+      font.pixelSize: 14
+      font.bold: gearButton.lit
+    }
+    MouseArea {
+      id: gearArea
+      anchors.fill: parent
+      hoverEnabled: true
+      onPressed: root.gearPicked(gearButton.what)
+    }
+  }
+
   component ItemSlot: Rectangle {
     id: slotBox
     property var row: ({kind: "", count: 0, title: ""})
@@ -1829,6 +1900,65 @@ Item {
                   + "   E: close"
           color: "#404040"
           font.pixelSize: 14
+        }
+      }
+    }
+    //  Asger's gear beside the inventory: the jetpack (on or off, its
+    //  push down and up) and the headlamp.
+    Rectangle {
+      anchors.right: inventoryBox.left
+      anchors.rightMargin: 12
+      anchors.top: inventoryBox.top
+      width: gearColumn.width + 24
+      height: gearColumn.height + 24
+      color: "#2b2b2b"
+      border.width: 2
+      border.color: "#555555"
+      radius: 4
+      Column {
+        id: gearColumn
+        x: 12
+        y: 12
+        spacing: 8
+        Text {
+          text: "Gear"
+          color: "#e0e0e0"
+          font.pixelSize: 16
+          font.bold: true
+        }
+        GearButton {
+          what: "jetpack"
+          label: "Jetpack: " + (root.jetpackOn ? "on" : "off")
+          lit: root.jetpackOn
+        }
+        Row {
+          spacing: 6
+          GearButton {
+            what: "weaker"
+            label: "-"
+          }
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            width: 86
+            horizontalAlignment: Text.AlignHCenter
+            text: "Push " + root.jetpackThrust.toFixed(0) + " N"
+            color: "#d8d8d8"
+            font.pixelSize: 14
+          }
+          GearButton {
+            what: "stronger"
+            label: "+"
+          }
+        }
+        Text {
+          text: "W S: where he looks, back\nA D: aside"
+          color: "#9a9a9a"
+          font.pixelSize: 12
+        }
+        GearButton {
+          what: "lamp"
+          label: "Headlamp: " + (root.headlampOn ? "on" : "off")
+          lit: root.headlampOn
         }
       }
     }

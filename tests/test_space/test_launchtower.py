@@ -8,7 +8,8 @@ rooms join (the hall, the stairwell, the lift's shaft, their doorways,
 the yard round the rocket's body), its flights climb from the ground to
 the hall landing on landing, the lift rides between its stops opening
 its doors only there; Asger walks up a flight, and rides the lift down
-standing on its floor.
+standing on its floor. The stairwell, the shaft and the lift's car have
+windows (user, 2026-11-18), glass in each.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -24,10 +25,15 @@ from worQt.gaming.space._crewman import MIDDLE, STEP
 from worQt.gaming.space._launchtower import FLIGHTS, GROUND, HALL
 from worQt.gaming.space._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT
 from worQt.gaming.space._launchtower import STAIR_TOP, STAIRWELL, START
-from worQt.gaming.space._launchtower import STEPS
+from worQt.gaming.space._launchtower import STAIR_FOOT, STEPS, TOWER
+from worQt.gaming.space._launchtower import TOWER_TOP
 from worQt.gaming.space._launchtower import flightOf, groundsInside
 from worQt.gaming.space._launchtower import landingLevel, rise, towerSolids
+from worQt.gaming.space._dashboard import pieceRows
 from worQt.gaming.space._towerlift import FAST, FOOT, TOP, TowerLift
+from worQt.gaming.space._towerlift import carWindow
+from worQt.gaming.space._walkway import PAD_UP
+from worQt.gaming.space._walkwaymeshes import towerParts, towerWindows
 
 from . import FRAME, SpaceTest
 
@@ -175,3 +181,72 @@ class TestLaunchTower(SpaceTest):
       self._walked(world, meter, cockpit, {'ahead'}, 1.6)
       self.assertTrue(inside(cockpit.crewman.middle),
                       (start, cockpit.crewman.middle))
+
+  def test_windows(self) -> None:
+    """The stairwell has a window along each flight on its south wall
+    and at each landing on its west and east walls; the shaft one a
+    storey on its north and east walls (below the hall) and through to
+    the stairwell; each lies in its wall, clear of its doorways, a pane
+    of glass in it (user, 2026-11-18: "Give the staircase and elevator
+    and elevatorshaft windows")."""
+    windows = towerWindows()
+    walls = {}
+    for wall, span, heights in windows:
+      walls.setdefault(wall, []).append((span, heights))
+    self.assertEqual(len(walls['south']), (FLIGHTS + 1) // 2)
+    self.assertEqual(len(walls['west']), FLIGHTS // 2)
+    self.assertEqual(len(walls['east']), FLIGHTS // 2 + FLIGHTS)
+    self.assertEqual(len(walls['between']), FLIGHTS + 1)
+    self.assertEqual(len(walls['north']), FLIGHTS)
+    (tx0, ty0), (tx1, ty1) = TOWER
+    top = TOWER_TOP + PAD_UP
+    for wall, (a, b), (z0, z1) in windows:
+      self.assertLess(a, b)
+      self.assertLess(z0, z1)
+      self.assertGreater(z0, GROUND + PAD_UP)
+      self.assertLess(z1, top)
+      if wall in ('west', 'east'):
+        self.assertGreater(a, ty0)
+        self.assertLess(b, ty1)
+      else:
+        self.assertGreater(a, tx0)
+        self.assertLess(b, tx1)
+    for wall, doors in (('west', (STAIR_FOOT,)),
+                        ('north', (LIFT_FOOT,)),
+                        ('east', (STAIR_TOP, LIFT_TOP))):
+      k = 1 if wall in ('west', 'east') else 0
+      for (a, b), (z0, z1) in walls[wall]:
+        for low, high in doors:
+          apart = (b < low[k] or a > high[k] or z1 < low[2] + PAD_UP
+                   or z0 > high[2] + PAD_UP)
+          self.assertTrue(apart, (wall, (a, b), (z0, z1)))
+    panes = towerParts()['glass']
+    self.assertGreaterEqual(len(panes[1]), 36 * len(windows))
+
+  def test_car(self) -> None:
+    """The lift's car has its floor, its roof and two walls (west and
+    south; its doorways are the east and north), inside the shaft,
+    moving with it; each wall's window lies in it, a pane in each."""
+    lift = TowerLift()
+    boxes = lift.boxesOf()
+    self.assertEqual(len(boxes), 4)
+    (x0, y0, _), (x1, y1, _) = SHAFT
+    for middle, half, _, velocity in boxes:
+      self.assertGreaterEqual(middle[0] - half[0], x0)
+      self.assertLessEqual(middle[0] + half[0], x1)
+      self.assertGreaterEqual(middle[1] - half[1], y0)
+      self.assertLessEqual(middle[1] + half[1], y1)
+      self.assertEqual(velocity, (0.0, 0.0, lift.speed))
+    west, south = boxes[2], boxes[3]
+    self.assertLess(west[0][0], x0 + 0.1)
+    self.assertLess(south[0][1], y0 + 0.1)
+    for wall in (0, 1):
+      (a, b), (low, high) = carWindow(wall)
+      half = boxes[2 + wall][1]
+      long = half[1] if wall == 0 else half[0]
+      self.assertGreater(a, -long)
+      self.assertLess(b, long)
+      self.assertGreater(low, -half[2])
+      self.assertLess(high, half[2])
+      self.assertGreater(len(pieceRows(('lift glass', wall), {})[0]), 0)
+      self.assertGreater(len(pieceRows(('lift', 2 + wall), {})[0]), 0)

@@ -32,6 +32,10 @@ from ._vessel import CENTRE, SAG
 DOOR_SPAN = (174.0, 186.0)
 DOOR_HIGH = FLOOR + 2.0
 DOOR = (DOOR_SPAN, (FLOOR, DOOR_HIGH))
+#  The door's window (user, 2026-11-18: "Put a window in the main
+#  door"): its span round the wall (deg, within the door's, on the
+#  leaf's 2 deg strips) and how high it is over the floor, at his eyes.
+DOOR_WINDOW = ((178.0, 182.0), (FLOOR + 1.25, FLOOR + 1.75))
 POCKET = math.radians(DOOR_SPAN[1] - DOOR_SPAN[0] + 1.0)
 SLIDE = 1.5
 PASSABLE = 0.97

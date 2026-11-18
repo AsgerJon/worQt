@@ -210,6 +210,24 @@ class TestAboard(SpaceTest):
       vitals.fell(hardest)
       self.assertEqual(vitals.health, HEALTH, (k, hardest))
 
+  def test_far_door(self) -> None:
+    """Docked, the far port (the one the rocket is not in) is shut by a
+    door over its docking ring's hatch (user, 2026-11-18: "Fix the far
+    port stuff": its hole showed space): wider than the hole, at the
+    far end of that port's room, facing in, shown only docked."""
+    from worQt.gaming.space._dashboard import pieceRows
+    from worQt.gaming.space._stationinterior import FAR_HIGH, FAR_LOW
+    from worQt.gaming.space._stationinterior import HATCH, PORT_INSIDE
+    from worQt.gaming.space._stationinterior import tubeInside
+    rows, _ = pieceRows(('port door', 0), {})
+    across = max(math.hypot(r[0], r[1]) for r in rows)
+    self.assertGreater(across, HATCH + 0.1)
+    self.assertLess(across, PORT_INSIDE)
+    place = (0.0, 0.0, FAR_HIGH - 0.05)
+    deep = tubeInside(place, PORT_INSIDE, FAR_LOW, FAR_HIGH)
+    self.assertAlmostEqual(deep, 0.05, 9)
+    self.assertLess(max(r[2] for r in rows), 1e-9)
+
   def test_ride_out(self) -> None:
     """Floating in the cage at the hub's stop, the cage called, it
     carries him out with it (the roof closed over him), not leaving him

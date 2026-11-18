@@ -38,6 +38,7 @@ from ._cockpit import THRUSTS, Cockpit
 from ._dashboard import LEGENDS
 from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
+from ._egg import Egg
 from ._crewman import HEFT, MIDDLE, SIT
 from ._dashpictures import picturesReady
 from ._furnishings import candleLight, looseThings, rationCrate, sofaSeat
@@ -54,7 +55,9 @@ from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
 from ._elevator import backBoxes
 from ._kolonihave import gardenSolids
 from ._night import MORNING, morningIn, nightIn
+from ._headlamp import Headlamp
 from ._inventory import HOTBAR, ITEMS, Inventory
+from ._jetpack import Jetpack
 from ._quest import CHECKLIST, Quest
 from ._rendezvousguidance import RendezvousGuidance
 from ._stationinterior import DECK, HUB_INSIDE, PLANE, cabinInside, roomOf
@@ -337,6 +340,8 @@ class SpaceWindow(QMainWindow):
     self.accelerometer, self.world, self._leaping = (Accelerometer(), None,
                                                      False)
     self.vitals, self.bolts = Vitals(), rocketBolts()
+    self.egg = Egg()
+    self.jetpack, self.headlamp = Jetpack(), Headlamp()
     self.gravgun = GravGun()
     self.sleep = Sleep()
     self.docking = DockingPort(self.station)
@@ -365,6 +370,7 @@ class SpaceWindow(QMainWindow):
     self._step, self._stuck = time.perf_counter(), False
     self.trouble, self.held, self.mapOpen = None, {}, False
     self._cabinRate, self._flightRate = Tally(), Tally()
+    self._sentSolids = None
     self._debugAt = -math.inf
     self._stoodBy = False
     self.inventory, self._inventoryOpen = Inventory(), False
@@ -378,6 +384,7 @@ class SpaceWindow(QMainWindow):
     self.viewport.boardPicked.connect(self._acted)
     self.viewport.inventoryClicked.connect(self._inventoryClicked)
     self.viewport.teleportPicked.connect(self._teleported)
+    self.viewport.gearPicked.connect(self._geared)
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
     self.timer.timeout.connect(self._idled)
@@ -555,6 +562,8 @@ class SpaceWindow(QMainWindow):
     viewport.heldShown(inventory.held, zoom)
     viewport.teleportsOffered([{'name': name, 'title': title}
                                for name, title in TELEPORTS])
+    viewport.gearShown(self.jetpack.on, self.jetpack.thrust,
+                       self.headlamp.on)
     if self.mapOpen:
       quick = viewport.quick
       viewport.mapShown(self.scenery.mapOf(
@@ -1278,7 +1287,7 @@ class SpaceWindow(QMainWindow):
     """Moves what is loose in the cabin 'real' s on: Asger (righted
     against the pull on him, his legs as the keys held want, a leap
     once: held at a magic bolt, a push off it; or the gravity gun
-    pulling him) and the loose things."""
+    pulling him), the loose things and the gravity egg's marble."""
     cockpit, accelerometer = self.cockpit, self.accelerometer
     crewman = cockpit.crewman
     want = STILL
@@ -1303,8 +1312,60 @@ class SpaceWindow(QMainWindow):
     self.world.walked(self.walkway.outside | (
       self.towerLift.doors if self.walkway.attached else 0))
     self.world.stepped(real, accelerometer, crewman, want,
-                       self._gunPushed(real))
+                       self._gunPushed(real), self._jetOf())
+    self._pushedBack()
     self._cabinRate.counted(self.world.lastSteps, time.perf_counter())
+    self.egg.stepped(real, accelerometer)
+
+  def _pushedBack(self, ) -> None:
+    """Pushes the vessel back by what the cabin's world pushed this
+    frame ('CabinWorld.pushedBack'; Asger's own, 'asgerPushed', while he
+    is in the cabin: out of it on the pad he stands on the tower and
+    the ground, Terra's, too heavy to stir); docked, nothing: the
+    station holds the rocket (it is not flown yet)."""
+    vessel, world = self.vessel, self.world
+    if vessel.docked:
+      return
+    push, twist = world.pushedBack
+    crewman = self.cockpit.crewman
+    if not crewman.sitting and cabinInside(crewman.middle) >= 0.0:
+      own, turned = world.asgerPushed
+      push = tuple(a + b for a, b in zip(push, own))
+      twist = tuple(a + b for a, b in zip(twist, turned))
+    if any(push) or any(twist):
+      vessel.kicked(push, twist)
+
+  def _jetOf(self, ) -> tuple:
+    """Returns the jetpack's push on Asger over his mass (m/s², the
+    vessel's own axes): up out of his chair and alive, along the way the
+    movement keys held ask ('Crewman.wayOf'); else none."""
+    crewman, cockpit = self.cockpit.crewman, self.cockpit
+    if (crewman.buckled or self.vitals.cause is not None
+            or not self.jetpack.on):
+      return 0.0, 0.0, 0.0
+    held = {MOVING[key] for key in self.held if key in MOVING}
+    way = crewman.wayOf(held, cockpit.yaw, cockpit.pitch)
+    return tuple(p / HEFT for p in self.jetpack.pushOf(way))
+
+  def _geared(self, what: str) -> None:
+    """The inventory's gear controls ('what': 'jetpack' switches the
+    jetpack on or off, 'stronger' and 'weaker' set its level, 'lamp'
+    switches the headlamp), said; only while the inventory is open."""
+    if not self._inventoryOpen:
+      return
+    jetpack = self.jetpack
+    if what == 'jetpack':
+      jetpack.toggled()
+      self._noteOf('Jetpack %s' % ('on' if jetpack.on else 'off'))
+    elif what == 'stronger':
+      jetpack.stronger()
+    elif what == 'weaker':
+      jetpack.weaker()
+    elif what == 'lamp':
+      self.headlamp.toggled()
+      self._noteOf('Headlamp %s' % ('on' if self.headlamp.on else 'off'))
+    else:
+      raise ValueError('no gear control %r' % what)
 
   def _aboard(self, real: float) -> None:
     """Docked, joins the space station's rooms to the cabin's world (its
@@ -1321,7 +1382,7 @@ class SpaceWindow(QMainWindow):
       if self._fixed is None or self._fixed[0] != relative:
         self._fixed = relative, gardenSolids(relative) + backBoxes(
           ways, stationWay((0.0, 0.0, 1.0), relative))
-      self.world.stationed(True, ways, tuple(
+      self._solidsSent(True, ways, tuple(
         box for elevator, way in zip(self.elevators, ways)
         for box in elevator.boxesOf(way)) + self._fixed[1])
       for elevator in self.elevators:
@@ -1329,9 +1390,20 @@ class SpaceWindow(QMainWindow):
       self.bolts = rocketBolts() + stationBolts(ways, tuple(
         elevator.floor for elevator in self.elevators))
     elif self._stationed:
-      self.world.stationed(False, (), ())
+      self._solidsSent(False, (), ())
       self.bolts = rocketBolts()
     self._stationed = docked
+
+  def _solidsSent(self, docked: bool, ways: tuple, boxes: tuple) -> None:
+    """Puts the station's or the launch tower's solids in the cabin's
+    world ('CabinWorld.stationed') unless they are there already as
+    they are (user, 2026-11-18: "10 to 30 fps bro...?": the tower's 288
+    sent every frame took some 5 ms of it; a lift moving is sent anew
+    each frame)."""
+    sent = (docked, ways, boxes)
+    if sent != self._sentSolids:
+      self.world.stationed(docked, ways, boxes)
+      self._sentSolids = sent
 
   def _openDepth(self, point: tuple) -> float:
     """Returns how deep 'point' is in the rooms Asger may be in now (the
@@ -1365,11 +1437,10 @@ class SpaceWindow(QMainWindow):
       return
     if self.walkway.attached:
       self.towerLift.moved(real)
-      self.world.stationed(False, (), towerSolids()
-                           + self.towerLift.boxesOf())
+      self._solidsSent(False, (), towerSolids() + self.towerLift.boxesOf())
       self._towered = True
     elif self._towered:
-      self.world.stationed(False, (), ())
+      self._solidsSent(False, (), ())
       self._towered = False
 
   def _towerLiftOf(self, ) -> tuple | None:
@@ -1442,6 +1513,7 @@ class SpaceWindow(QMainWindow):
     eyes' place and frame), the pull at the candles (g)."""
     dash = self.instruments.dash()
     dash['loose'] = self.world.shown()
+    dash['egg'] = self.egg.place
     cockpit = self.cockpit
     frame = self._eyesFrame()
     up = not cockpit.crewman.buckled and self.vitals.cause is None
@@ -1462,6 +1534,8 @@ class SpaceWindow(QMainWindow):
     dash['hand'] = (kind is not None and self.vitals.cause is None
                     and (up or kind != 'gravgun') and self._zoom < 1.3)
     dash['beam'] = beam
+    look, lookUp = cockpit.looking()
+    dash['headlamp'] = (self.headlamp.on, cockpit.eye(), look, lookUp)
     dash['nose'] = self._noseCamera
     dash['hatch'] = self._hatch
     dash['door'], dash['swing'] = self.walkway.door, self.walkway.swing
@@ -2172,8 +2246,9 @@ class SpaceWindow(QMainWindow):
     sky, time, the rocket, its guidances and autopilot, Asger (his
     place, his look, his vitals, his inventory), the quest, the walkway,
     the lifts, the instruments (the printer's paper, the log, the tape),
-    the loose things, what the Grav-Gun holds, the view and the CCTV's
-    feed. What is worked out anew each frame is not kept."""
+    the loose things, the gravity egg's marble, what the Grav-Gun holds,
+    the view and the CCTV's feed. What is worked out anew each frame is
+    not kept."""
     gun = self.gravgun
     return {'began': self.began.isoformat(), 'sky': skyOf(self.system),
             'keeper': keptOf(self.keeper), 'vessel': keptOf(self.vessel),
@@ -2188,7 +2263,9 @@ class SpaceWindow(QMainWindow):
             'towerLift': keptOf(self.towerLift),
             'elevators': [keptOf(e) for e in self.elevators],
             'instruments': keptOf(self.instruments),
-            'world': self.world.kept(),
+            'world': self.world.kept(), 'egg': keptOf(self.egg),
+            'jetpack': keptOf(self.jetpack),
+            'headlamp': keptOf(self.headlamp),
             'gun': keptOf(gun) if gun.holding else None,
             'inside': self.inside, 'noseCamera': self._noseCamera}
 
@@ -2217,6 +2294,9 @@ class SpaceWindow(QMainWindow):
       keptTo(thing, state[name])
     for elevator, kept in zip(self.elevators, state['elevators']):
       keptTo(elevator, kept)
+    keptTo(self.egg, state['egg'])
+    keptTo(self.jetpack, state['jetpack'])
+    keptTo(self.headlamp, state['headlamp'])
     self.world.keptFrom(state['world'])
     self.gravgun.released()
     if state['gun'] is not None:
@@ -2235,6 +2315,7 @@ class SpaceWindow(QMainWindow):
     self.sleep, self._manualOpen = Sleep(), False
     self._scoping, self._leaping, self.cockpit.glancing = False, False, None
     self._towered, self._stationed, self._fixed = False, False, None
+    self._sentSolids = None
     self.bolts = rocketBolts()
     self._hatch = 1.0 if self.vessel.docked else 0.0
     self._closest, self._tubes = None, None

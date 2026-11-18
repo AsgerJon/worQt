@@ -3,14 +3,17 @@ The cabin's furnishings round the room past Asger's corner (user,
 2026-11-16: "Have the rest of it have the contents of a camping cabin.
 Not a fire place, but the same ... 'hygge'"), Qt-free, in the vessel's
 own axes, each mesh by its look: a sofa with cushions and a knitted
-blanket, a coffee table with candles and mugs, a floor lamp, a
-bookshelf full of books, a kitchen counter with a kettle, a coffee pot
-and mugs, a daybed, a plant, fairy lights along the wall, a rag rug.
-Where the warm lights are: the lamp's, the candles'. Rows of eight
-(place, normal, where on a picture). What is fixed down is solid boxes
-too ('obstacles'); the mugs, kettle, coffee pot, pillows and the plant
-are loose things (user, 2026-11-17: "FAFO rules"), their meshes apart
-('looseThings', 'looseParts'); the books are held in by rails.
+blanket, a coffee table with candles, a floor lamp, a bookshelf full of
+books, a kitchen counter, a daybed, fairy lights along the wall, a rag
+rug, the gravity egg's pedestal ('_egg'). Where the warm lights are:
+the lamp's, the candles'. Rows of eight (place, normal, where on a
+picture). What is fixed down is solid boxes
+too ('obstacles'); the books are held in by rails. Nothing is loose
+(user, 2026-11-18: "remove them completely. Do not have items that look
+like they should be floating in microgravity when they don't": the
+mugs, the kettle, the coffee pot, the pillows and the plant are gone);
+a loose thing would be added by the builder's 'loose', its meshes apart
+('looseThings', 'looseParts').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -38,7 +41,6 @@ SHELF = ((4.05 * math.cos(math.radians(200.0)),
           4.05 * math.sin(math.radians(200.0))), 20.0)
 COUNTER = ((-2.95, -2.85), 44.0)
 BED = ((-3.05, 2.35), -38.0)
-PLANT = ((3.1, -2.45), 140.0)
 #  The rations (user, 2026-11-17: "To eat, Asger goes to the kitchen
 #  where an endless supply of RCIR from the French armed forces"): a
 #  crate on the floor at the counter's right end, its half sizes, a
@@ -58,7 +60,6 @@ STRING = ((-60.0, -168.0), 2.1, 0.12, 54)
 #  A round thing's axes (it stands as the vessel does); a mug's radius,
 #  height, m, and mass, kg.
 UPRIGHT = UNTURNED
-MUG = (0.042, 0.1, 0.35)
 #  The bookshelf's brass rails: how high up its row of books, its share
 #  of the tallest.
 RAIL = 0.6
@@ -167,7 +168,7 @@ def _built() -> tuple:
   _shelf(room)
   _counter(room)
   _bed(room)
-  _plant(room)
+  _pedestal(room)
   _rations(room)
   (x, y), radius = RUG
   put('rug', discRows((x, y, FLOOR + 0.004), ((1.0, 0.0, 0.0),
@@ -177,18 +178,10 @@ def _built() -> tuple:
   return meshes, tuple(solids), tuple(things)
 
 
-def _upright(middle: tuple, half: tuple, look: str, mesh: tuple) -> tuple:
-  """Returns a round loose thing standing on its foot ('middle' its
-  middle, 'half' its half sizes, its axes the vessel's), its one mesh
-  'look'."""
-  return ((look, mesh),), middle, half, UPRIGHT
-
-
 def _sofa(room: tuple) -> None:
   """A three seat sofa against the wall: its base, back, arms, seat and
-  back cushions, the knitted blanket over its arm (solid: a pillow rests
-  on it); two throw pillows, loose on its seat against its back."""
-  put, solid, block, loose = room
+  back cushions, the knitted blanket over its arm."""
+  put, solid, block, _ = room
   s = SOFA
   block('sofa', s, 0.0, 0.0, 0.21, (1.1, 0.42, 0.21))
   block('sofa', s, 0.0, -0.33, 0.62, (1.1, 0.09, 0.22))
@@ -201,18 +194,12 @@ def _sofa(room: tuple) -> None:
         (0.0, 0.0, 1.0, 1.0))
   block('blanket', s, 0.82, 0.43, 0.38, (0.26, 0.012, 0.2),
         (0.0, 0.0, 1.0, 1.0))
-  for along, high, half in ((-0.72, 0.722, (0.16, 0.06, 0.16)),
-                            (0.75, 0.734, (0.15, 0.06, 0.15))):
-    toward = -0.12 + half[1] + 0.002
-    loose('pillow', (('rust', _block(s, along, toward, high, half)),),
-          _placed(s, along, toward, high), half, _frame(s[1]), 0.35)
 
 
 def _table(room: tuple) -> None:
   """The low coffee table: its oak top, its legs, three candles on a
-  tray (stuck in it; their flames are the light's: 'flamesRows'); two
-  mugs, loose."""
-  put, solid, block, loose = room
+  tray (stuck in it; their flames are the light's: 'flamesRows')."""
+  put, solid, block, _ = room
   t = TABLE
   block('oak', t, 0.0, 0.0, TABLE_HIGH - 0.02, (0.62, 0.32, 0.02))
   for a in (-0.55, 0.55):
@@ -225,17 +212,6 @@ def _table(room: tuple) -> None:
     put('wax', cylinderRows(base, (0.0, 0.0, 1.0), radius, high, 20))
     solid(pointAlong(base, (0.0, 0.0, 1.0), 0.5 * high),
           (radius, radius, 0.5 * high), UPRIGHT)
-  for along, toward, look in ((0.3, 0.1, 'ceramic'), (0.42, -0.08,
-                                                      'blue')):
-    _mug(loose, _placed(t, along, toward, TABLE_HIGH), look)
-
-
-def _mug(loose: object, foot: tuple, look: str) -> None:
-  """Adds a loose mug standing on 'foot'."""
-  loose('mug', *_upright(pointAlong(foot, (0.0, 0.0, 1.0), 0.5 * MUG[1]),
-                         (MUG[0], MUG[0], 0.5 * MUG[1]), look,
-                         cylinderRows(foot, (0.0, 0.0, 1.0), MUG[0],
-                                      MUG[1], 20)), MUG[2])
 
 
 def flamesRows() -> tuple:
@@ -270,7 +246,7 @@ def candleLight() -> tuple:
 def _lamp(room: tuple) -> None:
   """The floor lamp by the sofa: its foot, its pole (the shade is its
   own look: 'shadeRows'; all three solid)."""
-  put, solid, block, loose = room
+  put, solid, block, _ = room
   l = LAMP
   foot = _placed(l, 0.0, 0.0, 0.0)
   put('brass', frustumRows(foot, (0.0, 0.0, 1.0), 0.16, 0.12, 0.03, 32))
@@ -302,7 +278,7 @@ def _shelf(room: tuple) -> None:
   falling: "Let's lock that down. It's only funny if it is stuff Asger
   could have had a reasonable chance of securing before take off"):
   still, each row a solid box."""
-  put, solid, block, loose = room
+  put, solid, block, _ = room
   f = SHELF
   wide, deep, high = 0.8, 0.16, 1.9
   for side in (-1.0, 1.0):
@@ -337,45 +313,39 @@ def _shelf(room: tuple) -> None:
 
 
 def _counter(room: tuple) -> None:
-  """The kitchen counter: an oak cupboard, its light top; a kettle, a
-  coffee pot and two mugs on it, loose."""
-  put, solid, block, loose = room
+  """The kitchen counter: an oak cupboard, its light top."""
+  put, solid, block, _ = room
   c = COUNTER
   block('oak', c, 0.0, 0.0, 0.44, (0.7, 0.3, 0.44))
   block('cream', c, 0.0, 0.01, 0.9, (0.72, 0.32, 0.02))
-  foot = _placed(c, -0.35, 0.0, 0.92)
-  kettle = joined([frustumRows(foot, (0.0, 0.0, 1.0), 0.1, 0.07, 0.2, 24),
-                   cylinderRows(pointAlong(foot, (0.0, 0.0, 1.0), 0.2),
-                                (0.0, 0.0, 1.0), 0.02, 0.03, 12)])
-  loose('kettle', *_upright(pointAlong(foot, (0.0, 0.0, 1.0), 0.115),
-                            (0.1, 0.1, 0.115), 'black', kettle), 1.2)
-  foot = _placed(c, 0.0, 0.05, 0.92)
-  loose('coffee pot', *_upright(
-    pointAlong(foot, (0.0, 0.0, 1.0), 0.11), (0.075, 0.075, 0.11), 'blue',
-    frustumRows(foot, (0.0, 0.0, 1.0), 0.075, 0.06, 0.22, 24)), 0.9)
-  for along, look in ((0.3, 'ceramic'), (0.45, 'rust')):
-    _mug(loose, _placed(c, along, 0.1, 0.92), look)
 
 
 def _bed(room: tuple) -> None:
-  """The daybed: its oak frame, a mattress, the blanket over it; a
-  pillow, loose."""
-  put, solid, block, loose = room
+  """The daybed: its oak frame, a mattress, the blanket over it."""
+  put, solid, block, _ = room
   b = BED
   block('oak', b, 0.0, 0.0, 0.18, (1.0, 0.45, 0.18))
   block('cream', b, 0.0, 0.0, 0.43, (0.97, 0.42, 0.07))
   block('blanket', b, 0.2, 0.0, 0.51, (0.72, 0.43, 0.012),
         (0.0, 0.0, 1.0, 1.0), False)
-  half = (0.14, 0.3, 0.07)
-  loose('pillow', (('cream', _block(b, -0.8, 0.0, 0.572, half)),),
-        _placed(b, -0.8, 0.0, 0.572), half, _frame(b[1]), 0.6)
+
+
+def _pedestal(room: tuple) -> None:
+  """The gravity egg's pedestal in the middle of the room ('_egg'):
+  its foot, column, top and cup, solid with the egg's glass."""
+  from ._egg import pedestalParts, pedestalSolids
+  put, solid, _, _ = room
+  for look, mesh in pedestalParts():
+    put(look, mesh)
+  for middle, half, axes in pedestalSolids():
+    solid(middle, half, axes)
 
 
 def _rations(room: tuple) -> None:
   """The rations by the kitchen counter, endless: an olive crate on the
   floor, its stencilled label on its front, ration boxes stacked on it
   (their tops printed RCIR); all solid, fixed."""
-  put, solid, block, loose = room
+  put, solid, block, _ = room
   c = COUNTER
   along, toward = RATIONS
   block('olive', c, along, toward, CRATE[2], CRATE)
@@ -418,34 +388,6 @@ def bedBox() -> tuple:
   axes (along, toward its front, up) and half sizes, frame to
   blanket."""
   return _placed(BED, 0.0, 0.0, 0.26), _frame(BED[1]), (1.0, 0.45, 0.26)
-
-
-def _plant(room: tuple) -> None:
-  """A potted plant, loose: a terracotta pot, its leaves fanned out
-  round (only the pot bumps into things)."""
-  put, solid, block, loose = room
-  p = PLANT
-  foot = _placed(p, 0.0, 0.0, 0.0)
-  pot = frustumRows(foot, (0.0, 0.0, 1.0), 0.16, 0.21, 0.36, 28)
-  leaves = random.Random(1979)
-  fanned = []
-  for k in range(14):
-    a = 2.0 * math.pi * k / 14 + leaves.uniform(-0.2, 0.2)
-    lean = leaves.uniform(0.35, 0.9)
-    long = leaves.uniform(0.35, 0.6)
-    way = (math.cos(a) * math.sin(lean), math.sin(a) * math.sin(lean),
-           math.cos(lean))
-    base = _placed(p, 0.0, 0.0, 0.34)
-    middle = tuple(b + 0.5 * long * w for b, w in zip(base, way))
-    side = (-math.sin(a), math.cos(a), 0.0)
-    normal = (way[1] * side[2] - way[2] * side[1],
-              way[2] * side[0] - way[0] * side[2],
-              way[0] * side[1] - way[1] * side[0])
-    fanned.append(boxRows(middle, (0.06, 0.5 * long, 0.004),
-                          (side, way, normal)))
-  loose('plant', (('terracotta', pot), ('leaf', joined(fanned))),
-        pointAlong(foot, (0.0, 0.0, 1.0), 0.18), (0.2, 0.2, 0.18), UPRIGHT,
-        6.0)
 
 
 def bulbsRows() -> tuple:

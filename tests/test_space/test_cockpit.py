@@ -34,6 +34,7 @@ from worQt.gaming.space._cockpit import RIGHT_CONSOLE, SCALE
 from worQt.gaming.space._cockpit import THROTTLE_TRAVEL, panelPoint
 from worQt.gaming.space._cockpit import WALL, Cockpit, capsuleRadius
 from worQt.gaming.space._cabinworld import restingLoose
+from worQt.gaming.space._egg import Egg
 from worQt.gaming.space._cockpit import SIDEBOARD, inWindow, seated
 from worQt.gaming.space._crewman import MIDDLE, STAND
 from worQt.gaming.space._dashboard import SWEEP, dialAngle, dialAxes
@@ -78,7 +79,7 @@ def _resting() -> dict:
   """Returns what a cabin's frame takes of the cabin world at rest: the
   loose things where they rest, one g at the candles, the gun put
   away."""
-  return {'loose': restingLoose(), 'weight': 1.0,
+  return {'loose': restingLoose(), 'egg': Egg().place, 'weight': 1.0,
           'gun': (False, EYE, (1.0, 0.0, 0.0, 0.0)), 'nose': False}
 
 
@@ -243,8 +244,10 @@ class TestCockpit(SpaceTest):
     and every moving piece at rest are inside the capsule's wall, over
     its floor (but the space station's elevators' cages: they ride its
     shafts, 'test_aboard'; its bolts, placed docked; the launch tower's
-    lift's car, 'test_launchtower'; and the door's leaf:
-    it is the wall where the door is, within its thickness)."""
+    lift's car, 'test_launchtower'; the gravity egg's marble, made at
+    no place, 'test_egg'; the far docking port's door, the station's;
+    and the door's leaf and its window's pane: they are the wall where
+    the door is, within its thickness)."""
     cockpit = Cockpit()
     for index, place, turn in cockpit.figureOf():
       block = PARTS[index][1]
@@ -269,10 +272,11 @@ class TestCockpit(SpaceTest):
       self.assertTrue((numpy.hypot(rows[:, 0], rows[:, 1]) <= wall).all())
     cells = labelCells()
     for piece in pieces(cockpit.controls):
-      if piece[0] in ('car', 'sbolt', 'sring', 'lift'):
+      if piece[0] in ('car', 'sbolt', 'sring', 'lift', 'lift glass',
+                      'egg ball', 'port door'):
         continue
       rows = numpy.asarray(pieceRows(piece, cells)[0])
-      if piece[0] == 'door':
+      if piece[0] in ('door', 'door glass'):
         skin = numpy.vectorize(capsuleRadius)(rows[:, 2])
         across = numpy.hypot(rows[:, 0], rows[:, 1])
         self.assertTrue((across < skin).all())

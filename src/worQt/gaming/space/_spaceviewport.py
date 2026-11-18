@@ -27,6 +27,7 @@ from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 from . import _cabin, _dashboard, _deckmodel
 from ._cabinpictures import cabinPicturesReady
 from ._bolts import boltGlintRows, boltRingRows, boltRows
+from ._egg import eggRows
 from ._furnishings import furnishings, looseParts
 from ._gunmodel import gunParts
 from ._handitems import heldParts
@@ -163,6 +164,12 @@ RAINBOW_SLIDES = 1.0
 #  and Asger's kolonihave by look (none shine of their own; lit inside
 #  by the station's own light on its axis, 'habitatLight').
 HATCH_LOOK = ((176, 178, 184), 0.6, 0.35)
+#  The gravity egg's marble's warm white, glowing and lighting round it
+#  ('_egg'; user, 2026-11-18: "a ball that emits light").
+EGG_LIGHT = (255, 236, 200)
+#  The egg's glass: clear, a touch cool, glossy (its look), and how much
+#  of it shows.
+EGG_GLASS = (((215, 232, 245), 0.0, 0.05), 0.18)
 #  Lit from overhead alone (the station's light on its axis) walls stood
 #  black: the inside glows this share of its own colour while docked (a
 #  fill: the light thrown about in it), on a slot of its own.
@@ -261,6 +268,7 @@ class SpaceViewport(QWidget):
   boardPicked = Signal(str)
   inventoryClicked = Signal(int, bool)
   teleportPicked = Signal(str)
+  gearPicked = Signal(str)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -281,7 +289,7 @@ class SpaceViewport(QWidget):
     self._readout = None
     self._heldKind, self._hands, self._inventory = 'gravgun', {}, None
     self._armSlot, self._quest, self._teleports = 0, None, None
-    self._debug = None
+    self._debug, self._gear = None, None
     self.fps, self._frames, self._since = 0.0, 0, time.perf_counter()
     self.quick.frameSwapped.connect(self._swapped)
     self.setMinimumSize(800, 600)
@@ -463,9 +471,14 @@ class SpaceViewport(QWidget):
     root.setProperty('lampLight', QVector3D(*lamp))
     root.setProperty('candleLight', QVector3D(*candles))
     root.setProperty('candleGlow', float(flicker))
+    root.setProperty('eggLight', QVector3D(*cabin['egg']))
     at, way, up = cabin['flood']
     root.setProperty('floodPlace', QVector3D(*at))
     root.setProperty('floodTurn', nodeTurnOf(way, up))
+    on, at, way, up = cabin['headlamp']
+    root.setProperty('headlampShines', on)
+    root.setProperty('headlampPlace', QVector3D(*at))
+    root.setProperty('headlampTurn', nodeTurnOf(way, up))
     at, way, up = cabin['camera']
     root.setProperty('cctvPlace', QVector3D(at[0], at[2], -at[1]))
     root.setProperty('cctvTurn', sceneTurnOf(way, up))
@@ -660,6 +673,19 @@ class SpaceViewport(QWidget):
       self._teleports = rows
       root.setProperty('teleportRows', rows)
 
+  def gearShown(self, jetpack: bool, thrust: float, lamp: bool) -> None:
+    """The 'gearShown' method shows Asger's gear in the open inventory
+    (each control's click says its name, 'gearPicked'): the jetpack on
+    or off ('jetpack') and its push ('thrust', N), the headlamp on or
+    off ('lamp'), when they changed."""
+    root = self._root()
+    state = (bool(jetpack), float(thrust), bool(lamp))
+    if root is not None and state != self._gear:
+      self._gear = state
+      root.setProperty('jetpackOn', state[0])
+      root.setProperty('jetpackThrust', state[1])
+      root.setProperty('headlampOn', state[2])
+
   def heldShown(self, kind: str | None, zoom: float) -> None:
     """The 'heldShown' method puts 'kind' in his hand (its meshes in the
     hand's view; None: nothing) and narrows the view 'zoom' times (the
@@ -815,6 +841,8 @@ class SpaceViewport(QWidget):
     out.append(_partOf(kept(Mesh(*_dashboard.domeRows())), looks['dome'],
                        ROCKET_SLOT, False, pictures['glass'], False,
                        SEE_THROUGH))
+    out.append(_partOf(kept(Mesh(*eggRows())), EGG_GLASS[0], ROCKET_SLOT,
+                       False, '', False, EGG_GLASS[1]))
     out.append(_partOf(kept(Mesh(*_cabin.glassRows())), (WINDOW_GLASS[0],
                                                           0.0, 0.1),
                        ROCKET_SLOT, False, '', True, WINDOW_GLASS[1]))
@@ -935,8 +963,16 @@ class SpaceViewport(QWidget):
       return BOLT_LOOK, '', False, None, 1.0
     if kind == 'lift':
       return WALKWAY_LOOKS['lift'], '', False, None, 1.0
+    if kind == 'lift glass':
+      return WALKWAY_LOOKS['glass'], '', True, None, WALKWAY_GLASS
     if kind == 'sring':
       return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
+    if kind == 'egg ball':
+      return (EGG_LIGHT, 0.0, 1.0), '', True, None, 1.0
+    if kind == 'door glass':
+      return (WINDOW_GLASS[0], 0.0, 0.1), '', True, None, WINDOW_GLASS[1]
+    if kind == 'port door':
+      return HATCH_LOOK, '', False, None, 1.0
     return looks['black'], '', False, None, 1.0
 
   def _handParts(self, kind: str) -> list:
@@ -1027,6 +1063,7 @@ class SpaceViewport(QWidget):
       root.boardPicked.connect(self.boardPicked)
       root.inventoryClicked.connect(self.inventoryClicked)
       root.teleportPicked.connect(self.teleportPicked)
+      root.gearPicked.connect(self.gearPicked)
 
 
 def _armOf(pad: tuple, arm: tuple) -> tuple:
