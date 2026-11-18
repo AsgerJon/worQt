@@ -1,0 +1,270 @@
+#  Keglebillard for the Intel Mac (user, 2026-11-17: "an extra workflow
+#  for the unlikely event that it *is* an intel mac"): what
+#  'keglebillard-mac.yml' builds for Apple Silicon, built on GitHub's
+#  Intel Mac, in a '.dmg' on a release of its own that never becomes the
+#  'latest' one (the link handed out, 'releases/latest', stays on the
+#  Apple Silicon build). Warp left Intel Macs behind at 1.10.0, so this
+#  one carries Warp 1.9.1, the last with an Intel Mac wheel, and fits
+#  the sources to it in the build alone ('Fit the sources to the older
+#  Warp'): the repository's files stay as they are. Runs only by hand:
+#  the Actions tab, 'Keglebillard for Intel Mac', 'Run workflow'.
+name: Keglebillard for Intel Mac
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    #  The last Intel image GitHub publishes (kept to August 2027);
+    #  there is no 'latest' label for Intel.
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      #  As the Apple Silicon build, but for Warp: 1.9.1 is the last
+      #  with an Intel Mac wheel ('universal2'), 1.10.0 on are 'arm64'
+      #  alone. PySide6's wheel is for both chips, numpy has an Intel
+      #  one.
+      - name: Install what the billiards needs
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyside6==6.12.0 numpy==2.5.5 \
+            warp-lang==1.9.1 worktoy==1.2.2 pyinstaller==6.22.3 pillow
+
+      #  Warp 1.9.1 differs from the one the sources are written for in
+      #  two ways the billiards meets: it has no 'wp.LOG_WARNING' (its
+      #  switch is 'wp.config.quiet'), and in a kernel it takes a
+      #  negated constant ('-ONE') for a float32, so 'ZERO - ONE' is
+      #  written in its place: the same number, the balls and pins end
+      #  up the same to the last digit. Only this checkout is changed;
+      #  'Try it' below compiles the kernels and stops the build if they
+      #  no longer fit.
+      - name: Fit the sources to the older Warp
+        run: |
+          python - <<'EOF'
+          from __future__ import annotations
+
+          import re
+          from pathlib import Path
+
+          SRC: Path = Path('src/worQt')
+          LOUD: str = 'wp.config.log_level = wp.LOG_WARNING'
+          QUIET: str = 'wp.config.quiet = True'
+          ZERO: str = 'ZERO = wp.constant(wp.float64(0.0))'
+          NEGATED: re.Pattern[str] = re.compile(
+            r'(?<![\w.)\]])-([A-Z][A-Z0-9_]*)\b')
+
+
+          def fitted(path: Path, kernels: bool) -> tuple[int, int]:
+            """Fit a file to Warp 1.9.1, return the counts changed"""
+            text = path.read_text()
+            quiet = text.count(LOUD)
+            text = text.replace(LOUD, QUIET)
+            negated = 0
+            if kernels:
+              text, negated = NEGATED.subn(r'(ZERO - \1)', text)
+              if negated and ZERO not in text:
+                raise SystemExit('%s has no ZERO to take from' % path)
+            if quiet or negated:
+              path.write_text(text)
+            return quiet, negated
+
+
+          changed = 0
+          for path in sorted(SRC.rglob('*.py')):
+            kernels = (path.parent.name == 'billiards'
+                       and path.name.endswith('_kernels.py'))
+            quiet, negated = fitted(path, kernels)
+            if quiet or negated:
+              changed += 1
+              print('%s: %d quiet, %d negated' % (path, quiet, negated))
+          print('%d files fitted' % changed)
+          EOF
+
+      - name: Build the app
+        run: |
+          pyinstaller --noconfirm --distpath dist --workpath build \
+            packaging/keglebillard/keglebillard.spec
+          codesign --force --deep --sign - dist/Keglebillard.app
+          du -sh dist/Keglebillard.app
+          file dist/Keglebillard.app/Contents/MacOS/Keglebillard
+
+      - name: Try it
+        run: |
+          perl -e 'alarm 900; exec @ARGV' env KEGLEBILLARD_SMOKE=20 \
+            KEGLEBILLARD_SHOT="$PWD/smoke.png" \
+            dist/Keglebillard.app/Contents/MacOS/Keglebillard \
+            > smoke.log 2>&1 || echo "it ended with $?"
+          cat smoke.log
+          grep -q '\[smoke\] kernels ready' smoke.log
+          ! grep -q 'Traceback' smoke.log
+
+      - name: Keep what the try showed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Keglebillard-Intel-tried
+          path: |
+            smoke.log
+            smoke.png
+          if-no-files-found: ignore
+
+      #  The app carries Qt Quick 3D (under the GNU GPL version 3 alone),
+      #  so the disk image takes every licence along and says where the
+      #  source is, and that this build fitted it. PySide6's wheels
+      #  bring no licence texts: the two GNU ones are fetched, and the
+      #  build stops without them.
+      - name: Gather the licences
+        id: licences
+        run: |
+          mkdir -p dmg/Licenses
+          curl -fsSL --retry 3 https://www.gnu.org/licenses/gpl-3.0.txt \
+            -o dmg/Licenses/GPL-3.0.txt
+          curl -fsSL --retry 3 https://www.gnu.org/licenses/lgpl-3.0.txt \
+            -o dmg/Licenses/LGPL-3.0.txt
+          python - "keglebillard-intel-${{ github.run_number }}" <<'EOF'
+          from __future__ import annotations
+
+          import os
+          import shutil
+          import sys
+          import sysconfig
+          from importlib import metadata
+          from pathlib import Path
+
+          OUT: Path = Path('dmg/Licenses')
+          TAG: str = sys.argv[1]
+          CARRIED: tuple[str, ...] = ('pyside6', 'shiboken6', 'numpy',
+                                      'warp-lang', 'worktoy')
+          NAMED: tuple[str, ...] = ('licen', 'copying', 'notice')
+
+
+          def kept(target: Path, source: Path) -> None:
+            """Copy 'source' to 'target', making its folder first"""
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(source, target)
+
+
+          def gathered(name: str) -> str:
+            """Copy a distribution's licence files, return its version"""
+            for file in metadata.distribution(name).files or ():
+              parts = file.parts
+              if len(parts) < 2 or not parts[0].endswith('.dist-info'):
+                continue
+              low = file.name.lower()
+              if 'licenses' in parts or any(w in low for w in NAMED):
+                kept(OUT / name / Path(*parts[1:]), Path(file.locate()))
+            return metadata.version(name)
+
+
+          for text in ('GPL-3.0.txt', 'LGPL-3.0.txt'):
+            head = (OUT / text).read_text()[:2000]
+            if 'GENERAL PUBLIC LICENSE' not in head:
+              raise SystemExit('%s is not the licence text' % text)
+          kept(OUT / 'worQt' / 'LICENSE', Path('LICENSE'))
+          python = Path(sysconfig.get_path('stdlib')) / 'LICENSE.txt'
+          if python.is_file():
+            kept(OUT / 'Python' / 'LICENSE.txt', python)
+          versions = {'Python': '%d.%d.%d' % sys.version_info[:3]}
+          versions.update((name, gathered(name)) for name in CARRIED)
+          note = """Keglebillard (for Intel Macs)
+
+          Keglebillard's own code (worQt) is under the Apache License
+          2.0 (worQt/LICENSE). Its source is at
+          https://github.com/AsgerJon/worQt/tree/%s
+
+          This build is for Macs with an Intel processor. It carries
+          Warp %s, the last for them, and its build fitted worQt's
+          sources to that Warp: the step 'Fit the sources to the older
+          Warp' of .github/workflows/keglebillard-mac-intel.yml at the
+          address above is the whole of the change.
+
+          The app carries Qt and Qt for Python (PySide6 %s), among
+          them Qt Quick 3D, which is under the GNU General Public
+          License version 3 alone. The app as a whole is therefore
+          handed out under the GNU General Public License version 3
+          (GPL-3.0.txt). The rest of Qt and PySide6 is under the GNU
+          Lesser General Public License version 3 (LGPL-3.0.txt).
+          Their source is at https://code.qt.io (qt/qt5.git and
+          pyside/pyside-setup.git).
+
+          Carried, each under its own licence (in the folder of its
+          name where it brought a licence file along):
+          %s
+          """ % (TAG, versions['warp-lang'], versions['pyside6'],
+                 '\n'.join('  %s %s' % item for item in versions.items()))
+          (OUT / 'README.txt').write_text(note)
+          print(note)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('pyside=%s\n' % versions['pyside6'])
+            output.write('warp=%s\n' % versions['warp-lang'])
+          EOF
+
+      - name: Make the disk image
+        run: |
+          cp -R dist/Keglebillard.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Keglebillard -srcfolder dmg -ov \
+            -format UDZO Keglebillard-Intel.dmg
+          du -sh Keglebillard-Intel.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Keglebillard-Intel
+          path: Keglebillard-Intel.dmg
+
+      #  A tag of its own (run numbers count per workflow, so
+      #  'keglebillard-N' would meet the Apple Silicon build's), and
+      #  never the 'latest' release: 'releases/latest' is the link that
+      #  was handed out, and it must stay on the Apple Silicon build.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: keglebillard-intel-${{ github.run_number }}
+          name: Keglebillard for Intel Mac (${{ github.run_number }})
+          files: Keglebillard-Intel.dmg
+          make_latest: 'false'
+          body: |
+            Keglebillard and three-cushion carambole, for a Mac with an
+            Intel processor, on macOS 14 (Sonoma) or newer. For a Mac
+            with Apple Silicon (M1 or newer) take 'Keglebillard for
+            Mac' instead. Which one a Mac is: the Apple menu, About
+            This Mac ('Processor ... Intel', or 'Chip Apple M...').
+
+            1. Download Keglebillard-Intel.dmg below and open it.
+            2. Drag Keglebillard onto Applications.
+            3. Open it from Applications. The first time, the Mac says
+               it cannot check the app (it is not from the App Store):
+               open System Settings, Privacy & Security, scroll down and
+               click "Open Anyway" by Keglebillard (on older systems:
+               right-click the app, Open, Open).
+
+            You start in the billiard room: walk with W A S D, look with
+            the mouse, walk over to the kegler table and press E.
+            The first shot takes a few seconds longer: the physics is
+            readied once.
+
+            Licences: Keglebillard's own code is under the Apache
+            License 2.0, and its source is this repository at this
+            release's tag. This build carries Warp
+            ${{ steps.licences.outputs.warp }}, the last for Intel
+            Macs, and fitted the source to it (the step 'Fit the
+            sources to the older Warp' of this workflow is the whole
+            of the change). The app carries Qt and Qt for Python
+            (PySide6 ${{ steps.licences.outputs.pyside }}), among them
+            Qt Quick 3D, which is under the GNU General Public License
+            version 3 alone, so the app as a whole is handed out under
+            the GNU General Public License version 3. Every licence is
+            in the Licenses folder of the disk image. The source of Qt
+            and PySide6 is at https://code.qt.io (qt/qt5.git and
+            pyside/pyside-setup.git).
