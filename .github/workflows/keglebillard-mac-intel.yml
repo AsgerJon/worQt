@@ -123,16 +123,26 @@ jobs:
       #  The app carries Qt Quick 3D (under the GNU GPL version 3 alone),
       #  so the disk image takes every licence along and says where the
       #  source is, and that this build fitted it. PySide6's wheels
-      #  bring no licence texts: the two GNU ones are fetched, and the
-      #  build stops without them.
+      #  bring no licence texts: the two GNU ones are fetched, from Qt's
+      #  own repository on GitHub first (gnu.org did not answer the
+      #  runner on 2026-11-18) and from gnu.org second, and the build
+      #  stops without them.
       - name: Gather the licences
         id: licences
         run: |
           mkdir -p dmg/Licenses
-          curl -fsSL --retry 3 https://www.gnu.org/licenses/gpl-3.0.txt \
-            -o dmg/Licenses/GPL-3.0.txt
-          curl -fsSL --retry 3 https://www.gnu.org/licenses/lgpl-3.0.txt \
-            -o dmg/Licenses/LGPL-3.0.txt
+          qt=https://raw.githubusercontent.com/qt/qtbase/v6.12.0/LICENSES
+          gnu=https://www.gnu.org/licenses
+          fetch() {
+            curl -fsSL --retry 2 --connect-timeout 15 --max-time 60 \
+              "$1" -o "$3" || \
+            curl -fsSL --retry 2 --connect-timeout 15 --max-time 60 \
+              "$2" -o "$3"
+          }
+          fetch $qt/GPL-3.0-only.txt $gnu/gpl-3.0.txt \
+            dmg/Licenses/GPL-3.0.txt
+          fetch $qt/LGPL-3.0-only.txt $gnu/lgpl-3.0.txt \
+            dmg/Licenses/LGPL-3.0.txt
           python - "keglebillard-intel-${{ github.run_number }}" <<'EOF'
           from __future__ import annotations
 
