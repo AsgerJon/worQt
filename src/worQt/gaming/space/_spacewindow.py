@@ -27,8 +27,8 @@ from ._accelerometer import Accelerometer
 from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
 from ._autoflight import SAID, Autoflight
-from ._bolts import holdOf, rocketBolts, stationBolts
-from ._cabinworld import STILL
+from ._bolts import holdOf, middleBolt, rocketBolts, stationBolts
+from ._cabinworld import STEP, STILL
 from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
 from ._cabinmixer import THUD, THUDS
 from ._cabinmixer import FOOD_NEAR, LAUGHS, SNACKS, TOLD, TOWING, TOWS
@@ -51,16 +51,18 @@ from ._savegame import QUICK, SaveGame, keptOf, keptTo, savesFolder
 from ._savegame import skyOf, skyTo
 from ._sight import inSight
 from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
+from ._elevator import backBoxes
 from ._kolonihave import gardenSolids
 from ._night import MORNING, morningIn, nightIn
 from ._inventory import HOTBAR, ITEMS, Inventory
 from ._quest import CHECKLIST, Quest
 from ._rendezvousguidance import RendezvousGuidance
 from ._stationinterior import DECK, HUB_INSIDE, PLANE, cabinInside, roomOf
-from ._stationinterior import roomsInside, shaftWays
+from ._stationinterior import roomsInside, shaftWays, stationWay
 from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
 from ._sleep import Sleep
+from ._tally import Tally
 from ._spaceviewport import SpaceViewport
 from ._station import Station
 from ._teleprinter import ICONS
@@ -118,6 +120,21 @@ DOORWAY_CLEAR = 0.35
 STUCK = 60.0
 #  Why nothing is saved or loaded while the game readies.
 READYING = 'the game is still readying'
+#  The debug menu's warps, beside the open inventory (user, 2026-11-18:
+#  "we need a debug menu available from the inventory that lets Asger
+#  warp to certain locations, such as: 1. Spawn 2. Rocket room 3. Terra
+#  Prime center. The room that has two docking ports"): each place's
+#  name and what its button says.
+TELEPORTS = (('spawn', 'Spawn'), ('rocket', 'Rocket room'),
+             ('hub', 'Terra Prime center'))
+#  Warped into the rocket room, Asger stands behind his chair, his head
+#  turned this far (yaw, pitch, rad) to look over the room, the sofa
+#  and the shelves (ahead, the cockpit's front is dark at night).
+ROCKET_VIEW = (-1.6, -0.3)
+#  The debug view's lines are shown anew this often, real s (user,
+#  2026-11-18: "we don't need to refresh the fps counter 1200 times pers
+#  second": ten times a second; each frame its figures flickered).
+DEBUG_EVERY = 0.1
 #  The last readying step's words (the scene furnished on Qt's thread).
 FURNISHING = 'furnishing the cabin (the deck, the room, the dashboard)'
 #  The throttle's keys (user, 2026-11-17: "key_SHIFT is reserved to
@@ -328,7 +345,7 @@ class SpaceWindow(QMainWindow):
     self._closest, self._closestAt, self._closestReal = None, 0.0, 0.0
     self._tubes, self._tubesReal = None, 0.0
     self.elevators = [Elevator() for _ in range(4)]
-    self._stationed, self._hatch, self._garden = False, 0.0, None
+    self._stationed, self._hatch, self._fixed = False, 0.0, None
     self._beamSince, self._shaking = 0.0, random.Random(3)
     self.rendezvous = RendezvousGuidance(self.station)
     self.autoflight = Autoflight(self.guidance, self.rendezvous,
@@ -347,6 +364,8 @@ class SpaceWindow(QMainWindow):
     self.flight, self.files, self.readying = None, None, 'starting'
     self._step, self._stuck = time.perf_counter(), False
     self.trouble, self.held, self.mapOpen = None, {}, False
+    self._cabinRate, self._flightRate = Tally(), Tally()
+    self._debugAt = -math.inf
     self._stoodBy = False
     self.inventory, self._inventoryOpen = Inventory(), False
     self._scoping, self._zoom, self._heldSince = False, 1.0, 0.0
@@ -358,6 +377,7 @@ class SpaceWindow(QMainWindow):
     self.viewport.quick.installEventFilter(self)
     self.viewport.boardPicked.connect(self._acted)
     self.viewport.inventoryClicked.connect(self._inventoryClicked)
+    self.viewport.teleportPicked.connect(self._teleported)
     self.pointer = Pointer(self.viewport.quick)
     self.timer = QTimer(self)
     self.timer.timeout.connect(self._idled)
@@ -406,6 +426,13 @@ class SpaceWindow(QMainWindow):
         not self.pointer.taken) and self.viewport.takesClick(
           event.position()):
       return False
+    if kind == QEvent.Type.MouseButtonRelease and not self.pointer.taken:
+      #  The scene's own (user, 2026-11-18: "the inventory desyncs the
+      #  mouse from the screen": a release kept from it left the slot
+      #  pressed holding the mouse, the stack carried stuck).
+      if event.button() == Qt.MouseButton.RightButton:
+        self._heldReleased()
+      return False
     if self.mapOpen:
       return self._mapMouse(kind, event)
     if kind == QEvent.Type.MouseButtonPress and not self.pointer.taken:
@@ -421,6 +448,8 @@ class SpaceWindow(QMainWindow):
         self._heldReleased()
       return True
     if kind == QEvent.Type.MouseMove:
+      if not self.pointer.taken:
+        self.viewport.pointedAt(event.position())
       self.pointer.movedTo(event.globalPosition(), event.position(),
                            event.timestamp() / 1000.0)
     elif kind == QEvent.Type.Wheel:
@@ -483,6 +512,8 @@ class SpaceWindow(QMainWindow):
       self.flight.flown((vessel,), system, keeper.now, seconds, math.inf,
                         self.station, keeper.factor > 1)
       self._bumped()
+    self._flightRate.counted(0 if vessel.docked else self.flight.lastSteps,
+                             time.perf_counter())
     keeper.ticked(seconds)
     self._dockedOrNot()
     self._approachKept(now)
@@ -522,6 +553,8 @@ class SpaceWindow(QMainWindow):
                             self.inside and not self.mapOpen,
                             time.perf_counter() - self._heldSince)
     viewport.heldShown(inventory.held, zoom)
+    viewport.teleportsOffered([{'name': name, 'title': title}
+                               for name, title in TELEPORTS])
     if self.mapOpen:
       quick = viewport.quick
       viewport.mapShown(self.scenery.mapOf(
@@ -546,6 +579,7 @@ class SpaceWindow(QMainWindow):
                           (self._statusOf(),) + self._tubes)
     viewport.hudShown(self._readout(), MAP_HINT if self.mapOpen else HINT,
                       '')
+    self._debugKept(time.perf_counter())
     viewport.monitorShown(self._noseCamera)
     vitals = self.vitals
     viewport.vitalsShown(vitals.health, vitals.food, vitals.hurt,
@@ -898,19 +932,75 @@ class SpaceWindow(QMainWindow):
       for name in ('aboard', 'locked', 'dismissed'):
         self.quest.ticked(name)
       return
-    cockpit = self.cockpit
-    cockpit.gotUp()
-    crewman = cockpit.crewman
-    soles, facing = START
-    crewman.placed((soles[0], soles[1], soles[2] + MIDDLE), (0.0, 0.0, 0.0),
-                   0, (0.0, 0.0, 0.0))
-    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), facing
-    cockpit.yaw, cockpit.pitch = 0.0, 0.0
+    self._atStart()
     self.vitals.food = SUPPERLESS
     self._noteOf('Night at the launch tower. Ahead the walkway to the '
                  'rocket; behind you the EXIT, stairs or a lift down to '
                  'the ground (Terra Prime passes over: look up). Quest: %s'
                  % self.quest.textOf(self.quest.current))
+
+  def _atStart(self, ) -> None:
+    """Puts Asger where the game starts: up in the launch tower's hall,
+    still, facing the walkway, looking ahead."""
+    soles, facing = START
+    self._placedAt((soles[0], soles[1], soles[2] + MIDDLE), facing)
+
+  def _placedAt(self, middle: tuple, facing: tuple) -> None:
+    """Gets Asger up and puts his middle at 'middle' (the vessel's own
+    axes), still, upright, facing 'facing', looking ahead."""
+    cockpit = self.cockpit
+    cockpit.gotUp()
+    crewman = cockpit.crewman
+    crewman.placed(middle, (0.0, 0.0, 0.0), 0, (0.0, 0.0, 0.0))
+    crewman.up, crewman.ahead = (0.0, 0.0, 1.0), tuple(facing)
+    cockpit.yaw, cockpit.pitch = 0.0, 0.0
+
+  def _teleported(self, where: str) -> None:
+    """The debug menu's warp to 'where' (a name of 'TELEPORTS'), at once,
+    the inventory shut: 'spawn', the rocket stood on the pad anew, the
+    walkway at its door and the tower's lift as the game starts them,
+    Asger in the tower's hall where it starts; 'rocket', Asger behind
+    his chair looking over the room ('ROCKET_VIEW'), the rocket where it
+    is; 'hub', the rocket docked at Terra Prime's port (the walkway
+    gone, the door locked, the engine lit), Asger floating by the bolt
+    in the hub's middle. Time runs real; the sky, his vitals, his
+    inventory and the quest stay as they are; the gun lets go, he wakes.
+    Refused while the game readies or he is dead (said)."""
+    titles = dict(TELEPORTS)
+    if where not in titles:
+      raise ValueError('no warp to %r: %s' % (where, sorted(titles)))
+    if not self._inventoryOpen:
+      return
+    if self._saveWhy() == READYING:
+      self._noteOf('Cannot warp: %s' % READYING)
+      return
+    if self.vitals.cause is not None:
+      self._noteOf('Cannot warp: Asger is dead')
+      return
+    vessel, now = self.vessel, self.keeper.now
+    if where == 'spawn':
+      vessel.docked, vessel.jolt = False, (0.0, 0.0, 0.0)
+      self._padded()
+      self.walkway, self.towerLift = Walkway(True), TowerLift()
+    elif where == 'hub' and not vessel.docked:
+      self.autoflight.letGo(vessel)
+      self.guidance.stopped(vessel)
+      self.walkway = Walkway(False)
+      vessel.engine.lit = True
+      self.docking.teleported(vessel, self.system, now)
+    self.keeper.realtime()
+    self.gravgun.released()
+    if where == 'spawn':
+      self._atStart()
+    elif where == 'rocket':
+      self.cockpit.gotUp()
+      self.cockpit.yaw, self.cockpit.pitch = ROCKET_VIEW
+    else:
+      self._placedAt(holdOf(middleBolt()), (1.0, 0.0, 0.0))
+    self.world.teleported()
+    self.inside = True
+    self._settledAnew()
+    self._noteOf('Warped to %s' % titles[where])
 
   def _foodNear(self, ) -> float:
     """Returns how near the food Asger's ears are: one within the first
@@ -1214,11 +1304,13 @@ class SpaceWindow(QMainWindow):
       self.towerLift.doors if self.walkway.attached else 0))
     self.world.stepped(real, accelerometer, crewman, want,
                        self._gunPushed(real))
+    self._cabinRate.counted(self.world.lastSteps, time.perf_counter())
 
   def _aboard(self, real: float) -> None:
     """Docked, joins the space station's rooms to the cabin's world (its
     elevators' cages where they are as the frame begins, the world moving
-    them through it) and moves its elevators 'real' s on; undocked, takes
+    them through it; the cages' back walls through the hub and the
+    garden, still) and moves its elevators 'real' s on; undocked, takes
     them away again."""
     docked = self.vessel.docked
     self._hatch += ((1.0 if docked else 0.0) - self._hatch) * min(
@@ -1226,11 +1318,12 @@ class SpaceWindow(QMainWindow):
     if docked:
       relative = self.docking.relative
       ways = shaftWays(relative)
-      if self._garden is None or self._garden[0] != relative:
-        self._garden = relative, gardenSolids(relative)
+      if self._fixed is None or self._fixed[0] != relative:
+        self._fixed = relative, gardenSolids(relative) + backBoxes(
+          ways, stationWay((0.0, 0.0, 1.0), relative))
       self.world.stationed(True, ways, tuple(
         box for elevator, way in zip(self.elevators, ways)
-        for box in elevator.boxesOf(way)) + self._garden[1])
+        for box in elevator.boxesOf(way)) + self._fixed[1])
       for elevator in self.elevators:
         elevator.moved(real)
       self.bolts = rocketBolts() + stationBolts(ways, tuple(
@@ -2129,11 +2222,19 @@ class SpaceWindow(QMainWindow):
     if state['gun'] is not None:
       keptTo(self.gravgun, state['gun'])
     self.inside, self._noseCamera = state['inside'], state['noseCamera']
+    self._settledAnew()
+
+  def _settledAnew(self, ) -> None:
+    """After a load or a warp: what went on stopped (asleep, the manual
+    or the inventory open, the telescope raised, a leap, a glance) and
+    what the window works out as it goes worked out anew (the tower's
+    and the station's solids, the bolts, the hatch, the closest
+    approach, the tubes, the map's paths)."""
     if self._inventoryOpen:
       self._inventoryShut()
     self.sleep, self._manualOpen = Sleep(), False
     self._scoping, self._leaping, self.cockpit.glancing = False, False, None
-    self._towered, self._stationed, self._garden = False, False, None
+    self._towered, self._stationed, self._fixed = False, False, None
     self.bolts = rocketBolts()
     self._hatch = 1.0 if self.vessel.docked else 0.0
     self._closest, self._tubes = None, None
@@ -2202,9 +2303,35 @@ class SpaceWindow(QMainWindow):
       if gap <= PICKED:
         self.orrery.focused(index, self.system)
 
+  def _debugKept(self, now: float) -> None:
+    """Shows the debug view's lines anew if 'DEBUG_EVERY' s have passed
+    since they last were ('now': real s, 'time.perf_counter')."""
+    if now - self._debugAt >= DEBUG_EVERY:
+      self._debugAt = now
+      self.viewport.debugShown(self._debugText())
+
+  def _debugText(self, ) -> str:
+    """Returns the debug view's lines (user, 2026-11-18: "implement
+    debug view in the top left listing fps, and phys rate"): frames a
+    second; each physics' steps a second (the cabin's: Asger and the
+    loose things, real time in steps of '_cabinworld.STEP'; the
+    flight's: the rocket, off docked), the last frame's steps and how
+    long they took."""
+    fps, world, flight = self.viewport.fps, self.world, self.flight
+    lines = ['%4.0f fps     %6.1f ms a frame' % (
+      fps, 1e3 / fps if fps > 0.0 else 0.0)]
+    lines.append('Cabin  %6.0f Hz  %4d steps %6.2f ms (of %.0f Hz)' % (
+      self._cabinRate.rate, world.lastSteps, world.lastMs, 1.0 / STEP))
+    if self.vessel.docked:
+      lines.append('Flight   off, docked')
+    else:
+      lines.append('Flight %6.0f Hz  %4d steps %6.2f ms' % (
+        self._flightRate.rate, flight.lastSteps, flight.lastMs))
+    return '\n'.join(lines)
+
   def _readout(self, ) -> str:
     """Returns what the flight says: where, how high and fast, the path's
-    apsides, the aim, the guidance, the date; how the frames go."""
+    apsides, the aim, the guidance, the date; the sound if it failed."""
     system, vessel, keeper = self.system, self.vessel, self.keeper
     body = system.bodies[vessel.anchor]
     height = vessel.heightOver(system)
@@ -2263,10 +2390,8 @@ class SpaceWindow(QMainWindow):
     if self.guidance.on:
       lines.append('Ascent     to %s: %s' % (lengthText(
         self.guidance.target), self.guidance.phase))
-    lines.append('%.0f fps, flight %.2f ms (%d steps)%s' % (
-      self.viewport.fps, self.flight.lastMs, self.flight.lastSteps,
-      '' if self.speaker.trouble is None else ', no sound: %s'
-                                              % self.speaker.trouble))
+    if self.speaker.trouble is not None:
+      lines.append('No sound: %s' % self.speaker.trouble)
     if self.note and time.perf_counter() - self._noted < NOTE_LASTS:
       lines.append(self.note)
     return '\n'.join(lines)

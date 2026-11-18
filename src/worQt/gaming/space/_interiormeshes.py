@@ -4,11 +4,12 @@ Asger's kolonihave i rummet!"), its own axes, every face into the rooms
 (seen from inside; the hull's faces outward, culled from in here): the
 hub's wall with the shafts' mouths cut, its ends (a port's mouth cut in
 each: user, 2026-11-18, "Terra Prime should have docking ports on both
-sides"), the ports' tubes and their docking rings; the four shafts out to
-the ring; the ring's tube over its deck, the shafts' holes and four
-strips of windows along it cut (the stars and Terra wheel past, once a
-minute); the deck. Rows of eight (place, normal, picture u v; the deck's
-picture in metres along and across it). Qt-free.
+sides"), the ports' tubes and their docking rings; the cages' back
+walls through the hub; the four shafts out to the ring; the ring's tube
+over its deck, the shafts' holes and four strips of windows along it
+cut (the stars and Terra wheel past, once a minute); the deck. Rows of
+eight (place, normal, picture u v; the deck's picture in metres along
+and across it). Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -19,10 +20,11 @@ import math
 
 import numpy
 
+from ._elevator import backWalls
 from ._stationinterior import DECK, HATCH, HUB_INSIDE, PORT_INSIDE
 from ._stationinterior import SHAFT_INSIDE, TUBE_INSIDE
 from ._stationmeshes import HUB, SPOKES, TUBE_MIDDLE, WINDOW_ROWS, portTip
-from ._shapes import joined
+from ._shapes import boxRows, joined
 
 TAU = 2.0 * math.pi
 #  How finely each is cut: round the hub and along it; round a shaft and
@@ -52,7 +54,7 @@ def interiorMeshes() -> dict:
   """Returns the station's inside by look: 'inside' (its walls), 'deck'
   (the ring's floor)."""
   return {'inside': joined([hubRows(), portRows(), shaftRows(),
-                            ringInsideRows()]),
+                            backRows(), ringInsideRows()]),
           'deck': deckRows()}
 
 
@@ -125,6 +127,15 @@ def hubRows() -> tuple:
 
     parts.append(gridRows(cap, (0.0, TAU), (low, HUB_INSIDE), (96, 6)))
   return joined(parts)
+
+
+def backRows() -> tuple:
+  """Returns the cages' back walls through the hub ('_elevator.
+  backWalls': the station turns about its own z), each a box."""
+  ways = tuple((math.cos(angle), math.sin(angle), 0.0)
+               for angle in _spokeAngles())
+  return joined([boxRows(place, half, axes) for place, half, axes in
+                 backWalls(ways, (0.0, 0.0, 1.0), (0.0, 0.0, 0.0))])
 
 
 def portRows() -> tuple:

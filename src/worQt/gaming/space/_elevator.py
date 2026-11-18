@@ -15,7 +15,7 @@ Qt-free.
 from __future__ import annotations
 
 from ._stationinterior import DECK, HUB_INSIDE, PLANE
-from ._turns import cross, quaternionOf
+from ._turns import cross, quaternionOf, unit
 
 #  The cage inside (half its width across the shaft, both ways; its
 #  height along it) and its plates' half thickness, m.
@@ -33,6 +33,18 @@ FAST = 30.0
 ARRIVED = 0.005
 #  Where a box that is not there is kept (far from everything), m.
 AWAY = (0.0, 0.0, -1e4)
+#  The cages' back walls through the hub (user, 2026-11-18: "can we just
+#  extend the four 'back' walls towards the center, so Asger can begin
+#  to move along side them sooner until he gets to the elevator"): on
+#  each shaft's trailing side (the side the station's turn brings
+#  against what moves out from the axis: it pushes him round with it,
+#  as a wall must), its face flush with the cage's inside, as high as
+#  the cage, from 'BACK_FROM' m off the axis (clear of the other shafts'
+#  ways) out to the hub's wall, where the cage's roof stops; 'BACK_THICK'
+#  thick, m. (Along the shaft's own wall, 7 m off its way, he slid past
+#  the cage and down the shaft, or met the mouth's rim at 12 m/s.)
+BACK_FROM = 3.0
+BACK_THICK = 0.4
 #  The plates' half sizes (along the ring, along the axis, out): floor,
 #  roof, the two sides along the ring, the two across it.
 _WIDE = CAR_HALF + 2.0 * PLATE
@@ -167,3 +179,33 @@ class Elevator:
     open_ = {1} if self.atHub else {2, 3} if self.atDeck else set()
     return tuple((AWAY, half, turn, still) if k in open_ else (
       middle, half, turn, moving) for k, (middle, half) in enumerate(boxes))
+
+
+def backWalls(ways: tuple, spinning: tuple, middle: tuple) -> tuple:
+  """Returns the cages' back walls through the hub, one a shaft out each
+  of 'ways', the station turning about 'spinning' (any length), its
+  middle at 'middle' (the same axes): each its middle, half sizes and
+  axes (across it toward the trailing side, along the station's axis,
+  out along its shaft; right-handed)."""
+  out = []
+  for way in ways:
+    back = unit(tuple(-c for c in cross(spinning, way)))
+    axial = cross(way, back)
+    along = 0.5 * (BACK_FROM + HUB_INSIDE)
+    off = CAR_HALF + 0.5 * BACK_THICK
+    place = tuple(m + along * w + off * b for m, w, b in zip(middle, way,
+                                                           back))
+    out.append((place, (0.5 * BACK_THICK, _WIDE, 0.5 * (
+      HUB_INSIDE - BACK_FROM)), (back, axial, way)))
+  return tuple(out)
+
+
+def backBoxes(ways: tuple, spinning: tuple) -> tuple:
+  """Returns the cages' back walls as the cabin's world meets them,
+  docked (the rocket's own axes: the shafts out 'ways', the station
+  turning about 'spinning', its middle 'PLANE' up the rocket's z): each
+  its middle, half sizes, turn (w x y z) and velocity (still)."""
+  return tuple((place, half, quaternionOf(tuple(
+    (axes[0][k], axes[1][k], axes[2][k]) for k in range(3))),
+                (0.0, 0.0, 0.0)) for place, half, axes in backWalls(
+    ways, spinning, (0.0, 0.0, PLANE)))

@@ -16,8 +16,8 @@ from __future__ import annotations
 import math
 
 from worQt.gaming.space._bolts import STATION_BOLTS, holdOf, rocketBolts
-from worQt.gaming.space._bolts import stationBolts
-from worQt.gaming.space._elevator import Elevator
+from worQt.gaming.space._bolts import middleBolt, stationBolts
+from worQt.gaming.space._elevator import Elevator, backBoxes
 from worQt.gaming.space._stationinterior import PORT_LOW, roomsInside
 from worQt.gaming.space._cabinsolids import solids
 from worQt.gaming.space._cockpit import FLOOR, GUN_REACH, NOSE, WALL
@@ -162,7 +162,7 @@ class TestBolts(SpaceTest):
     cabin's floor under the hatch the hub's middle bolt, from where it
     holds him each spoke's mouth's, from where that holds him its cage's
     floor's: each within the gun's reach, facing him and in sight (the
-    rooms walked, the cages' plates met)."""
+    rooms walked, the cages' plates and back walls met)."""
     import numpy
     from worQt.gaming.space._sight import inSight
     ways = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0),
@@ -171,6 +171,7 @@ class TestBolts(SpaceTest):
     bolts = stationBolts(ways, tuple(e.floor for e in elevators))
     plates = [box for e, way in zip(elevators, ways)
               for box in e.boxesOf(way)]
+    plates += list(backBoxes(ways, (0.0, 0.0, 1.0)))
     middles = numpy.array([m for m, _, _, _ in plates], numpy.float64)
     halves = numpy.array([h for _, h, _, _ in plates], numpy.float64)
     axes = []
@@ -194,6 +195,7 @@ class TestBolts(SpaceTest):
         point, True, ways), boxes), (eye, place))
 
     middle = bolts[6]
+    self.assertEqual(middle, middleBolt())
     reached((0.0, 0.0, FLOOR + 1.7), middle)
     for k in range(4):
       arm, cage = bolts[7 + k], bolts[11 + k]

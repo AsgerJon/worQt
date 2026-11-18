@@ -173,6 +173,23 @@ class DockingPort:
     self.heldOn(vessel, system, t)
     vessel.jolted(tuple(a - b for a, b in zip(vessel.velocity, before)))
 
+  def teleported(self, vessel: Vessel, system: SolarSystem,
+                 t: float) -> None:
+    """The 'teleported' method docks the vessel at once at time 't' (the
+    debug menu's warp: no approach, no jolt): at the port on the
+    station's own z side, nose down its axis, its own x the station's;
+    its engine, thrusters and autopilot shut, off the ground."""
+    self.side = 1.0
+    self.relative = ((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0))
+    vessel.anchor = self.station.parent
+    vessel.docked, vessel.touching = True, 0
+    vessel.engine.throttled(0.0)
+    vessel.rcs = (0.0, 0.0, 0.0)
+    vessel.steered(0.0, 0.0, 0.0)
+    self.heldOn(vessel, system, t)
+    vessel.autopilot.engaged('off', vessel.turn)
+    vessel.jolt = (0.0, 0.0, 0.0)
+
   def heldOn(self, vessel: Vessel, system: SolarSystem, t: float) -> None:
     """The 'heldOn' method puts the docked vessel where the station has
     it at time 't': its nose in the port, turned as noted, moving and

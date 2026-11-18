@@ -77,9 +77,18 @@ Item {
   property bool hotbarShown: false
   property var carriedRow: ({kind: "", count: 0})
   property var itemIcons: ({})
+  //  The debug menu's warps under the open inventory (user, 2026-11-18:
+  //  "a debug menu available from the inventory that lets Asger warp to
+  //  certain locations"): each place's name and its button's words.
+  property var teleportRows: []
   property real heldFade: 0
   property real viewField: 60
   property real scopeShown: 0
+  //  Where the free pointer is on the scene, set by the window from
+  //  every move it sees (user, 2026-11-18: "the inventory desyncs the
+  //  mouse from the screen": a hover area here lost the moves to the
+  //  slots' own and to a slot left pressed): the stack carried is
+  //  drawn there.
   property real pointerX: 0
   property real pointerY: 0
   property string hoverTitle: ""
@@ -233,6 +242,9 @@ Item {
   //  What the flight says (top left), the keys (along the bottom), and a
   //  word in the middle while it readies ('' none)
   property string readout: ""
+  //  The debug view, top left (user, 2026-11-18: "implement debug view in
+  //  the top left listing fps, and phys rate"): always shown.
+  property string debugText: ""
   property string hint: ""
   property string status: ""
   //  The artificial horizon: shown or not; its mesh (mirrored: seen as
@@ -273,6 +285,7 @@ Item {
   property string boardHeld: "|"
   signal boardPicked(string action)
   signal inventoryClicked(int slot, bool right)
+  signal teleportPicked(string where)
   //  The board's keys float a little, all together
   property real bob: 0
   SequentialAnimation on bob {
@@ -1497,9 +1510,30 @@ Item {
   }
 
   Rectangle {
-    visible: root.readout !== "" && (!root.cockpitOn || root.mapOpen)
+    id: debugView
+    visible: root.debugText !== ""
     x: 12
     y: 12
+    width: debugViewText.width + 16
+    height: debugViewText.height + 10
+    color: "#a0000000"
+    radius: 4
+    z: 50
+    Text {
+      id: debugViewText
+      x: 8
+      y: 5
+      text: root.debugText
+      color: "#b8ffb8"
+      font.pixelSize: 13
+      font.family: "monospace"
+    }
+  }
+
+  Rectangle {
+    visible: root.readout !== "" && (!root.cockpitOn || root.mapOpen)
+    x: 12
+    y: debugView.visible ? debugView.y + debugView.height + 8 : 12
     width: readoutText.width + 20
     height: readoutText.height + 16
     color: "#a0000000"
@@ -1718,24 +1752,17 @@ Item {
     }
   }
 
-  //  The inventory (Tab): three rows over the hotbar's, as Minecraft's;
+  //  The inventory (E): three rows over the hotbar's, as Minecraft's;
   //  a click picks a stack up or lays it down (the right button: half,
-  //  or one), the stack carried follows the pointer.
+  //  or one), the stack carried follows the pointer; under it the debug
+  //  menu's warps, a button a place.
   Rectangle {
     id: inventoryPanel
     visible: root.inventoryOpen && !root.mapOpen
     anchors.fill: parent
     color: "#90000000"
-    MouseArea {
-      anchors.fill: parent
-      hoverEnabled: true
-      acceptedButtons: Qt.NoButton
-      onPositionChanged: (mouse) => {
-        root.pointerX = mouse.x
-        root.pointerY = mouse.y
-      }
-    }
     Rectangle {
+      id: inventoryBox
       anchors.centerIn: parent
       width: grid.width + 32
       height: grid.height + 72
@@ -1799,9 +1826,60 @@ Item {
         Text {
           text: root.hoverTitle !== "" ? root.hoverTitle
                 : "Click: pick up or lay down   right click: half, or one"
-                  + "   Tab: close"
+                  + "   E: close"
           color: "#404040"
           font.pixelSize: 14
+        }
+      }
+    }
+    Rectangle {
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.top: inventoryBox.bottom
+      anchors.topMargin: 12
+      visible: root.teleportRows.length > 0
+      width: debugRow.width + 24
+      height: debugRow.height + 16
+      color: "#2b2b2b"
+      border.width: 2
+      border.color: "#aa3333"
+      radius: 4
+      Row {
+        id: debugRow
+        anchors.centerIn: parent
+        spacing: 8
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: "DEBUG  warp to:"
+          color: "#ff7070"
+          font.pixelSize: 14
+          font.bold: true
+        }
+        Repeater {
+          model: root.teleportRows
+          Rectangle {
+            id: warpButton
+            required property var modelData
+            objectName: "warp " + modelData.name
+            width: warpText.implicitWidth + 20
+            height: 28
+            radius: 3
+            color: warpArea.containsMouse ? "#707070" : "#4a4a4a"
+            border.width: 1
+            border.color: "#909090"
+            Text {
+              id: warpText
+              anchors.centerIn: parent
+              text: warpButton.modelData.title
+              color: "#ffffff"
+              font.pixelSize: 14
+            }
+            MouseArea {
+              id: warpArea
+              anchors.fill: parent
+              hoverEnabled: true
+              onPressed: root.teleportPicked(warpButton.modelData.name)
+            }
+          }
         }
       }
     }

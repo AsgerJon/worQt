@@ -87,6 +87,40 @@ class TestDocking(SpaceTest):
     off = port.readingOf(vessel, system, 30.0)
     self.assertAlmostEqual(-off['closing'], PUSH_OFF, 6)
 
+  def test_teleported(self) -> None:
+    """The debug menu's warp (user, 2026-11-18: "a debug menu available
+    from the inventory that lets Asger warp to certain locations"):
+    from the pad, the rocket is docked at once at the port on the
+    station's own z side, nose in it, turning with the station, as the
+    latch would hold it, unjolted, its engine and autopilot shut; it
+    rides on with the station."""
+    from worQt.gaming.space._planets import PAD
+    system = self.systemOf()
+    station = Station(system)
+    port = DockingPort(station)
+    vessel = Vessel()
+    vessel.stood(system, system.named('Terra'), PAD[0], PAD[1], 0.0)
+    vessel.touching = 1
+    vessel.engine.throttled(0.5)
+    port.teleported(vessel, system, 0.0)
+    self.assertTrue(vessel.docked)
+    self.assertEqual(vessel.anchor, station.parent)
+    self.assertEqual((port.side, vessel.touching), (1.0, 0))
+    self.assertEqual(vessel.engine.throttle, 0.0)
+    self.assertEqual(vessel.autopilot.mode, 'off')
+    self.assertEqual(vessel.jolt, (0.0, 0.0, 0.0))
+    reading = port.readingOf(vessel, system, 0.0)
+    self.assertLess(reading['distance'], 1e-6)
+    self.assertLess(reading['tilt'], 1e-9)
+    self.assertLess(reading['turning'], 1e-9)
+    self.assertLess(math.sqrt(sum(d * d for d in reading['drift'])), 1e-9)
+    self.assertGreater(sum(a * b for a, b in zip(
+      reading['axis'], tuple(row[2] for row in station.turnAt(0.0)))),
+      0.999)
+    port.heldOn(vessel, system, 45.0)
+    self.assertLess(port.readingOf(vessel, system, 45.0)['distance'],
+                    1e-6)
+
   def test_refused(self) -> None:
     """The automatic docking will not start far off."""
     system, station, port, vessel = self._near(REACH + 1000.0, 0.0)

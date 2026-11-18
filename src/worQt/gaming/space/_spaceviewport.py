@@ -260,6 +260,7 @@ class SpaceViewport(QWidget):
 
   boardPicked = Signal(str)
   inventoryClicked = Signal(int, bool)
+  teleportPicked = Signal(str)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -279,7 +280,8 @@ class SpaceViewport(QWidget):
     self._path, self._slots, self._paper = None, CABIN_SLOT, None
     self._readout = None
     self._heldKind, self._hands, self._inventory = 'gravgun', {}, None
-    self._armSlot, self._quest = 0, None
+    self._armSlot, self._quest, self._teleports = 0, None, None
+    self._debug = None
     self.fps, self._frames, self._since = 0.0, 0, time.perf_counter()
     self.quick.frameSwapped.connect(self._swapped)
     self.setMinimumSize(800, 600)
@@ -630,6 +632,33 @@ class SpaceViewport(QWidget):
       root.setProperty('carriedRow', carriedRow)
       root.setProperty('hotbarShown', bool(shown))
     root.setProperty('heldFade', max(0.0, min(1.0, 2.5 - since)))
+
+  def debugShown(self, text: str) -> None:
+    """The 'debugShown' method shows the debug view's lines in the top
+    left ('' none), when they changed."""
+    root = self._root()
+    if root is not None and text != self._debug:
+      self._debug = text
+      root.setProperty('debugText', text)
+
+  def pointedAt(self, at: QPointF) -> None:
+    """The 'pointedAt' method says where the free pointer is on the
+    scene ('at', its pixels): the stack carried in the open inventory is
+    drawn there."""
+    root = self._root()
+    if root is not None:
+      root.setProperty('pointerX', float(at.x()))
+      root.setProperty('pointerY', float(at.y()))
+
+  def teleportsOffered(self, rows: list) -> None:
+    """The 'teleportsOffered' method offers the debug menu's warps
+    under the open inventory ('rows': each place's 'name' and 'title';
+    a click on one says its name, 'teleportPicked'), when they
+    changed."""
+    root = self._root()
+    if root is not None and rows != self._teleports:
+      self._teleports = rows
+      root.setProperty('teleportRows', rows)
 
   def heldShown(self, kind: str | None, zoom: float) -> None:
     """The 'heldShown' method puts 'kind' in his hand (its meshes in the
@@ -997,6 +1026,7 @@ class SpaceViewport(QWidget):
     if root is not None:
       root.boardPicked.connect(self.boardPicked)
       root.inventoryClicked.connect(self.inventoryClicked)
+      root.teleportPicked.connect(self.teleportPicked)
 
 
 def _armOf(pad: tuple, arm: tuple) -> tuple:

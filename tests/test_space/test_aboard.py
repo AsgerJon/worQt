@@ -18,7 +18,7 @@ from worQt.gaming.space._aerospike import G0
 from worQt.gaming.space._cabinworld import CabinWorld
 from worQt.gaming.space._cockpit import NOSE, Cockpit
 from worQt.gaming.space._elevator import ACCEL, AWAY, CAR_HIGH, DECK_STOP
-from worQt.gaming.space._elevator import HUB_STOP, Elevator
+from worQt.gaming.space._elevator import HUB_STOP, Elevator, backBoxes
 from worQt.gaming.space._station import SPIN
 from worQt.gaming.space._stationinterior import DECK, PLANE, roomOf
 from worQt.gaming.space._stationinterior import roomsInside, shaftWays
@@ -51,9 +51,11 @@ class TestAboard(SpaceTest):
     return world, meter, ways, elevators
 
   def _boxes(self, elevators: list, ways: tuple) -> tuple:
-    """Returns every elevator's plates."""
+    """Returns every elevator's plates and the cages' back walls (the
+    station turning as the accelerometer has it)."""
     return tuple(box for elevator, way in zip(elevators, ways)
-                 for box in elevator.boxesOf(way))
+                 for box in elevator.boxesOf(way)) + backBoxes(
+      ways, (0.0, 0.0, -SPIN))
 
   def _up(self, middle: tuple, velocity: tuple, up: tuple) -> Cockpit:
     """Returns a cockpit, Asger up out of his chair at 'middle' moving
@@ -151,6 +153,62 @@ class TestAboard(SpaceTest):
     soles = crewman.soles()
     self.assertLess(abs(math.hypot(soles[0], soles[1]) - DECK), 0.03)
     self.assertTrue(crewman.touches)
+
+  def _pulled(self, world: CabinWorld, meter: Accelerometer,
+              cockpit: Cockpit, bolt: tuple, seconds: float) -> tuple:
+    """Pulls Asger by the Grav-Gun to 'bolt' for 'seconds' s, his eyes
+    on it; returns the gun and the hardest meeting."""
+    from worQt.gaming.space._crewman import HEFT
+    from worQt.gaming.space._gravgun import GravGun
+    gun, crewman, hardest = GravGun(), cockpit.crewman, 0.0
+    gun.gripped(('bolt', 0))
+    for _ in range(int(round(seconds / FRAME))):
+      crewman.righted(meter.pullAt(crewman.middle, crewman.velocity),
+                      FRAME)
+      eye = cockpit.eye()
+      look = tuple(b - e for b, e in zip(bolt[0], eye))
+      size = math.sqrt(sum(x * x for x in look))
+      look = tuple(x / size for x in look)
+      muzzle = tuple(e + 0.75 * x for e, x in zip(eye, look))
+      force = gun.pushOf(muzzle, look, crewman.middle, bolt[0], tuple(
+        -v for v in crewman.velocity), HEFT, FRAME)
+      world.stepped(FRAME, meter, crewman, STILL, (
+        tuple(f / HEFT for f in force), None, (0.0, 0.0, 0.0)))
+      hardest = max(hardest, world.landed)
+    return gun, hardest
+
+  def test_out_along(self) -> None:
+    """From the hub's middle bolt the Grav-Gun pulls him out to a
+    spoke's mouth (user, 2026-11-18: "when Asger moves out of the spoke,
+    the wall of it should push Asger"; "can we just extend the four
+    'back' walls towards the center, so Asger can begin to move along
+    side them sooner until he gets to the elevator"): the station's turn
+    brings the cage's back wall against him early and it pushes him
+    round, unhurt (no wall in the way, he met the hub's wall beside the
+    mouth at 13 m/s); held at the mouth's bolt, then pulled into the
+    cage; the next spoke's wall nowhere in his way."""
+    from worQt.gaming.space._bolts import holdOf, stationBolts
+    from worQt.gaming.space._vitals import HEALTH, Vitals
+    world, meter, ways, elevators = self._docked(True)
+    bolts = stationBolts(ways, tuple(e.floor for e in elevators))
+    for k in (0, 1):
+      cockpit = self._up(holdOf(bolts[6]), (0.0, 0.0, 0.0),
+                         (0.0, 0.0, 1.0))
+      world.teleported()
+      world.stationed(True, ways, self._boxes(elevators, ways))
+      gun, hardest = self._pulled(world, meter, cockpit, bolts[7 + k],
+                                  9.0)
+      self.assertTrue(gun.holding, k)
+      crewman = cockpit.crewman
+      self.assertLess(math.dist(crewman.middle, bolts[7 + k][0]), 1.0)
+      vitals = Vitals()
+      vitals.fell(hardest)
+      self.assertEqual(vitals.health, HEALTH, (k, hardest))
+      gun, hardest = self._pulled(world, meter, cockpit, bolts[11 + k],
+                                  4.0)
+      self.assertTrue(elevators[k].holds(ways[k], crewman.middle), k)
+      vitals.fell(hardest)
+      self.assertEqual(vitals.health, HEALTH, (k, hardest))
 
   def test_ride_out(self) -> None:
     """Floating in the cage at the hub's stop, the cage called, it

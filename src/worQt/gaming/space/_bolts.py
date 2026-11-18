@@ -92,7 +92,7 @@ def stationBolts(ways: tuple, floors: tuple) -> tuple:
   for way in ways:
     out.append(((HUB_END * way[0], HUB_END * way[1], HUB_LOW),
                 (0.0, 0.0, 1.0)))
-  out.append(((0.0, 0.0, PLANE), (0.0, 0.0, -1.0)))
+  out.append(middleBolt())
   for way in ways:
     out.append(((HUB_INSIDE * way[0], HUB_INSIDE * way[1], PLANE),
                 tuple(-w for w in way)))
@@ -100,6 +100,14 @@ def stationBolts(ways: tuple, floors: tuple) -> tuple:
     out.append(((floor * way[0], floor * way[1], PLANE),
                 tuple(-w for w in way)))
   return tuple(out)
+
+
+def middleBolt() -> tuple:
+  """Returns the bolt floating in the station's hub's very middle,
+  docked (the rocket's own axes): its place and the way it faces (down
+  the axis to the docked port)."""
+  from ._stationinterior import PLANE
+  return (0.0, 0.0, PLANE), (0.0, 0.0, -1.0)
 
 
 def holdOf(bolt: tuple) -> tuple:

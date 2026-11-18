@@ -67,7 +67,8 @@ class CabinWorld:
   how it is turned from how it rests; 'thuds' counts the meetings begun
   hard and 'loudest' says how hard the loudest of the last frame was
   (m/s, by its heft); 'landed' how fast Asger met anything the last
-  frame (m/s: it may hurt him).
+  frame (m/s: it may hurt him); 'lastSteps' and 'lastMs' how many steps
+  the last frame took and how long, ms (the debug view's).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -80,6 +81,8 @@ class CabinWorld:
   thuds: int
   loudest: float
   landed: float
+  lastSteps: int
+  lastMs: float
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -92,6 +95,7 @@ class CabinWorld:
     preloadedCabin(device)
     self.wp, self.kernels, self.device = wp, _cabin_kernels, device
     self.thuds, self.loudest, self.landed, self._present = 0, 0.0, 0.0, 0
+    self.lastSteps, self.lastMs = 0, 0.0
     self.docked, self.outside = False, 0
     things = looseThings()
     rest = [_turnOf(axes) for _, _, _, axes, _ in things]
@@ -176,6 +180,7 @@ class CabinWorld:
     force on that over its mass; None: no push), its own axes."""
     if seconds <= 0.0:
       return
+    began = time.perf_counter()
     wp = self.wp
     present = 0 if crewman.sitting else 1
     if present and not self._present:
@@ -221,6 +226,8 @@ class CabinWorld:
       self._pressed.launch()
       moved.launch()
     self._taken(crewman, present)
+    self.lastSteps = steps
+    self.lastMs = 1e3 * (time.perf_counter() - began)
 
   def stationed(self, docked: bool, ways: tuple, boxes: tuple) -> None:
     """The 'stationed' method joins the space station's rooms to the
@@ -318,6 +325,13 @@ class CabinWorld:
     self.turns.assign(_warpQuats(self._turns).astype(numpy.float32))
     self.velocities.assign(self._velocities.astype(numpy.float32))
     self.spins.assign(shapes['spins'].astype(numpy.float32))
+    self.teleported()
+
+  def teleported(self, ) -> None:
+    """The 'teleported' method sends Asger's box anew with the next step
+    from where he is then (a saved game loaded, the debug menu's warp;
+    if he is up then), the station's and the tower's solids put away
+    (the window puts them back as it finds itself)."""
     self.stationed(False, (), ())
     self._asgerAway()
     self._present = 0
