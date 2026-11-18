@@ -5,12 +5,16 @@ ball rolling around inside, a ball that emits light. On the ground the
 ball is on the ground, but without gravity i just floats"; "place the
 egg on a pedetal centrally in the room"): a glass egg, its blunt end
 down, in a brass cup on a pedestal in the middle of the cabin (off the
-hatch's axis: the way up), a glowing marble loose inside it. The marble
-feels what anything loose there feels (the vessel's push the other way
-and its turning: 'Accelerometer.pullAt'), the air, and the glass: it
-bounces off it, rolls on it slowing, and so lies at the bottom on the
-pad, is pressed down under thrust, drifts weightless, and docked to the
-turning station settles slowly outward. Qt-free.
+hatch's axis: the way up), a glowing marble loose inside it: a ball of
+glass, spinning as it spins (user, 2026-11-18: "PHYSICS MUST BE REAL";
+it was a point slowed by made-up shares). It feels what anything loose
+there feels (the vessel's push the other way and its turning:
+'Accelerometer.pullAt'), the air's drag, and the glass: it bounces off
+it (glass on glass), its friction turning it (rolling where it grips,
+sliding where it cannot), rolling slowed by the glass's give; so it
+lies at the bottom on the pad, is pressed down under thrust, drifts
+weightless, and docked to the turning station settles slowly outward.
+Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -46,17 +50,22 @@ EGG_LOW = 0.05
 EGG_HIGH = 0.07
 GLASS = 0.002
 BALL = 0.012
-#  The marble on the glass: what share of its speed into the glass comes
-#  back off it (not when it comes in no faster than the pull pressing it
-#  there gives it in a step, and 'STILL_ONTO' m/s: lying on the glass it
-#  stays on it); the share of the glass's push it loses of its speed
-#  along it (rolling: pressed by the pull or turned along the glass's
-#  curve; weightless, gliding, it does not slow); the air's drag a
-#  second (as the loose things', '_cabin_kernels.AIR').
-BOUNCE = 0.4
+#  The marble on the glass: its glass's density (kg/m³); how much of
+#  its speed into the glass comes back off it (glass on glass, some 0.9;
+#  not when it comes in no faster than the pull pressing it there and
+#  the glass's curve turning it give it in a step, and 'STILL_ONTO' m/s:
+#  lying on the glass, rolling on it, it stays on it, its bounces
+#  spent); the friction between them (glass on glass,
+#  sliding); rolling, the glass's give slowing it ('ROLLING' of the push
+#  holding it there: hard on hard, ten-thousandths); the air's drag (a
+#  ball's coefficient, the air's density, kg/m³).
+DENSITY = 2500.0
+BOUNCE = 0.9
 STILL_ONTO = 0.001
-ROLL_DRAG = 0.02
-AIR = 0.03
+FRICTION = 0.4
+ROLLING = 2e-4
+AIR_DRAG = 0.47
+AIR_DENSITY = 1.2
 #  Its steps (s; no more a frame: a longer frame takes longer steps).
 STEP = 1.0 / 480.0
 MOST_STEPS = 60
@@ -137,7 +146,8 @@ def marbleRows() -> tuple:
 class Egg:
   """
   Egg holds the marble: where it is from the egg's middle ('ball', m,
-  the vessel's own axes) and how fast it moves ('moving', m/s);
+  the vessel's own axes), how fast it moves ('moving', m/s) and spins
+  ('spin', rad/s, against the vessel's own turning);
   'stepped' moves it on, 'place' is where it is in the cabin, 'inside'
   how far a point is inside the room its middle has (the glass less
   its round; nought or less: at the glass).
@@ -148,11 +158,12 @@ class Egg:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  What a saved game keeps of it ('_savegame'): its fields.
-  SAVED = ('ball', 'moving')
+  SAVED = ('ball', 'moving', 'spin')
 
   #  Public Variables
   ball: tuple
   moving: tuple
+  spin: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -160,7 +171,7 @@ class Egg:
 
   def __init__(self, ) -> None:
     self.ball = (0.0, 0.0, -_low())
-    self.moving = (0.0, 0.0, 0.0)
+    self.moving, self.spin = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -179,7 +190,9 @@ class Egg:
   def stepped(self, seconds: float, accelerometer: Accelerometer) -> None:
     """The 'stepped' method moves the marble 'seconds' s on (real time)
     as the cabin is pushed and turns ('accelerometer': what it measured
-    this frame), in steps of 'STEP' (no more than 'MOST_STEPS')."""
+    this frame), in steps of 'STEP' (no more than 'MOST_STEPS'): pulled,
+    dragged by the air, turned against the cabin's turning faster, and
+    meeting the glass ('_met')."""
     if seconds <= 0.0:
       return
     steps = max(1, min(MOST_STEPS, math.ceil(seconds / STEP)))
@@ -187,15 +200,21 @@ class Egg:
     middle = eggMiddle()
     x, y, z = self.ball
     vx, vy, vz = self.moving
+    spin = self.spin
+    faster = accelerometer.speeding
+    drag = 0.5 * AIR_DENSITY * AIR_DRAG * math.pi * BALL * BALL / _mass()
     for _ in range(steps):
       pull = accelerometer.pullAt((middle[0] + x, middle[1] + y,
                                    middle[2] + z), (vx, vy, vz))
-      vx += (pull[0] - AIR * vx) * step
-      vy += (pull[1] - AIR * vy) * step
-      vz += (pull[2] - AIR * vz) * step
+      slowed = drag * math.sqrt(vx * vx + vy * vy + vz * vz)
+      vx += (pull[0] - slowed * vx) * step
+      vy += (pull[1] - slowed * vy) * step
+      vz += (pull[2] - slowed * vz) * step
+      spin = tuple(s - f * step for s, f in zip(spin, faster))
       x, y, z = x + vx * step, y + vy * step, z + vz * step
-      (x, y, z), (vx, vy, vz) = _met((x, y, z), (vx, vy, vz), pull, step)
-    self.ball, self.moving = (x, y, z), (vx, vy, vz)
+      (x, y, z), (vx, vy, vz), spin = _met((x, y, z), (vx, vy, vz), spin,
+                                           pull, step)
+    self.ball, self.moving, self.spin = (x, y, z), (vx, vy, vz), spin
 
   def inside(self, point: tuple) -> float:
     """The 'inside' method returns how far 'point' (from the egg's
@@ -222,35 +241,65 @@ def _high() -> float:
   return EGG_HIGH - GLASS - BALL
 
 
-def _met(place: tuple, moving: tuple, pull: tuple, step: float) -> tuple:
-  """Returns the marble's middle and velocity after it meets the glass
-  over a 'step' s, pulled 'pull' (m/s²; unchanged if it does not meet
-  it): put back on it, its speed into it lost (bounced back 'BOUNCE' of
-  it, but coming in no faster than the pull gives it a step: lying on
-  it), its speed along it slowed 'ROLL_DRAG' of what the glass took."""
+def _mass() -> float:
+  """Returns the marble's mass, kg."""
+  return DENSITY * 4.0 / 3.0 * math.pi * BALL ** 3
+
+
+def _met(place: tuple, moving: tuple, spin: tuple, pull: tuple,
+         step: float) -> tuple:
+  """Returns the marble's middle, velocity and spin after it meets the
+  glass over a 'step' s, pulled 'pull' (m/s²; unchanged if it does not meet
+  it): put back on it; its speed into it lost and 'BOUNCE' of it given back
+  (coming in no faster than the pull and the glass's curve give it a step:
+  lying on it, rolling round it, none back); the friction at the point it
+  touches ('FRICTION' of the glass's push at most) slowing its sliding there,
+  turning it (a solid ball: it stops sliding, rolling, when the friction
+  takes two sevenths of the sliding off its middle); rolling, slowed
+  'ROLLING' of the glass's push."""
   x, y, z = place
   half = _half()
   high = _high() if z >= 0.0 else _low()
   share = (x * x + y * y) / half ** 2 + z * z / high ** 2
   if share <= 1.0:
-    return place, moving
+    return place, moving, spin
   back = 1.0 / math.sqrt(share)
   x, y, z = x * back, y * back, z * back
   nx, ny, nz = x / half ** 2, y / half ** 2, z / high ** 2
   size = math.sqrt(nx * nx + ny * ny + nz * nz)
-  nx, ny, nz = nx / size, ny / size, nz / size
-  vx, vy, vz = moving
-  into = vx * nx + vy * ny + vz * nz
+  n = (nx / size, ny / size, nz / size)
+  v = list(moving)
+  into = sum(a * b for a, b in zip(v, n))
   if into <= 0.0:
-    return (x, y, z), moving
-  pressed = max(0.0, pull[0] * nx + pull[1] * ny + pull[2] * nz) * step
-  lying = into <= 2.0 * pressed + STILL_ONTO
-  lost = into * (1.0 if lying else 1.0 + BOUNCE)
-  vx, vy, vz = vx - lost * nx, vy - lost * ny, vz - lost * nz
-  along = vx * nx + vy * ny + vz * nz
-  tx, ty, tz = vx - along * nx, vy - along * ny, vz - along * nz
-  gliding = math.sqrt(tx * tx + ty * ty + tz * tz)
-  if gliding > 0.0:
-    kept = max(0.0, gliding - ROLL_DRAG * lost) / gliding
-    tx, ty, tz = tx * kept, ty * kept, tz * kept
-  return (x, y, z), (along * nx + tx, along * ny + ty, along * nz + tz)
+    return (x, y, z), moving, spin
+  pressed = max(0.0, sum(p * m for p, m in zip(pull, n))) * step
+  across = sum(a * a for a in v) - into * into
+  curving = across / min(half, high) * step
+  lying = into <= 2.0 * (pressed + curving) + STILL_ONTO
+  push = into * (1.0 if lying else 1.0 + BOUNCE)
+  v = [a - push * b for a, b in zip(v, n)]
+  arm = tuple(BALL * c for c in n)
+  turning = _cross(spin, arm)
+  point = [a + b for a, b in zip(v, turning)]
+  along = sum(a * b for a, b in zip(point, n))
+  slide = [a - along * b for a, b in zip(point, n)]
+  sliding = math.sqrt(sum(s * s for s in slide))
+  if sliding > 0.0:
+    held = min(2.0 / 7.0 * sliding, FRICTION * push)
+    rub = [-held * s / sliding for s in slide]
+    v = [a + b for a, b in zip(v, rub)]
+    spun = _cross(arm, rub)
+    spin = tuple(s + 2.5 / (BALL * BALL) * c for s, c in zip(spin, spun))
+  rolling = [a - sum(b * c for b, c in zip(v, n)) * c for a, c in zip(v, n)]
+  speed = math.sqrt(sum(r * r for r in rolling))
+  if speed > 0.0:
+    slowed = min(speed, ROLLING * push) / speed
+    v = [a - slowed * r for a, r in zip(v, rolling)]
+    spin = tuple(s * (1.0 - slowed) for s in spin)
+  return (x, y, z), tuple(v), spin
+
+
+def _cross(a: tuple, b: tuple) -> tuple:
+  """Returns 'a' across 'b'."""
+  return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+          a[0] * b[1] - a[1] * b[0])

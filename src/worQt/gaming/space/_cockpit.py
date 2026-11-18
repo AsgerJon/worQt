@@ -80,6 +80,10 @@ EYE = (FIGURE[0] + 4 * SCALE + 0.02, FIGURE[1], FIGURE[2] + 28 * SCALE)
 #  glances at its control, his head eased there (most of the way in
 #  'GLANCE' s).
 YAW_MOST, PITCH_MOST = 2.4, 1.4
+#  Out of his chair his head turns no further from his body (his neck's
+#  reach, rad; user, 2026-11-18: "PHYSICS MUST BE REAL": his body turns
+#  only as something turns it, '_crewman.righted').
+NECK_YAW = math.radians(80.0)
 UP_PITCH_MOST = 0.5 * math.pi - 0.01
 TURN = 0.0035
 GLANCE = 0.1
@@ -641,10 +645,8 @@ class Cockpit:
     'down' pixels (a glance given up)."""
     self.glancing = None
     self.yaw -= TURN * right
-    if self.crewman.buckled:
-      self.yaw = max(-YAW_MOST, min(YAW_MOST, self.yaw))
-    else:
-      self.yaw = math.remainder(self.yaw, 2.0 * math.pi)
+    most = YAW_MOST if self.crewman.buckled else NECK_YAW
+    self.yaw = max(-most, min(most, self.yaw))
     most = PITCH_MOST if self.crewman.buckled else UP_PITCH_MOST
     self.pitch = max(-most, min(most, self.pitch - TURN * down))
 

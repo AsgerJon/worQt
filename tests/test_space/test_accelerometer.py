@@ -17,6 +17,7 @@ from __future__ import annotations
 from worQt.gaming.space._accelerometer import Accelerometer
 from worQt.gaming.space._aerospike import G0
 from worQt.gaming.space._dockingport import DockingPort, NOSE_PORT
+from worQt.gaming.space._station import MASS as STATION_MASS
 from worQt.gaming.space._station import SPIN, Station
 from worQt.gaming.space._turns import norm, rotated, unrotated
 from worQt.gaming.space._vessel import MASS, Vessel
@@ -84,8 +85,9 @@ class TestAccelerometer(SpaceTest):
   def test_docked(self) -> None:
     """Docked to the station in orbit it feels the latch: nought but a
     hair (its middle on the station's axis: nothing to carry it round;
-    the station falls as it does); the latch catching its drift is a
-    jolt felt over that frame alone."""
+    the station falls as it does); the latches locking on its drift is a
+    jolt felt over that frame alone (the rocket's share of it: the two
+    share their momentum)."""
     system = self.systemOf()
     station = Station(system)
     port = DockingPort(station)
@@ -106,7 +108,8 @@ class TestAccelerometer(SpaceTest):
     port.latched(vessel, system, 0.0)
     meter = Accelerometer()
     meter.measured(vessel, FRAME)
-    self.assertAlmostEqual(norm(meter.felt), 0.5 / FRAME, 3)
+    share = STATION_MASS / (STATION_MASS + vessel.mass)
+    self.assertAlmostEqual(norm(meter.felt), 0.5 * share / FRAME, 3)
     for k in range(1, 30):
       port.heldOn(vessel, system, k * FRAME)
       meter.measured(vessel, FRAME)

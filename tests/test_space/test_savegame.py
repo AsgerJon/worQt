@@ -117,27 +117,29 @@ class TestSaveGame(SpaceTest):
 
   def test_sky(self) -> None:
     """The sky put into another day's solar system (another session,
-    Terra Prime made there with another lead) is the saved one's to the
-    bit: every body's and Terra Prime's place, motion and turn; a sky of
-    other bodies raises."""
+    Terra Prime made there with another lead, then kept to the saved
+    one) is the saved one's to the bit: every body's and Terra Prime's
+    place, motion and turn; a sky of other bodies raises."""
     system = self.systemOf()
     station = Station(system)
     keeper = Timekeeper(system)
     keeper.leapt(12345.6)
     sky = json.loads(json.dumps(skyOf(system)))
-    other = solarSystemOn(TODAY + 100.0)
+    kept = json.loads(json.dumps(keptOf(station)))
+    other = solarSystemOn(TODAY + 100.0, 'cpu')
     elsewhere = Station(other, -0.06)
     skyTo(other, sky)
+    keptTo(elsewhere, kept)
     for t in (0.0, 600.0, 86400.0):
       for k in range(len(system.bodies)):
-        self.assertEqual(other.bodies[k].stateAt(t),
-                         system.bodies[k].stateAt(t))
+        self.assertEqual(other.stateOf(k, t), system.stateOf(k, t))
         self.assertEqual(other.bodies[k].turnAt(t),
                          system.bodies[k].turnAt(t))
       self.assertEqual(elsewhere.stateAt(t), station.stateAt(t))
       self.assertEqual(elsewhere.turnAt(t), station.turnAt(t))
     with self.assertRaises(ValueError):
-      skyTo(self.systemOf(), sky)
+      wrong = dict(sky, bodies=sky['bodies'][:-1])
+      skyTo(self.systemOf(), wrong)
 
   def test_file(self) -> None:
     """A save is written whole (nothing left aside) and read back as it
@@ -170,7 +172,7 @@ class TestSaveGame(SpaceTest):
     text = json.dumps({'sky': skyOf(system), 'keeper': keptOf(keeper),
                        'vessel': keptOf(vessel)})
     self._flown(flight, vessel, system, keeper, 300)
-    other = solarSystemOn(TODAY + 30.0)
+    other = solarSystemOn(TODAY + 30.0, 'cpu')
     loaded, again = Timekeeper(other), Vessel()
     state = json.loads(text)
     skyTo(other, state['sky'])

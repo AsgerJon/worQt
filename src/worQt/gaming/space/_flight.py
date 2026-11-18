@@ -5,7 +5,9 @@ GPU in the game, the CPU in the tests): their states taken there,
 body it is now near. Given the space station, each vessel meets its
 solids: the station from the vessel at the frame's start, and which
 of its solids could be met within the frame ('NEAR_MARGIN' over the
-hull's reach and the frame's closing), however it turns.
+hull's reach and the frame's closing), however it turns; what they
+pushed the vessel by pushes the station back ('Station.struck'). The
+station may be one of the vessels flown (it is flown as they are).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -44,14 +46,14 @@ NEAR_MARGIN = 10.0
 
 class Flight:
   """
-  Flight moves vessels on 'device' ('flown'): a frame's time in one
-  launch. The sky's numbers go to the device once a leap (the system's
-  'version'); each vessel's state each frame, its place and velocity in
-  two float32s (a big part and the rest: every float64 bit kept), its
-  height over the ground worked out here in float64 (the kernel's
-  heights are small differences from it). After a launch each vessel is
-  handed to the body it is now near ('SolarSystem.anchorFor'). 'lastSteps'
-  and 'lastMs' say what the last launch took.
+  Flight moves vessels on 'device' ('flown'): a frame's time in one launch.
+  The sky's numbers go to the device as its table changes (the system's
+  'version', its ephemeris's); each vessel's state each frame, its place and
+  velocity in two float32s (a big part and the rest: every float64 bit kept),
+  its height over the ground worked out here in float64 (the kernel's heights
+  are small differences from it). After a launch each vessel is handed to the
+  body it is now near ('SolarSystem.anchorFor'). 'lastSteps' and 'lastMs' say
+  what the last launch took.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -95,14 +97,17 @@ class Flight:
       return
     began = time.perf_counter()
     wp = self.wp
+    system.coveredTo(start + seconds)
     sky = self._skyFor(system)
     fleet = self._fleetOf(vessels, system)
-    self._draggedOrNot(fleet, len(vessels), bool(dragless))
+    self._draggedOrNot(fleet, vessels, bool(dragless))
     self._stationFor(fleet, vessels, system, station, start, seconds)
     wp.launch(self.kernels.flown, len(vessels), [
       sky, fleet, float(start), float(seconds),
       float(min(longest, 1e30))], [], [], [], self.device)
-    self._taken(vessels, fleet)
+    struck = self._taken(vessels, fleet)
+    if station is not None and (any(struck[0]) or any(struck[1])):
+      station.struck(*struck)
     for vessel in vessels:
       self._handed(vessel, system, start + seconds)
     self.lastMs = 1e3 * (time.perf_counter() - began)
@@ -114,7 +119,8 @@ class Flight:
   def _skyFor(self, system: SolarSystem) -> object:
     """Returns the sky's numbers on the device, made anew after a
     leap."""
-    key = id(system), system.version
+    ephemeris = system.ephemeris
+    key = id(system), system.version, ephemeris.version
     if self._skyOf == key:
       return self._sky
     wp, kernels = self.wp, self.kernels
@@ -125,17 +131,11 @@ class Flight:
     sky.depths = self._sent([b.depth for b in bodies], wp.int32)
     sky.mus = self._sent([b.mu for b in bodies], wp.float32)
     sky.radii = self._sent([b.radius for b in bodies], wp.float32)
-    conics = [b.conic for b in bodies]
-    sky.axes = self._sent([c.a if c else 0.0 for c in conics],
-                          wp.float32)
-    sky.es = self._sent([c.e if c else 0.0 for c in conics], wp.float32)
-    sky.motions = self._sent([c.motion if c else 0.0 for c in conics],
-                             wp.float32)
-    sky.anomalies = self._sent([c.anomaly if c else 0.0 for c in conics],
-                               wp.float32)
-    eye = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
-    sky.turns = self._sent([c.turn if c else eye for c in conics],
-                           wp.mat33)
+    rows = ephemeris.rows
+    sky.table = self._sent(rows.transpose(0, 2, 1, 3).reshape(-1, 3),
+                           wp.vec3)
+    sky.tableStart = float(ephemeris.start)
+    sky.tableRows = int(len(rows))
     sky.spins = self._sent([b.spinVector for b in bodies], wp.vec3)
     tops, starts, steps, logs = [], [], [], []
     for body in bodies:
@@ -158,10 +158,12 @@ class Flight:
     rows of what changes copied in each call, all at once."""
     k = self.kernels
     count = len(vessels)
-    key = count, len(system.bodies)
+    builds = tuple((v.mass, tuple(v.inertia), tuple(v.legs), tuple(v.drag),
+                    tuple(v.attitude)) for v in vessels)
+    key = count, len(system.bodies), builds
     if self._fleetKey != key:
-      self._fleet, self._fleetKey = self._fleetMade(count, key[1]), key
-      self._dragless = False
+      self._fleet = self._fleetMade(vessels, key[1])
+      self._fleetKey, self._dragless = key, None
     rows = numpy.zeros((count, k.STATE), numpy.float32)
     for row, vessel in zip(rows, vessels):
       place = numpy.array(vessel.place, numpy.float64)
@@ -187,33 +189,41 @@ class Flight:
       row[k.AIM_HEADING] = pilot.heading
       row[k.AIM_TRAVEL] = 1.0 if pilot.travel else 0.0
       row[k.ANCHOR] = vessel.anchor
+      if vessel.latch is not None:
+        port, turn, nose = vessel.latch
+        row[k.LATCHED] = 1.0
+        row[k.LATCH_PORT:k.LATCH_PORT + 3] = port
+        row[k.LATCH_TURN:k.LATCH_TURN + 4] = _warpQuat(turn)
+        row[k.LATCH_NOSE:k.LATCH_NOSE + 3] = nose
     self._fleet.states.assign(rows)
     return self._fleet
 
-  def _draggedOrNot(self, fleet: object, count: int,
+  def _draggedOrNot(self, fleet: object, vessels: tuple,
                     dragless: bool) -> None:
     """Gives the vessels their drag, or none ('dragless'), when that
     changes."""
     if dragless == self._dragless:
       return
-    from ._vessel import DRAG
-    drag = (0.0, 0.0) if dragless else DRAG
-    fleet.drags.assign(numpy.asarray([drag] * count, numpy.float32))
+    drags = [(0.0, 0.0) if dragless else tuple(v.drag) for v in vessels]
+    fleet.drags.assign(numpy.asarray(drags, numpy.float32))
     self._dragless = dragless
 
-  def _fleetMade(self, count: int, bodies: int) -> object:
-    """Returns the fleet's arrays on the device for 'count' vessels in a
-    sky of 'bodies' bodies, the creative rocket's own numbers in."""
+  def _fleetMade(self, vessels: tuple, bodies: int) -> object:
+    """Returns the fleet's arrays on the device for 'vessels' in a sky
+    of 'bodies' bodies, each vessel's own build in (its mass, moments,
+    legs, drag, attitude thrusters)."""
     wp, kernels, device = self.wp, self.kernels, self.device
-    from ._vessel import DRAG, INERTIA, LEGS, MASS, WHEELS
+    count = len(vessels)
     fleet = kernels.Fleet()
     fleet.states = wp.zeros((count, kernels.STATE), wp.float32, device)
-    fleet.masses = self._sent([MASS] * count, wp.float32)
-    fleet.inertias = self._sent([INERTIA] * count, wp.vec3)
-    fleet.legs = self._sent([leg for _ in range(count) for leg in LEGS],
-                            wp.vec3)
-    fleet.drags = self._sent([DRAG] * count, wp.vec2)
-    fleet.wheels = self._sent([WHEELS] * count, wp.vec3)
+    fleet.masses = self._sent([v.mass for v in vessels], wp.float32)
+    fleet.inertias = self._sent([tuple(v.inertia) for v in vessels],
+                                wp.vec3)
+    fleet.legs = self._sent([tuple(leg) for v in vessels
+                             for leg in v.legs], wp.vec3)
+    fleet.drags = self._sent([tuple(v.drag) for v in vessels], wp.vec2)
+    fleet.attitude = self._sent([tuple(v.attitude) for v in vessels],
+                                wp.vec3)
     fleet.offsets = wp.zeros(count * bodies * kernels.SLOTS, wp.vec3,
                              device)
     from ._stationsolids import hullBalls, stationSolids
@@ -254,12 +264,9 @@ class Flight:
     rounds, rounding = [], []
     rows = station.turnAt(start)
     turn = _warpQuat(quaternionOf(rows))
-    axis = tuple(row[2] for row in rows)
-    spin = tuple(station.body.spin * a for a in axis)
-    parent = system.bodies[station.parent]
+    spin = station.spinAt(start)
     middle, velocity = station.stateAt(start)
-    r = norm(middle)
-    fall = tuple(-parent.mu * m / r ** 3 for m in middle)
+    fall = system.pullOn(station.parent, middle, start)
     for k, vessel in enumerate(vessels):
       there, moving = system.relative(station.parent, vessel.anchor,
                                       start)
@@ -273,7 +280,7 @@ class Flight:
       falls.append(fall)
       turns.append(turn)
       spins.append(spin)
-      if vessel.docked:
+      if vessel.docked or vessel is station.body:
         continue
       own = tuple(-sum(rows[i][j] * offset[i] for i in range(3))
                   for j in range(3))
@@ -292,12 +299,16 @@ class Flight:
     fleet.stationAt.assign(numpy.asarray(rounds, numpy.float32))
     fleet.stationVel.assign(numpy.asarray(rounding, numpy.float32))
 
-  def _taken(self, vessels: tuple, fleet: object) -> None:
+  def _taken(self, vessels: tuple, fleet: object) -> tuple:
     """Takes the vessels' states back from the device, all at once; the
-    big parts and rests summed in float64 (every bit kept)."""
+    big parts and rests summed in float64 (every bit kept); returns what
+    their hulls pushed the space station by, summed (N s, and its twist
+    about the station's middle, N m s, the ecliptic's axes)."""
     k = self.kernels
     rows = fleet.states.numpy().astype(numpy.float64)
     steps = 0
+    struck = numpy.zeros(3)
+    twist = numpy.zeros(3)
     for row, vessel in zip(rows, vessels):
       place = row[k.PLACE_HI:k.PLACE_HI + 3] + row[k.PLACE_LO:k.PLACE_LO
                                                     + 3]
@@ -312,7 +323,10 @@ class Flight:
       vessel.felt = tuple(row[k.FELT:k.FELT + 3].tolist())
       vessel.spinning = tuple(row[k.SPINNING:k.SPINNING + 3].tolist())
       steps = max(steps, int(row[k.STEPS]))
+      struck += row[k.STRUCK:k.STRUCK + 3]
+      twist += row[k.STRUCK_TWIST:k.STRUCK_TWIST + 3]
     self.lastSteps = steps
+    return tuple(struck.tolist()), tuple(twist.tolist())
 
   def _handed(self, vessel: Vessel, system: SolarSystem,
               t: float) -> None:

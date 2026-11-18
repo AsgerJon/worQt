@@ -129,11 +129,20 @@ SKIN = _single(SKIN_SIZE)
 #  push off it).
 THUD = _single(0.6)
 NEAR = _single(0.03)
-#  Air in the cabin slows what moves through it, a share a second: a
-#  loose thing, its spin, Asger (heavy for his size: he drifts on).
-AIR = _single(0.03)
-AIR_SPIN = _single(0.05)
-AIR_ASGER = _single(0.01)
+#  Air in the rooms drags what moves through it (user, 2026-11-18:
+#  "PHYSICS MUST BE REAL"; it was a share of the speed a second): half
+#  its density times the drag's coefficient and area times the speed
+#  squared, against it. The air's density (sea level's: the cabin, the
+#  station and the pad all at one atmosphere), kg/m³; a box's drag
+#  coefficient (a cube's), its area its mean outline's (a quarter of its
+#  surface); Asger's drag coefficient times his outline, m² (a man broad
+#  on: 1.0 x 0.8 m²); over his mass: his drag a metre, 1/m. A loose
+#  thing's spin the air does not slow (a turning box's drag is some
+#  thousandths of its own).
+AIR_RHO = 1.2
+AIR_DENSITY = _single(AIR_RHO)
+BOX_DRAG = _single(1.05)
+ASGER_DRAG = _single(0.5 * AIR_RHO * 0.8 / 80.0)
 #  Asger's legs: how fast they bring him to the speed asked (most of the
 #  way in), s, and at most how hard, m/s².
 LEGS_TIME = _single(0.1)
@@ -565,6 +574,7 @@ def moved(places: wp.array(dtype=wp.vec3),
           spins: wp.array(dtype=wp.vec3),
           masses: wp.array(dtype=wp.float32),
           inertias: wp.array(dtype=wp.vec3),
+          halves: wp.array(dtype=wp.vec3),
           pushes: wp.array(dtype=wp.vec3),
           twists: wp.array(dtype=wp.vec3),
           asger: wp.array(dtype=wp.vec3),
@@ -597,11 +607,15 @@ def moved(places: wp.array(dtype=wp.vec3),
   velocity = velocities[b]
   feel = (push / heft - felt - wp.cross(turning, wp.cross(turning, place))
           - 2.0 * wp.cross(turning, velocity) - wp.cross(speeding, place))
-  real = push - AIR * heft * velocity
+  half = halves[b]
+  outline = 2.0 * (half[0] * half[1] + half[1] * half[2]
+                   + half[0] * half[2])
+  drag = (0.5 * AIR_DENSITY * BOX_DRAG) * outline * wp.length(velocity)
+  real = push - drag * velocity
   if b == gunBody:
     feel = feel + gun
     real = real + gun * heft
-  velocity = velocity + (feel - AIR * velocity) * step
+  velocity = velocity + (feel - (drag / heft) * velocity) * step
   places[b] = place + velocity * step
   velocities[b] = velocity
   turn = turns[b]
@@ -611,14 +625,10 @@ def moved(places: wp.array(dtype=wp.vec3),
   held = wp.cw_mul(inertia, spin)
   spin = spin + wp.cw_div(torque - wp.cross(spin, held), inertia) * step
   spin = wp.quat_rotate(turn, spin)
-  aired = -AIR_SPIN * step * wp.quat_rotate(turn, wp.cw_mul(
-    inertia, wp.quat_rotate_inv(turn, spin)))
-  spin = spin + (-speeding - wp.cross(turning, spin)
-                 - AIR_SPIN * spin) * step
+  spin = spin + (-speeding - wp.cross(turning, spin)) * step
   spins[b] = spin
   wp.atomic_add(reaction, 2, -real * step)
-  wp.atomic_add(reaction, 3, -(wp.cross(place, real) + twist) * step
-                - aired)
+  wp.atomic_add(reaction, 3, -(wp.cross(place, real) + twist) * step)
   turned = turn + wp.quat(spin[0], spin[1], spin[2], 0.0) * turn * (
     0.5 * step)
   turns[b] = wp.normalize(turned)
@@ -1108,7 +1118,7 @@ def walked(place: wp.array(dtype=wp.vec3),
         legs = legs * (LEGS_MOST / size)
       if walking == 1 or wanting == 1:
         feel = feel + legs
-    v = v + (feel - AIR_ASGER * v) * dt
+    v = v + (feel - ASGER_DRAG * wp.length(v) * v) * dt
     meeting = v
     move = v * dt
     rise = wp.dot(move, up) * up

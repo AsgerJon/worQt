@@ -5,11 +5,13 @@ the 9 planets around Terra, and yes, Pluto *is* a fucking planet!";
 "Sol is the common Danish word so that's it!"). Each planet starts where
 the real one stands on that day (JPL's 'Keplerian elements for
 approximate positions of the major planets', table 1, 1800 to 2050; Pluto
-from the table's older edition, before it was dropped), its path from
-then on pulled by Sol alone. Terra is the Earth (its true size, its
-G M: g 9.82, its day and tilt, on the Earth and Moon's barycentre's
-path) with two moons: Luna, the Moon on its mean path of the day (its
-mean elements, Meeus), and Mani, a small one of our own.
+from the table's older edition, before it was dropped), moving as its
+path then says (Sol's G M and its own summed). Terra is the Earth (its
+true size, its G M: g 9.82, its day and tilt), off the Earth and Moon's
+barycentre (the table's path) as far as its moons weigh: Luna, the Moon
+on its mean path of the day (its mean elements, Meeus), and Mani, a
+small one of our own. From then on every body pulls every other
+(user, 2026-11-18: real gravity, '_ephemeris').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -18,8 +20,11 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
+import numpy
+
 from ._atmosphere import TERRA_AIR
 from ._conic import Conic, TAU
+from ._ephemeris import Ephemeris
 from ._heavenlybody import HeavenlyBody
 from ._solarsystem import SolarSystem
 
@@ -86,18 +91,55 @@ PLANETS = (
    (-0.00031596, 0.00005170, 0.00004818, 145.20780515, -0.04062942,
     -0.01183482)),
 )
-#  Luna: G M, radius, a (m), e, i (deg), its equator's tilt to the
-#  ecliptic (deg); its mean longitude, mean anomaly and node at J2000
-#  and their rates a century (deg, the date's equinox: Meeus).
-LUNA = ('Luna', 4.9048695e12, 1.7374e6, 3.844e8, 0.0549, 5.145, 1.5424)
+#  Luna: G M, radius, its equator's tilt to the ecliptic (deg); its mean
+#  longitude and node at J2000 and their rates a century (deg, the
+#  date's equinox: Meeus).
+LUNA = ('Luna', 4.9048695e12, 1.7374e6, 1.5424)
 LUNA_LONGITUDE = (218.3164477, 481267.88123421)
-LUNA_ANOMALY = (134.9633964, 477198.8675055)
 LUNA_NODE = (125.0445479, -1934.1362891)
+#  Where the Moon is on a day (Meeus, 'Astronomical Algorithms', ch.
+#  47; user, 2026-11-18, real gravity: started on its mean path it went
+#  round in 26.5 to 27.3 days by the day it started, the path of the
+#  moment not being the mean one): its mean longitude, mean elongation,
+#  the Sun's mean anomaly, its own, its argument of latitude (deg at
+#  J2000, deg a century); its greatest periodic terms in longitude
+#  (1e-6 deg) and distance (1e-3 km), each its multiples of those four
+#  last, and in latitude (1e-6 deg); its mean distance, km. Meeus'
+#  worked example (1992 April 12) within 0.004 deg and 29 km; the total
+#  eclipse of 2024 April 8 by the Sun, 359 812 km off.
+MOON_ARGUMENTS = ((218.3164477, 481267.88123421),
+                  (297.8501921, 445267.1114034),
+                  (357.5291092, 35999.0502909),
+                  (134.9633964, 477198.8675055),
+                  (93.2720950, 483202.0175233))
+MOON_LONGITUDE = (
+  (0, 0, 1, 0, 6288774, -20905355), (2, 0, -1, 0, 1274027, -3699111),
+  (2, 0, 0, 0, 658314, -2955968), (0, 0, 2, 0, 213618, -569925),
+  (0, 1, 0, 0, -185116, 48888), (0, 0, 0, 2, -114332, -3149),
+  (2, 0, -2, 0, 58793, 246158), (2, -1, -1, 0, 57066, -152138),
+  (2, 0, 1, 0, 53322, -170733), (2, -1, 0, 0, 45758, -204586),
+  (0, 1, -1, 0, -40923, -129620), (1, 0, 0, 0, -34720, 108743),
+  (0, 1, 1, 0, -30383, 104755), (2, 0, 0, -2, 15327, 10321),
+  (0, 0, 1, 2, -12528, 0), (0, 0, 1, -2, 10980, 79661),
+  (4, 0, -1, 0, 10675, -34782), (0, 0, 3, 0, 10034, -23210),
+  (4, 0, -2, 0, 8548, -21636))
+MOON_LATITUDE = (
+  (0, 0, 0, 1, 5128122), (0, 0, 1, 1, 280602), (0, 0, 1, -1, 277693),
+  (2, 0, 0, -1, 173237), (2, 0, -1, 1, 55413), (2, 0, -1, -1, 46271),
+  (2, 0, 0, 1, 32573), (0, 0, 2, 1, 17198), (2, 0, 1, -1, 9266),
+  (0, 0, 2, -1, 8822))
+MOON_DISTANCE = 385000.56
+#  Its velocity is had from its places this far either side, s.
+MOON_STEP = 300.0
 #  Mani, our small moon (the spec: "400 km across and about 650,000 km
 #  out, giving roughly a two-month orbit"): radius (m), its rock's
 #  density (kg/m³), a (m), e, i, node, periapsis and mean anomaly at
-#  J2000 (deg).
-MANI = ('Mani', 2.0e5, 3000.0, 6.5e8, 0.03, 7.5, 40.0, 110.0, 200.0)
+#  J2000 (deg). It goes round backward (i past 90 deg): with every body
+#  pulling every other (2026-11-18), going round the way Luna does it
+#  was thrown out of Terra's reach within a year (Sol's pull, and
+#  Luna's every second turn of hers); backward it stays, 20 years flown
+#  within 676 000 km, never nearer Luna than 222 000 km.
+MANI = ('Mani', 2.0e5, 3000.0, 6.5e8, 0.03, 172.5, 40.0, 110.0, 200.0)
 GRAVITATIONAL = 6.6743e-11
 #  Where the pad is on Terra: on the equator, its prime meridian
 #  (latitude, longitude, deg).
@@ -110,9 +152,11 @@ def julianOf(when: datetime) -> float:
   return 2440587.5 + when.timestamp() / DAY
 
 
-def solarSystemOn(julian: float) -> SolarSystem:
+def solarSystemOn(julian: float, device: str) -> SolarSystem:
   """Returns the solar system as it stands on Julian date 'julian' (its
-  time nought then): Sol, the nine planets, Terra's two moons."""
+  time nought then): Sol, the nine planets, Terra's two moons, their
+  paths flown on 'device' (Warp's: the GPU in the game, the CPU in the
+  tests)."""
   centuries = (julian - J2000) / CENTURY
   sol = HeavenlyBody(SOL[0], None, SOL[1], SOL[2], _spinOf(SOL[3]),
                      _tilted((0.0, 0.0, 1.0), SOL[4], 0.0), 0.0, None,
@@ -132,9 +176,39 @@ def solarSystemOn(julian: float) -> SolarSystem:
       body = HeavenlyBody(name, sol, mu, radius, _spinOf(hours), pole,
                           0.0, conic, look, None)
     bodies.append(body)
-  bodies.append(_luna(terra, centuries))
+  bodies.append(_luna(terra, julian))
   bodies.append(_mani(terra, julian))
-  return SolarSystem(tuple(bodies))
+  bodies = tuple(bodies)
+  parents = [-1] + [bodies.index(b.parent) for b in bodies[1:]]
+  ephemeris = Ephemeris(device, parents, [b.depth for b in bodies],
+                        [b.mu for b in bodies], statesOf(bodies), 0.0)
+  return SolarSystem(bodies, ephemeris)
+
+
+def statesOf(bodies: tuple) -> numpy.ndarray:
+  """Returns each body's place and velocity from its parent at time
+  nought (float64, shape (bodies, 2, 3); Sol's nought): where its day's
+  path has it, moving as fast as the path says with its parent's G M
+  and its own summed (they go round each other); a planet with moons
+  off its path (the barycentre's, as JPL's table gives Terra's) by as
+  much as they weigh."""
+  out = numpy.zeros((len(bodies), 2, 3))
+  for k, body in enumerate(bodies):
+    if body.parent is None:
+      continue
+    conic = body.conic
+    mu = body.parent.mu + body.mu
+    together = Conic(mu, conic.a, conic.e, conic.i, conic.node, conic.peri,
+                     conic.anomaly)
+    out[k] = together.stateAt(0.0)
+  for k, body in enumerate(bodies):
+    moons = [j for j, b in enumerate(bodies) if b.parent is body]
+    if not moons or body.parent is None:
+      continue
+    total = body.mu + sum(bodies[j].mu for j in moons)
+    shift = sum(bodies[j].mu * out[j] for j in moons) / total
+    out[k] -= shift
+  return out
 
 
 def _planetConic(base: tuple, rate: tuple, centuries: float) -> Conic:
@@ -147,25 +221,65 @@ def _planetConic(base: tuple, rate: tuple, centuries: float) -> Conic:
                math.radians(mean - perihelion))
 
 
-def _luna(terra: HeavenlyBody, centuries: float) -> HeavenlyBody:
-  """Returns Luna on its mean path of the day, turned as the Moon is:
-  its face to Terra on the whole (its spin its path's mean motion), its
-  pole tilted from the ecliptic's away from its path's (Cassini)."""
-  name, mu, radius, a, e, i, tilt = LUNA
+def _luna(terra: HeavenlyBody, julian: float) -> HeavenlyBody:
+  """Returns Luna where the Moon is on Julian date 'julian' and moving
+  as it is ('moonPlace': its path of the moment, Terra's G M and hers
+  summed), turned as the Moon is: its face to Terra on the whole (its
+  spin its mean longitude's), its pole tilted from the ecliptic's away
+  from its path's (Cassini)."""
+  name, mu, radius, tilt = LUNA
+  centuries = (julian - J2000) / CENTURY
   back = PRECESSION * centuries
   longitude = LUNA_LONGITUDE[0] + LUNA_LONGITUDE[1] * centuries - back
-  anomaly = LUNA_ANOMALY[0] + LUNA_ANOMALY[1] * centuries
   node = LUNA_NODE[0] + LUNA_NODE[1] * centuries - back
-  perigee = longitude - anomaly
-  conic = Conic(TERRA_MU, a, e, math.radians(i), math.radians(node),
-                math.radians(perigee - node), math.radians(anomaly))
+  place = moonPlace(julian)
+  step = MOON_STEP / DAY
+  ahead, behind = moonPlace(julian + step), moonPlace(julian - step)
+  velocity = tuple((a - b) / (2.0 * MOON_STEP) for a, b in zip(ahead,
+                                                                behind))
+  conic = Conic.fromState(TERRA_MU + mu, place, velocity)
   side = math.radians(node + 90.0)
   lean = math.radians(tilt)
   pole = (math.sin(lean) * math.cos(side), math.sin(lean) * math.sin(side),
           math.cos(lean))
-  return HeavenlyBody(name, terra, mu, radius, conic.motion, pole,
+  spin = math.radians(LUNA_LONGITUDE[1]) / (CENTURY * DAY)
+  return HeavenlyBody(name, terra, mu, radius, spin, pole,
                       _facing(pole, math.radians(longitude)), conic,
                       'luna', None)
+
+
+def moonPlace(julian: float) -> tuple:
+  """Returns where the Moon is from the Earth on Julian date 'julian',
+  m, the ecliptic's axes (J2000's: its longitude of the date taken back
+  by the precession): Meeus' greatest terms ('MOON_LONGITUDE',
+  'MOON_LATITUDE', and his three additive ones)."""
+  centuries = (julian - J2000) / CENTURY
+  mean, elong, sun, own, latitude = (
+    math.radians((a + b * centuries) % 360.0) for a, b in MOON_ARGUMENTS)
+  eccentric = 1.0 - 0.002516 * centuries - 0.0000074 * centuries ** 2
+  sl = sr = sb = 0.0
+  for d, m, mp, f, along, out in MOON_LONGITUDE:
+    angle = d * elong + m * sun + mp * own + f * latitude
+    weight = eccentric ** abs(m)
+    sl += weight * along * math.sin(angle)
+    sr += weight * out * math.cos(angle)
+  for d, m, mp, f, up in MOON_LATITUDE:
+    sb += eccentric ** abs(m) * up * math.sin(
+      d * elong + m * sun + mp * own + f * latitude)
+  a1 = math.radians(119.75 + 131.849 * centuries)
+  a2 = math.radians(53.09 + 479264.290 * centuries)
+  a3 = math.radians(313.45 + 481266.484 * centuries)
+  sl += (3958.0 * math.sin(a1) + 1962.0 * math.sin(mean - latitude)
+         + 318.0 * math.sin(a2))
+  sb += (-2235.0 * math.sin(mean) + 382.0 * math.sin(a3)
+         + 175.0 * math.sin(a1 - latitude) + 175.0 * math.sin(a1 + latitude)
+         + 127.0 * math.sin(mean - own) - 115.0 * math.sin(mean + own))
+  along = math.radians(math.degrees(mean) + sl / 1e6
+                       - PRECESSION * centuries)
+  up = math.radians(sb / 1e6)
+  far = 1e3 * (MOON_DISTANCE + sr / 1e3)
+  return (far * math.cos(up) * math.cos(along),
+          far * math.cos(up) * math.sin(along), far * math.sin(up))
 
 
 def _mani(terra: HeavenlyBody, julian: float) -> HeavenlyBody:

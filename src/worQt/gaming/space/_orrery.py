@@ -167,7 +167,7 @@ class Orrery:
       out.append({'x': at[0], 'y': at[1], 'text': body.name,
                   'colour': BODY_COLOUR, 'index': index})
     for satellite in system.satellites:
-      parent = system.bodies.index(satellite.parent)
+      parent = satellite.parent
       place = tuple(a + b for a, b in zip(system.relative(
         parent, vessel.anchor, t)[0], satellite.stateAt(t)[0]))
       at = self.screenOf(place, eye, forward, up, wide, high)

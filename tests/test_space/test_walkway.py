@@ -214,8 +214,8 @@ class TestWalkway(SpaceTest):
     """Started outside, it is night on the pad, and Terra Prime is high
     over it at once and overhead a minute on."""
     now = datetime(2026, 11, 17, 6, 20, tzinfo=timezone.utc)
-    began = now + timedelta(0, _nightStart(now))
-    system = solarSystemOn(julianOf(began))
+    began = now + timedelta(0, _nightStart(now, 'cpu'))
+    system = solarSystemOn(julianOf(began), 'cpu')
     terra = system.named('Terra')
     pad = Vessel()
     pad.stood(system, terra, PAD[0], PAD[1], 0.0)

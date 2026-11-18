@@ -1,7 +1,7 @@
 """
 Vessel is a rocket in the solar system (user, 2026-11-16: "let's start
 with a 'creative' rocket with inf fuel"): one rigid body, its engine,
-its reaction wheels, its autopilot, its legs; where it is, kept from
+its attitude thrusters, its autopilot, its legs; where it is, kept from
 the body it is near.
 """
 #  Apache-2.0 license
@@ -53,10 +53,14 @@ DRAG = (0.4 * math.pi * RADIUS * RADIUS, 1.0 * 2.0 * RADIUS * LONG)
 #  magic: no engine of its size lifts it so), the magic fuel's specific
 #  impulse.
 THRUST = 4.0 * MASS * 9.82
-#  Its reaction wheels' most torque about its own x, y, z, N m: magic,
-#  creative ones, a quarter turn in about four seconds whatever its size
-#  (its inertia grows as its size's fifth power).
-WHEELS = (150e3 * SIZE ** 5, 150e3 * SIZE ** 5, 30e3 * SIZE ** 5)
+#  Its attitude thrusters' most torque about its own x, y, z, N m: a
+#  quarter turn in about four seconds whatever its size (its inertia
+#  grows as its size's fifth power). Thrusters, puffing the creative
+#  rocket's endless propellant (user, 2026-11-16: "a 'creative' rocket
+#  with inf fuel"): they push off their exhaust, so, unlike reaction
+#  wheels, nothing in them fills up (user, 2026-11-18: "PHYSICS MUST BE
+#  REAL"; they were wheels that never filled).
+ATTITUDE = (150e3 * SIZE ** 5, 150e3 * SIZE ** 5, 30e3 * SIZE ** 5)
 #  How far its legs give standing (the legs' stiffness is the kernel's:
 #  'LEG_STIFF'), m.
 SAG = 0.0049
@@ -67,31 +71,36 @@ TRAVEL_SPEED = 20.0
 
 class Vessel:
   """
-  Vessel holds a rocket: its body ('MASS', 'INERTIA', 'LEGS', 'DRAG'),
-  its 'engine' (an 'Aerospike'), its reaction wheels ('WHEELS', worked
-  by the keys, 'steer': pitch, yaw, roll, each from minus one to one,
-  else by its 'autopilot'). Where it is: the body it is kept from
-  ('anchor', its index in the solar system: user, "Each vehicle is
-  stored as the planet it's near"), its 'place' and 'velocity' from that
-  body's middle (m, m/s, the ecliptic's axes, which turn with nothing),
-  its 'turn' (w x y z, its own axes to the ecliptic's) and 'spin' (rad/s,
-  its own axes); how many of its legs stand on the ground ('touching').
-  Its docking thrusters push it 'rcs' (N, its own axes: user,
-  2026-11-17, docking); 'docked' to the space station it rides with it
-  (moved by it, not by the flight); 'bumped' how fast it last hit the
+  Vessel holds a craft the flight flies, the creative rocket unless it is
+  built otherwise (the space station is flown so: '_station'): its body
+  ('mass', kg; 'inertia', its moments about its own axes, kg m²; 'legs', four
+  feet, its own axes; 'drag', along and across, m²; the rocket's 'MASS',
+  'INERTIA', 'LEGS', 'DRAG'), its 'engine' (an 'Aerospike'), its attitude
+  thrusters ('attitude', their most torques, N m; 'ATTITUDE', worked by the
+  keys, 'steer': pitch, yaw, roll, each from minus one to one, else by its
+  'autopilot'). Where it is: the body it is kept from ('anchor', its index in
+  the solar system: user, "Each vehicle is stored as the planet it's near"),
+  its 'place' and 'velocity' from that body's middle (m, m/s, the ecliptic's
+  axes, which turn with nothing), its 'turn' (w x y z, its own axes to the
+  ecliptic's) and 'spin' (rad/s, its own axes); how many of its legs stand on
+  the ground ('touching'). Its docking thrusters push it 'rcs' (N, its own
+  axes: user, 2026-11-17, docking); 'docked' to the space station it rides
+  with it (moved by it, not by the flight); 'bumped' how fast it last hit the
   station (m/s into it, the last frame; nought: it did not); 'felt' what
-  pushed it a kilogram over the last frame, everything but gravity
-  (m/s², its own axes: the thrust, drag, the ground, the thrusters, the
-  station's solids or, docked, the latch: what anything in it feels),
-  and 'spinning', how fast its spin changed over it (rad/s², its own
-  axes): both None till a frame has been simulated (user, 2026-11-17:
-  "there better be a physically simulated such fucking thing every
-  where it needs to be calculated"); 'jolt', how its velocity was
-  changed between frames by what held it (m/s, the ecliptic's axes: the
-  latch catching it, pushing it off: 'jolted'; felt over the next
-  frame, then spent) and 'twirl', how its spin was (rad/s, its own
-  axes: what moves in its cabin pushing it back, 'kicked'; likewise).
-  The flight's kernel moves it ('Flight').
+  pushed it a kilogram over the last frame, everything but gravity (m/s², its
+  own axes: the thrust, drag, the ground, the thrusters, the station's solids
+  or, docked, the latch: what anything in it feels), and 'spinning', how fast
+  its spin changed over it (rad/s², its own axes): both None till a frame has
+  been simulated (user, 2026-11-17: "there better be a physically simulated
+  such fucking thing every where it needs to be calculated"); 'jolt', how its
+  velocity was changed between frames by what held it (m/s, the ecliptic's
+  axes: the latch catching it, pushing it off: 'jolted'; felt over the next
+  frame, then spent) and 'twirl', how its spin was (rad/s, its own axes: what
+  moves in its cabin pushing it back, 'kicked'; likewise); 'latch', the
+  docking port that has caught its nose drawing it in (the port's mouth in
+  the station's own axes, the turn it docks at, its own axes in the station's
+  (w x y z), its nose; None: none, '_dockingport'). The flight's kernel moves
+  it ('Flight').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -99,12 +108,18 @@ class Vessel:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  What a saved game keeps of it ('_savegame'): its fields, its parts.
-  SAVED = ('steer', 'anchor', 'place', 'velocity', 'turn', 'spin',
+  SAVED = ('mass', 'inertia', 'steer', 'anchor', 'place', 'velocity',
+           'turn', 'spin',
            'touching', 'rcs', 'docked', 'bumped', 'felt', 'spinning', 'jolt',
-           'twirl')
+           'twirl', 'latch')
   PARTS = ('engine', 'autopilot')
 
   #  Public Variables
+  mass: float
+  inertia: tuple
+  legs: tuple
+  drag: tuple
+  attitude: tuple
   engine: Aerospike
   autopilot: Autopilot
   steer: tuple
@@ -121,12 +136,15 @@ class Vessel:
   spinning: tuple | None
   jolt: tuple
   twirl: tuple
+  latch: tuple | None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
+    self.mass, self.inertia, self.legs = MASS, INERTIA, LEGS
+    self.drag, self.attitude = DRAG, ATTITUDE
     self.engine = Aerospike(THRUST, MAGIC_ISP)
     self.autopilot = Autopilot()
     self.steer, self.anchor, self.touching = (0.0, 0.0, 0.0), 0, 0
@@ -134,7 +152,7 @@ class Vessel:
     self.turn, self.spin = (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     self.rcs, self.docked, self.bumped = (0.0, 0.0, 0.0), False, 0.0
     self.felt, self.spinning, self.jolt = None, None, (0.0, 0.0, 0.0)
-    self.twirl = (0.0, 0.0, 0.0)
+    self.twirl, self.latch = (0.0, 0.0, 0.0), None
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -162,8 +180,8 @@ class Vessel:
     frames (what moved in its cabin pushed it back: '_cabinworld'): its
     velocity and spin changed at once by them over its mass and its
     moments, felt over the next frame ('jolt', 'twirl')."""
-    change = rotated(self.turn, tuple(float(p) / MASS for p in push))
-    spun = tuple(float(w) / i for w, i in zip(twist, INERTIA))
+    change = rotated(self.turn, tuple(float(p) / self.mass for p in push))
+    spun = tuple(float(w) / i for w, i in zip(twist, self.inertia))
     self.velocity = tuple(v + c for v, c in zip(self.velocity, change))
     self.spin = tuple(s + w for s, w in zip(self.spin, spun))
     self.jolted(change)
@@ -211,7 +229,7 @@ class Vessel:
                 self.spin)
 
   def steered(self, pitch: float, yaw: float, roll: float) -> None:
-    """The 'steered' method sets the keys on the reaction wheels (each
+    """The 'steered' method sets the keys on the attitude thrusters (each
     from minus one to one); let go while holding, the autopilot holds
     the turn the vessel has then (the spec: "While you steer it lets
     go, and it locks the new orientation when you release")."""

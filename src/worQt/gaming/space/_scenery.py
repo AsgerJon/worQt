@@ -199,7 +199,7 @@ class Scenery:
     sun = unit(tuple(a - b for a, b in zip(eye, sol)))
     satellites, lights = [], []
     for satellite in system.satellites:
-      parent = system.bodies.index(satellite.parent)
+      parent = satellite.parent
       there = tuple(a + b - c for a, b, c in zip(
         system.relative(parent, anchor, t)[0],
         satellite.stateAt(t)[0], eye))
@@ -483,7 +483,7 @@ class Scenery:
         lines.append((tuple(scale * (a - b) for a, b in zip(
           places[parent], eye)), scale))
     for satellite in system.satellites:
-      parent = system.bodies.index(satellite.parent)
+      parent = satellite.parent
       lines.append((tuple(scale * (a - b) for a, b in zip(
         places[parent], eye)), scale))
     return {'forward': forward, 'up': up, 'bodies': bodies, 'lines': lines,

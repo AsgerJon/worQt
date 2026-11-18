@@ -4,7 +4,7 @@ can lock their orientation in place or locked to following a path
 towards apogee, or the opposite point"; "roll-insensitive controls that
 work only in the parallel of travel, so that it basically means above
 and below apoapsis"): it says how, the flight's kernel turns the
-reaction wheels to do it.
+attitude thrusters to do it.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -32,7 +32,7 @@ class Autopilot:
   horizon), 'turn' (rad off the path, to the right), 'heading' (rad from
   north toward east: the compass heading while there is no path yet)
   and whether the aim follows the path ('travel'). The kernel does it:
-  within a frame by the reaction wheels (the turn's error to a rate,
+  within a frame by the attitude thrusters (the turn's error to a rate,
   the rate's to a torque), within a long step of time warp at once (the
   warp's rails).
   """

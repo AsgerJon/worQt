@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._turns import aboutAxis, dot, norm, rotated, unit
+from ._turns import aboutAxis, dot, norm, rotated, unit, unrotated
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
@@ -28,6 +28,12 @@ DARK = 0.5
 #  the sunrise found to within 'SUNRISE_TO' s; he wakes 'MORNING' s
 #  after it (the sun up, not just rising).
 LOOK_MOST = 2.0 * 86400.0
+#  The rocket on the ground is at rest (a night may be slept through,
+#  skipped as it would pass: user, 2026-11-18, "PHYSICS MUST BE REAL")
+#  moving and turning against the ground no faster than this, m/s and
+#  rad/s.
+REST_SPEED = 0.01
+REST_SPIN = 0.001
 LOOK_STEP = 120.0
 SUNRISE_TO = 1.0
 MORNING = 600.0
@@ -127,3 +133,19 @@ def _shineAfter(system: SolarSystem, vessel: Vessel, t: float,
     return 1.0
   sun = unit(tuple(p - s for p, s in zip(place, sol)))
   return shineOf(system.bodies[anchor].radius, place, sun)
+
+
+def restWhy(vessel: Vessel, system: SolarSystem) -> str:
+  """Returns why 'vessel' on the ground is not at rest ('' it is): not
+  on all its legs, moving or turning against the ground (more than
+  'REST_SPEED' m/s, 'REST_SPIN' rad/s). At rest on the turning ground it
+  stays at rest, carried round with it: a night slept on it may be
+  skipped so ('Vessel.carried')."""
+  if vessel.touching < len(vessel.legs):
+    return 'the rocket does not stand on all its legs'
+  if norm(vessel.groundVelocity(system)) > REST_SPEED:
+    return 'the rocket is moving'
+  turning = unrotated(vessel.turn, system.bodies[vessel.anchor].spinVector)
+  if norm(tuple(s - g for s, g in zip(vessel.spin, turning))) > REST_SPIN:
+    return 'the rocket is rocking'
+  return ''

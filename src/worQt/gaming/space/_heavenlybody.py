@@ -2,7 +2,8 @@
 HeavenlyBody is a star, planet or moon (user, 2026-11-16: "each heavenly
 body is a vector of dofs, a vector function in time. other data points
 are fixed immutable. so is the texture"): its fixed numbers and look,
-where it is and how it is turned as functions of time.
+how it is turned as a function of time. Where it is the solar system's
+flown sky says (user, 2026-11-18: real gravity, '_ephemeris').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -21,9 +22,11 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 class HeavenlyBody:
   """
   HeavenlyBody holds a heavenly body: its 'name', the body it goes round
-  ('parent', None: Sol, still at the middle of everything) and its path
-  there ('conic': pulled by its parent alone, user: "planet pulled to
-  sun, moons pulled to planet"), its G M ('mu', m³/s²), 'radius' (m),
+  ('parent', None: Sol, the middle of everything) and the path it would
+  follow from the last leap if its parent alone pulled it ('conic': at
+  first its day's, then as the solar system takes it anew at each leap,
+  '_solarsystem'; where it truly is the flown sky says), its G M ('mu',
+  m³/s²), 'radius' (m),
   spin ('spin', rad/s about its north 'pole', a unit vector in the
   ecliptic's axes; its own x axis, its prime meridian, 'angle' rad on
   from the node of its equator at time nought), its 'look' (how it is
@@ -104,14 +107,6 @@ class HeavenlyBody:
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def stateAt(self, t: float) -> tuple:
-    """The 'stateAt' method returns where the body is and how fast it
-    moves at time 't' (s), from its parent: two triples, m and m/s;
-    Sol's are nought."""
-    if self.conic is None:
-      return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
-    return self.conic.stateAt(t)
-
   def angleAt(self, t: float) -> float:
     """The 'angleAt' method returns how far it has turned at time 't',
     rad, within one turn."""
@@ -127,22 +122,15 @@ class HeavenlyBody:
                   + row[1] * cos, row[2]) for row in self.tilt)
 
   def fold(self, seconds: float) -> None:
-    """The 'fold' method carries 'seconds' s into its path's anomaly and
-    its turn's angle: what was at time 'seconds' is at time nought."""
-    if self.conic is not None:
-      self.conic = self.conic.after(seconds)
+    """The 'fold' method carries 'seconds' s into its turn's angle: what
+    was at time 'seconds' is at time nought."""
     self.angle = self.angleAt(seconds)
 
-  def restored(self, conic: Conic | None, angle: float,
-               pole: tuple) -> None:
-    """The 'restored' method puts the body where a saved game had it
-    ('_savegame'): on 'conic' (None: Sol's), turned 'angle' about
-    'pole'."""
-    if (self.parent is None) != (conic is None):
-      raise ValueError('%s: a body goes round its parent, Sol round '
-                       'nothing' % self.name)
+  def restored(self, angle: float, pole: tuple) -> None:
+    """The 'restored' method turns the body as a saved game had it
+    ('_savegame'): 'angle' about 'pole'."""
     size = math.sqrt(sum(x * x for x in pole))
-    self.conic, self.angle = conic, float(angle) % TAU
+    self.angle = float(angle) % TAU
     self.pole = tuple(float(x) / size for x in pole)
     self.tilt = _tiltOf(self.pole)
 

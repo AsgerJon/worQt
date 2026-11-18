@@ -432,9 +432,9 @@ class CabinWorld:
                       True)
     moved = wp.launch(kernels.moved, len(self._places), [
       self.places, self.turns, self.velocities, self.spins, self.masses,
-      self.inertias, self.pushes, self.twists, self.asger, self.reaction,
-      zero, zero, zero, -1, zero, 0.0], [], [], [], device, None, False,
-      False, True)
+      self.inertias, self.halves, self.pushes, self.twists, self.asger,
+      self.reaction, zero, zero, zero, -1, zero, 0.0], [], [], [], device,
+      None, False, False, True)
     return pressed, moved, walked, nearby
 
   def _asgerSent(self, crewman: Crewman) -> None:

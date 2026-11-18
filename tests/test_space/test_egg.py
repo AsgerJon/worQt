@@ -51,11 +51,13 @@ class TestEgg(SpaceTest):
 
   def test_ground(self) -> None:
     """On the pad (one g up) the marble, let go off its middle moving,
-    comes to lie at the egg's bottom, still."""
+    bounces and rolls round the glass (glass on glass: its bounces and
+    its sliding take its speed) and within a minute lies at the egg's
+    bottom, still."""
     egg = Egg()
     egg.ball, egg.moving = (0.01, -0.005, 0.02), (0.3, 0.1, 0.0)
     inside = []
-    self._flown(egg, self._meter((0.0, 0.0, G0)), 8.0, inside)
+    self._flown(egg, self._meter((0.0, 0.0, G0)), 60.0, inside)
     self.assertLess(egg.ball[2], -0.03)
     self.assertLess(math.hypot(egg.ball[0], egg.ball[1]), 0.002)
     self.assertLess(math.hypot(*egg.moving), 0.005)

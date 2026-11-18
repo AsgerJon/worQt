@@ -60,15 +60,13 @@ class TestDocking(SpaceTest):
 
   def test_latch(self) -> None:
     """In the port, nose down the axis, turning with the station, the
-    latch catches; turning still, or coming in fast, it does not;
-    docked, the rocket rides with the station; undocked, it is pushed
-    off along the axis."""
+    port's ring catches it and it is home; turning still, or coming in
+    fast, it does not catch; locked, the rocket rides with the station;
+    undocked, the two are pushed apart along the axis, parting at
+    'PUSH_OFF'."""
     system, station, port, vessel = self._near(0.0, 0.0)
     port.aligned(vessel, 0.0)
-    turn = port.turnAt(0.0)
-    vessel.placed(vessel.anchor, vessel.place, vessel.velocity, turn,
-                  (0.0, 0.0, 0.0))
-    port.heldOn(vessel, system, 0.0)
+    port.homed(vessel, 0.0)
     reading = port.readingOf(vessel, system, 0.0)
     self.assertLess(reading['distance'], 1e-6)
     self.assertTrue(port.caught(reading))
@@ -76,8 +74,12 @@ class TestDocking(SpaceTest):
     self.assertFalse(port.caught(still))
     fast = dict(reading, closing=2.0)
     self.assertFalse(port.caught(fast))
+    port.captured(vessel, 0.0)
+    self.assertIsNotNone(vessel.latch)
+    self.assertTrue(port.home(vessel, reading, 0.0))
     port.latched(vessel, system, 0.0)
     self.assertTrue(vessel.docked)
+    self.assertIsNone(vessel.latch)
     port.heldOn(vessel, system, 30.0)
     later = port.readingOf(vessel, system, 30.0)
     self.assertLess(later['distance'], 1e-6)

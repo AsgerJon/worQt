@@ -4,9 +4,13 @@ Elevator is a spoke's elevator in the space station (user, 2026-11-17:
 kolonihave i rummet!"): a cage riding its shaft from the hub, its roof
 flush with the hub's wall and open there, to the ring's deck, its floor
 flush with the deck and its two sides along the ring open there; closed
-on the way. It speeds up and slows down at 'ACCEL' to at most 'FAST':
-everything in it feels it, and the station's turn too (riding out at
-30 m/s the shaft's wall pushes sideways with 0.6 g: honest, not added).
+on the way. Its motor drives it ('_hoist': user, 2026-11-18, "PHYSICS
+MUST BE REAL"), speeding up and slowing down at 'ACCEL' to at most
+'FAST', no harder than 'MOTOR_MOST', against the station's turning
+pulling it and its rider out: everything in it feels it, and the
+station's turn too (riding out at 30 m/s the shaft's wall pushes
+sideways with 0.6 g: honest, not added); what the motor and the walls
+push it by pushes the station back.
 Its boxes ('boxesOf') are solids the cabin's world meets, moving.
 Qt-free.
 """
@@ -14,6 +18,7 @@ Qt-free.
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._hoist import hoisted
 from ._stationinterior import DECK, HUB_INSIDE, PLANE
 from ._turns import cross, quaternionOf, unit
 
@@ -31,6 +36,11 @@ DECK_STOP = DECK
 ACCEL = 2.0
 FAST = 30.0
 ARRIVED = 0.005
+#  The cage's mass (its frame and walls: the plates' thickness is a
+#  wall's for the world's meetings, not its steel) and its motor's most
+#  push along the shaft, kg and N.
+CAGE_MASS = 2000.0
+MOTOR_MOST = 40e3
 #  Where a box that is not there is kept (far from everything), m.
 AWAY = (0.0, 0.0, -1e4)
 #  The cages' back walls through the hub (user, 2026-11-18: "can we just
@@ -127,26 +137,23 @@ class Elevator:
     return (self.floor - CAR_HIGH <= out <= self.floor
             and abs(along) <= CAR_HALF and abs(point[2] - PLANE) <= CAR_HALF)
 
-  def moved(self, seconds: float) -> None:
-    """The 'moved' method moves it 'seconds' s on toward its stop:
-    speeding up, at most 'FAST', slowing down to stop on it."""
-    if self.target is None or seconds <= 0.0:
-      self.speed = 0.0
-      return
-    left = self.target - self.floor
-    way = 1.0 if left > 0.0 else -1.0
-    braking = self.speed * self.speed / (2.0 * ACCEL)
-    toward = self.speed * way
-    if toward > 0.0 and braking >= abs(left):
-      self.speed -= way * ACCEL * seconds
-    else:
-      self.speed += way * ACCEL * seconds
-    self.speed = max(-FAST, min(FAST, self.speed))
-    step = self.speed * seconds
-    if abs(step) >= abs(left) or (abs(left) < ARRIVED):
-      self.floor, self.speed, self.target = self.target, 0.0, None
-      return
-    self.floor += step
+  def moved(self, seconds: float, along: float = 0.0,
+            rider: float = 0.0) -> float:
+    """The 'moved' method moves it 'seconds' s on toward its stop, its
+    motor driving it ('_hoist.hoisted': at most 'FAST', speeding up and
+    slowing down at 'ACCEL', no harder than 'MOTOR_MOST'), pulled
+    'along' m/s² out along its shaft, carrying 'rider' kg; returns how
+    fast it sped up out along it (m/s², on the average)."""
+    self.floor, self.speed, self.target, faster = hoisted(
+      self.floor, self.speed, self.target, seconds, along,
+      CAGE_MASS + rider, MOTOR_MOST, ACCEL, FAST)
+    return faster
+
+  def middleOf(self, way: tuple) -> tuple:
+    """The 'middleOf' method returns its cage's middle along a shaft out
+    'way' (the docked rocket's own axes)."""
+    out = self.floor - 0.5 * CAR_HIGH
+    return out * way[0], out * way[1], out * way[2] + PLANE
 
   def boxesOf(self, way: tuple) -> tuple:
     """The 'boxesOf' method returns its six plates (floor, roof, the two

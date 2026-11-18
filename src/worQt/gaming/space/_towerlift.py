@@ -6,15 +6,18 @@ ground and the hall, its floor and roof plates and its two walls (the
 west and the south: its doorways are the east, to the hall, and the
 north, to the yard), a window in each (user, 2026-11-18: "Give the
 staircase and elevator and elevatorshaft windows"), solids the cabin's
-world meets (moving with it); its doors open only where it stands. It
-speeds up and slows down at 'ACCEL' to at most 'FAST'. Qt-free, the
-rocket's own axes on the pad.
+world meets (moving with it); its doors open only where it stands. Its
+motor drives it ('_hoist': user, 2026-11-18, "PHYSICS MUST BE REAL";
+"The tower lift did feel very wrong"), speeding up and slowing down at
+'ACCEL' to at most 'FAST', no harder than 'MOTOR_MOST', against its
+weight and its rider's. Qt-free, the rocket's own axes on the pad.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
 from ._cockpit import FLOOR
+from ._hoist import hoisted
 from ._launchtower import CAR_HIGH, GROUND, PLATE, SHAFT
 
 #  Its stops (its floor's height): the ground, the hall's floor, m.
@@ -31,6 +34,9 @@ CAR_WALL = 0.02
 CAR_IN = 0.02
 CAR_SILL, CAR_HEAD = 0.9, 2.0
 CAR_WINDOW_IN = 0.3
+#  The car's mass and its motor's most push along the shaft, kg and N.
+CAGE_MASS = 800.0
+MOTOR_MOST = 20e3
 
 
 def carMiddle() -> tuple:
@@ -128,22 +134,23 @@ class TowerLift:
     return (x0 < x < x1 and y0 < y < y1
             and self.floor < z < self.floor + CAR_HIGH)
 
-  def moved(self, seconds: float) -> None:
-    """The 'moved' method moves it 'seconds' s on toward its target,
-    speeding up and slowing down to stop on it."""
-    if self.target is None:
-      self.speed = 0.0
-      return
-    left = self.target - self.floor
-    way = 1.0 if left > 0.0 else -1.0
-    braking = (2.0 * ACCEL * abs(left)) ** 0.5
-    wanted = way * min(FAST, braking)
-    step = ACCEL * seconds
-    self.speed += max(-step, min(step, wanted - self.speed))
-    self.floor += self.speed * seconds
-    if abs(self.target - self.floor) < ARRIVED or (
-        way * (self.target - self.floor) < 0.0):
-      self.floor, self.speed, self.target = self.target, 0.0, None
+  def moved(self, seconds: float, along: float = -9.82,
+            rider: float = 0.0) -> float:
+    """The 'moved' method moves it 'seconds' s on toward its stop, its
+    motor driving it ('_hoist.hoisted': at most 'FAST', speeding up and
+    slowing down at 'ACCEL', no harder than 'MOTOR_MOST'), pulled
+    'along' m/s² up its shaft (on the pad: its weight, down), carrying
+    'rider' kg; returns how fast it sped up (m/s², on the average)."""
+    self.floor, self.speed, self.target, faster = hoisted(
+      self.floor, self.speed, self.target, seconds, along,
+      CAGE_MASS + rider, MOTOR_MOST, ACCEL, FAST)
+    return faster
+
+  def middleOf(self, ) -> tuple:
+    """The 'middleOf' method returns its car's middle (the rocket's own
+    axes on the pad)."""
+    (x0, y0, _), (x1, y1, _) = SHAFT
+    return 0.5 * (x0 + x1), 0.5 * (y0 + y1), self.floor + 0.5 * CAR_HIGH
 
   def boxesOf(self, ) -> tuple:
     """The 'boxesOf' method returns its floor's and roof's plates and

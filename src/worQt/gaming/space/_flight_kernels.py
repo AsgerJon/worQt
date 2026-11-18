@@ -10,29 +10,29 @@ axes; its place and velocity each in two float32s, a big part and the
 small rest ('pairAdded', exact sums: Knuth's two-sum), so a step's few
 metres are never lost against Terra's 6371 km. Its height over the
 ground is taken from where it began the call (its height there worked
-out by the host), by small differences alone. The sky is worked out
-from its functions of time (Kepler's equation, float32) at the ends of
-each 'SKY_SPAN' s and drawn between them by Hermite's cubic (its places
-and velocities there: in 2000 s Luna goes a quarter of a degree, the
-cubic misses by under a millimetre), each body from the body it goes
-round, a body's place from the anchor summed along the tree (user:
-"planet pulled to sun, moons pulled to planet, vehicles/Asger pulled to
-any"). One thread steps a vessel, its steps one after another: the
-sky's trigonometry once a span, not once a step (the GPU's single
-thread is slow; 'feedback: GPU-friendly algorithms').
+out by the host), by small differences alone. The sky is the flown
+one ('_ephemeris': each body pulling every other, user, 2026-11-18,
+"PHYSICS MUST BE REAL"), its states every 'SKY_SPAN' s read from its
+table and drawn between them by Hermite's cubic (in 2000 s Luna goes a
+quarter of a degree, the cubic misses by under a millimetre), each body
+from the body it goes round, a body's place from the anchor summed
+along the tree. One thread steps a vessel, its steps one after another.
 
 Each step is Wisdom and Holman's: half a step coasting on the anchor's
 pull alone, exactly (Kepler's arc, in universal variables: an ellipse or
-a hyperbola alike, 'drifted'), a kick of everything else (the other
-bodies, the anchor's own fall taken off, the air, the engine, the legs),
-half a step coasting again. The anchor's pull being the arc itself, a
-step may be a fair share of an orbit ('KEPLER_SHARE' of the anchor's
-free fall time: some thirty an orbit), the other bodies' pulls each
-want 'ETA' of theirs; the frame's warp is no more than the count of
-steps (user: "we just put a factor on each step"). On the ground
-('GROUND_NEAR') the legs want short steps ('GROUND_STEP'). A step
-longer than 'SNAP_STEP' (time warp) turns the vessel on rails: its
-autopilot's aim at once.
+a hyperbola alike, 'drifted'), a kick of everything else (every other
+body's pull, each step, less its pull on the anchor: the anchor's own
+fall; the air, the engine, the legs), half a step coasting again. The
+anchor's pull being the arc itself, a step may be a fair share of an
+orbit ('KEPLER_SHARE' of the anchor's free fall time: some thirty an
+orbit), the other bodies' pulls each want 'ETA' of theirs; the frame's
+warp is no more than the count of steps (user: "we just put a factor
+on each step"). On the ground ('GROUND_NEAR') the legs want short steps
+('GROUND_STEP'). A step longer than 'SNAP_STEP' (time warp) turns the
+vessel on rails: its autopilot's aim at once (warp's own, the user's:
+"Warp *was* an instructed cheat and is fine as it is"). The anchor's
+pull twists a long vessel (its pull on the near end is the stronger:
+the gravity gradient), as it twists the space station's wheel.
 
 The space station's solids ('_stationsolids': a torus, cylinders,
 capsules in its own axes) meet the hull's balls (user, 2026-11-17: a bad
@@ -43,8 +43,10 @@ small numbers, the vessel's own frame); within a step its place is had
 from those (its middle moving and falling, its turn spinning), each
 ball pressed out of a solid by a stiff spring ('SOLID_OMEGA' for the
 vessel's mass), a damper and friction against the solid's own motion
-(the ring's rim runs at 94 m/s), the steps short ('CONTACT_STEP'); the
-station on rails, as heavy as it is (500 000 t), moves on as it was.
+(the ring's rim runs at 94 m/s), the steps short ('CONTACT_STEP'); what
+the solids push the vessel by pushes the station back as hard, at the
+point they meet ('STRUCK', 'STRUCK_TWIST': the host gives it the
+station after the call; it is flown too, '_station').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -52,6 +54,7 @@ from __future__ import annotations
 
 import warp as wp
 
+from ._ephemeris import SPAN
 from ._stationsolids import hullReach
 from ._station import REACH as STATION_REACH
 from ._vessel import MASS, SAG
@@ -75,8 +78,8 @@ GROUND_NEAR = _single(100.0)
 GROUND_STEP = _single(1.0 / 240.0)
 #  Steps longer than this are time warp: the vessel turns on rails.
 SNAP_STEP = _single(0.05)
-#  The sky is solved this often, s, and drawn between by Hermite.
-SKY_SPAN = _single(2000.0)
+#  The sky's table has a state this often, s, drawn between by Hermite.
+SKY_SPAN = _single(SPAN)
 #  The scratch's rows a vessel, each a row of the bodies: the sky now,
 #  its place and velocity at a span's start, at its end.
 NOW = wp.constant(0)
@@ -88,7 +91,8 @@ SLOTS = 5
 #  A vessel's row of 'STATE' numbers, what changes each frame, in and out
 #  at once (one copy each way): its place and velocity (big parts and
 #  small rests), turn (x y z w), spin (its own axes), height over the
-#  ground where the call begins, push (N), the keys on the wheels, its
+#  ground where the call begins, push (N), the keys on the attitude
+#  thrusters, its
 #  autopilot's mode and held turn, its anchor, its aim (pitch over the
 #  horizon, turn off the path, compass heading, rad; whether it is from
 #  the path); out, its legs touching and the steps taken; in again, its
@@ -100,7 +104,12 @@ SLOTS = 5
 #  station's solids; what anything in it feels: user, 2026-11-17, "there
 #  better be a physically simulated such fucking thing every where it
 #  needs to be calculated") and how fast its spin changed over it
-#  (rad/s², its own axes).
+#  (rad/s², its own axes); what its hull pushed the space station by
+#  (N s, the ecliptic's axes) and that push's twist about the station's
+#  middle (N m s); in again, whether the station's docking port has
+#  caught its nose (one), the port's mouth (the station's own axes), the
+#  turn the latch draws it to (its own axes in the station's, x y z w)
+#  and its nose (its own axes).
 PLACE_HI, PLACE_LO, SPEED_HI, SPEED_LO = 0, 3, 6, 9
 TURN, SPIN, HEIGHT, PUSH, STEER = 12, 16, 19, 20, 21
 MODE, HELD, ANCHOR = 24, 25, 29
@@ -109,7 +118,9 @@ TOUCHING, STEPS = 34, 35
 RCS, MATCH_SPIN = 36, 39
 BUMP = 42
 FELT, SPINNING = 43, 46
-STATE = 49
+STRUCK, STRUCK_TWIST = 49, 52
+LATCHED, LATCH_PORT, LATCH_TURN, LATCH_NOSE = 55, 56, 59, 63
+STATE = 66
 #  The shortest step, s, and the most a launch takes (a guard).
 LEAST_STEP = _single(1e-6)
 MOST_STEPS = 4000000
@@ -148,8 +159,16 @@ SHORT_FRAME = _single(2.0)
 TORUS = wp.constant(0)
 CYLINDER = wp.constant(1)
 GRADIENT_STEP = _single(0.01)
+#  A port that has caught a vessel's nose draws it in (user, 2026-11-18:
+#  "PHYSICS MUST BE REAL"; it snapped it into place): a spring from its
+#  nose to the port's mouth, the vessel's mass times 'LATCH_OMEGA'
+#  squared (a pull of some 6 s), damped as critically; a turning spring
+#  to the turn it docks at, its moments times 'LATCH_OMEGA' squared,
+#  damped likewise; their pushes the station's back.
+LATCH_OMEGA = _single(1.0)
 #  The autopilot: rad/s wanted a rad off, the fastest it turns (rad/s),
-#  and how fast the wheels take the vessel to the rate wanted (1/s).
+#  and how fast the attitude thrusters take the vessel to the rate wanted
+#  (1/s).
 RATE_GAIN = _single(0.8)
 RATE_MOST = _single(0.6)
 TORQUE_GAIN = _single(4.0)
@@ -165,21 +184,20 @@ MATCH = wp.constant(5)
 @wp.struct
 class Sky:
   """The heavenly bodies as the kernel has them: each body's parent (-1:
-  Sol) and depth under Sol, G M, radius; its path round its parent (a,
-  e, mean motion, mean anomaly at time nought, and the turn from its
-  plane to the ecliptic's axes); its spin vector; its air (the height
-  it ends at, nought: none; its densities' logarithms from 'airStart' in
-  'airLogs', every 'airStep' m)."""
+  Sol) and depth under Sol, G M, radius; the flown sky's table ('table':
+  a row of 'count' places then 'count' velocities each 'SKY_SPAN' s,
+  each body's from its parent, the first at 'tableStart' s, 'tableRows'
+  of them); its spin vector; its air (the height it ends at, nought:
+  none; its densities' logarithms from 'airStart' in 'airLogs', every
+  'airStep' m)."""
   count: int
   parents: wp.array(dtype=wp.int32)
   depths: wp.array(dtype=wp.int32)
   mus: wp.array(dtype=wp.float32)
   radii: wp.array(dtype=wp.float32)
-  axes: wp.array(dtype=wp.float32)
-  es: wp.array(dtype=wp.float32)
-  motions: wp.array(dtype=wp.float32)
-  anomalies: wp.array(dtype=wp.float32)
-  turns: wp.array(dtype=wp.mat33)
+  table: wp.array(dtype=wp.vec3)
+  tableStart: float
+  tableRows: int
   spins: wp.array(dtype=wp.vec3)
   airTops: wp.array(dtype=wp.float32)
   airStarts: wp.array(dtype=wp.int32)
@@ -190,22 +208,22 @@ class Sky:
 @wp.struct
 class Fleet:
   """The vessels as the kernel has them: each one's row of what changes
-  ('states', 'STATE' numbers a vessel: see 'PLACE_HI' and on, in and
-  out); its mass, moments of inertia, legs (four a vessel), drag (along,
-  across) and wheels' most torques. Scratch: the bodies' places from
-  their parents now, and their places and velocities at the span's
-  ends, 'SLOTS' rows a vessel. The hull's balls (x y z radius, its own
-  axes) and the station's solids (kind, from, to, radius: its own
-  axes), all vessels'; each vessel's near solids ('near', a bit each),
-  and the station from it at the call's start: its middle (from the
-  vessel), velocity, fall (its anchor's pull), turn (its own axes to
-  the ecliptic's) and spin (rad/s, the ecliptic's axes)."""
+  ('states', 'STATE' numbers a vessel: see 'PLACE_HI' and on, in and out);
+  its mass, moments of inertia, legs (four a vessel), drag (along, across)
+  and attitude thrusters' most torques. Scratch: the bodies' places from
+  their parents now, and their places and velocities at the span's ends,
+  'SLOTS' rows a vessel. The hull's balls (x y z radius, its own axes) and
+  the station's solids (kind, from, to, radius: its own axes), all vessels';
+  each vessel's near solids ('near', a bit each), and the station from it at
+  the call's start: its middle (from the vessel), velocity, fall (its
+  anchor's pull), turn (its own axes to the ecliptic's) and spin (rad/s, the
+  ecliptic's axes)."""
   states: wp.array2d(dtype=wp.float32)
   masses: wp.array(dtype=wp.float32)
   inertias: wp.array(dtype=wp.vec3)
   legs: wp.array(dtype=wp.vec3)
   drags: wp.array(dtype=wp.vec2)
-  wheels: wp.array(dtype=wp.vec3)
+  attitude: wp.array(dtype=wp.vec3)
   offsets: wp.array(dtype=wp.vec3)
   balls: wp.array(dtype=wp.vec4)
   solidKinds: wp.array(dtype=wp.int32)
@@ -325,38 +343,18 @@ def drifted(r0: wp.vec3, v0: wp.vec3, mu: float, dt: float) -> wp.mat33:
 
 
 @wp.func
-def eccentric(anomaly: float, e: float) -> float:
-  """Returns the eccentric anomaly of an ellipse's mean 'anomaly', by
-  Newton."""
-  E = anomaly
-  if e > 0.8:
-    E = PI
-  for _ in range(8):
-    E = E - (E - e * wp.sin(E) - anomaly) / (1.0 - e * wp.cos(E))
-  return E
-
-
-@wp.func
 def stateOf(sky: Sky, k: int, t: float) -> wp.mat33:
   """Returns where body 'k' is from its parent at time 't' (row 0, m)
-  and how fast it moves (row 1, m/s)."""
+  and how fast it moves (row 1, m/s): the table's row at 't' (a time of
+  its rows)."""
   out = wp.mat33()
-  parent = sky.parents[k]
-  if parent < 0:
-    return out
-  e = sky.es[k]
-  a = sky.axes[k]
-  E = eccentric(sky.anomalies[k] + sky.motions[k] * t, e)
-  cos = wp.cos(E)
-  sin = wp.sin(E)
-  root = wp.sqrt(1.0 - e * e)
-  speed = wp.sqrt(sky.mus[parent] * a) / (a * (1.0 - e * cos))
-  place = wp.mul(sky.turns[k], wp.vec3(a * (cos - e), a * root * sin, 0.0))
-  moving = wp.mul(sky.turns[k], wp.vec3(-speed * sin, speed * root * cos,
-                                        0.0))
-  for j in range(3):
-    out[0, j] = place[j]
-    out[1, j] = moving[j]
+  j = int(wp.round((t - sky.tableStart) / SKY_SPAN))
+  j = wp.clamp(j, 0, sky.tableRows - 1)
+  place = sky.table[(2 * j) * sky.count + k]
+  moving = sky.table[(2 * j + 1) * sky.count + k]
+  for c in range(3):
+    out[0, c] = place[c]
+    out[1, c] = moving[c]
   return out
 
 
@@ -383,42 +381,11 @@ def skyShifted(sky: Sky, fleet: Fleet, base: int) -> int:
 
 
 @wp.func
-def isNear(sky: Sky, b: int, k: int) -> bool:
-  """Returns whether body 'k' pulls a vessel kept from body 'b' enough
-  to be drawn each step: 'b' itself, its forebears, its children. The
-  rest (the other planets, a neighbour's moons) pull a vessel by a
-  millionth of a m/s² or less, as good as alike all span long: their
-  pull is taken once a span."""
-  if sky.parents[k] == b:
-    return True
-  c = b
-  while c >= 0:
-    if c == k:
-      return True
-    c = sky.parents[c]
-  return False
-
-
-@wp.func
-def farPull(sky: Sky, fleet: Fleet, base: int, b: int,
-            p: wp.vec3) -> wp.vec3:
-  """Returns the pull at 'p' (from body 'b') of the bodies not near it
-  ('isNear'), the sky as drawn in the scratch's 'NOW' row."""
-  out = wp.vec3(0.0, 0.0, 0.0)
-  for k in range(sky.count):
-    if not isNear(sky, b, k):
-      there = relativeOf(sky, fleet, base, k, b) - p
-      r2 = wp.dot(there, there)
-      out = out + there * (sky.mus[k] / (r2 * wp.sqrt(r2)))
-  return out
-
-
-@wp.func
 def skyDrawn(sky: Sky, fleet: Fleet, base: int, share: float,
-             span: float, b: int, every: bool) -> int:
+             span: float) -> int:
   """Puts each body's place from its parent 'share' of the way through
-  a span 'span' s long in the scratch's 'NOW' row (Hermite's cubic):
-  'every' body's, else those near body 'b' alone; returns nought."""
+  a span 'span' s long in the scratch's 'NOW' row (Hermite's cubic);
+  returns nought."""
   u = share
   u2 = u * u
   u3 = u2 * u
@@ -428,8 +395,6 @@ def skyDrawn(sky: Sky, fleet: Fleet, base: int, share: float,
   h11 = (u3 - u2) * span
   n = sky.count
   for k in range(n):
-    if not every and not isNear(sky, b, k):
-      continue
     fleet.offsets[base + NOW * n + k] = (
       fleet.offsets[base + START_PLACE * n + k] * h00
       + fleet.offsets[base + START_SPEED * n + k] * h10
@@ -630,13 +595,13 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   states = fleet.states
   b = int(states[i, ANCHOR])
   row = i * sky.count * SLOTS
-  end = start + seconds
-  spanStart = start
-  spanEnd = wp.min(end, start + SKY_SPAN)
+  spanStart = sky.tableStart + wp.floor(
+    (start - sky.tableStart) / SKY_SPAN) * SKY_SPAN
+  spanEnd = spanStart + SKY_SPAN
   skySolved(sky, fleet, row, spanStart)
   skyShifted(sky, fleet, row)
   skySolved(sky, fleet, row, spanEnd)
-  skyDrawn(sky, fleet, row, 0.0, spanEnd - spanStart, b, True)
+  skyDrawn(sky, fleet, row, (start - spanStart) / SKY_SPAN, SKY_SPAN)
   hi = vecAt(states, i, PLACE_HI)
   lo = vecAt(states, i, PLACE_LO)
   vhi = vecAt(states, i, SPEED_HI)
@@ -656,7 +621,7 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   push = states[i, PUSH]
   rcs = vecAt(states, i, RCS)
   matchSpin = vecAt(states, i, MATCH_SPIN)
-  wheels = fleet.wheels[i]
+  thrusters = fleet.attitude[i]
   steer = vecAt(states, i, STEER)
   mode = int(states[i, MODE])
   held = quatAt(states, i, HELD)
@@ -681,12 +646,16 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   spinRate = wp.length(solidSpin)
   stationAt = fleet.stationAt[i]
   stationVel = fleet.stationVel[i]
-  circling = wp.length(stationVel) / wp.max(wp.length(stationAt), 1.0)
   startAt = baseHi + baseLo
   contact = int(0)
   stiff = mass * SOLID_OMEGA * SOLID_OMEGA
   damp = 2.0 * SOLID_DAMPING * mass * SOLID_OMEGA
-  far = farPull(sky, fleet, row, b, hi + lo)
+  struck = wp.vec3(0.0, 0.0, 0.0)
+  struckTwist = wp.vec3(0.0, 0.0, 0.0)
+  latched = states[i, LATCHED] > 0.5
+  latchPort = vecAt(states, i, LATCH_PORT)
+  latchTurn = quatAt(states, i, LATCH_TURN)
+  latchNose = vecAt(states, i, LATCH_NOSE)
   while done < seconds and steps < MOST_STEPS:
     d = (hi - baseHi) + (lo - baseLo)
     height = heightOf(base, height0, radius, d)
@@ -697,11 +666,9 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
       dt = wp.min(dt, GROUND_STEP)
     contact = int(0)
     if near != 0:
-      turned = circling * done
-      there = stationAt * wp.cos(turned) + stationVel * (
-        wp.sin(turned) / wp.max(circling, 1.0e-9))
-      going = stationVel * wp.cos(turned) - stationAt * (
-        circling * wp.sin(turned))
+      coast = drifted(stationAt, stationVel, anchorMu, done)
+      there = stationAt + coast[0]
+      going = stationVel + coast[1]
       apart = wp.length(there - (hi + lo))
       if apart > STATION_CLEAR:
         closing = wp.max(wp.length(going - (vhi + vlo)), 1.0)
@@ -710,6 +677,8 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
       else:
         dt = wp.min(dt, CONTACT_STEP)
         contact = 1
+    if latched:
+      dt = wp.min(dt, CONTACT_STEP)
     dt = wp.max(dt, LEAST_STEP)
     # coast half a step on the anchor's pull
     arc = drifted(hi + lo, vhi + vlo, anchorMu, 0.5 * dt)
@@ -722,38 +691,29 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
     p = hi + lo
     v = vhi + vlo
     t = start + done + 0.5 * dt
-    while t > spanEnd and spanEnd < end:
+    while t > spanEnd:
       skyShifted(sky, fleet, row)
       spanStart = spanEnd
-      spanEnd = wp.min(end, spanStart + SKY_SPAN)
+      spanEnd = spanStart + SKY_SPAN
       skySolved(sky, fleet, row, spanEnd)
-      skyDrawn(sky, fleet, row, 0.0, spanEnd - spanStart, b, True)
-      far = farPull(sky, fleet, row, b, p)
-    span = spanEnd - spanStart
-    share = float(0.0)
-    if span > 0.0:
-      share = wp.clamp((t - spanStart) / span, 0.0, 1.0)
-    skyDrawn(sky, fleet, row, share, span, b, False)
-    # every other body pulls (those far, as at the span's start); the
-    # anchor's own fall is taken off
-    accel = far
+    share = wp.clamp((t - spanStart) / SKY_SPAN, 0.0, 1.0)
+    skyDrawn(sky, fleet, row, share, SKY_SPAN)
+    # every other body pulls, less its pull on the anchor (the anchor's
+    # own fall)
+    accel = wp.vec3(0.0, 0.0, 0.0)
     free = float(1e30)
     for k in range(sky.count):
-      if k == b or not isNear(sky, b, k):
+      if k == b:
         continue
-      there = relativeOf(sky, fleet, row, k, b) - p
+      fromAnchor = relativeOf(sky, fleet, row, k, b)
+      there = fromAnchor - p
       r2 = wp.dot(there, there)
-      if r2 > 0.0:
+      a2 = wp.dot(fromAnchor, fromAnchor)
+      if r2 > 0.0 and a2 > 0.0:
         r = wp.sqrt(r2)
-        accel = accel + there * (sky.mus[k] / (r2 * r))
+        accel = accel + there * (sky.mus[k] / (r2 * r)) - fromAnchor * (
+          sky.mus[k] / (a2 * wp.sqrt(a2)))
         free = wp.min(free, wp.sqrt(r2 * r / sky.mus[k]))
-    child = b
-    while sky.parents[child] >= 0:
-      parent = sky.parents[child]
-      off = fleet.offsets[row + child]
-      r2 = wp.dot(off, off)
-      accel = accel + off * (sky.mus[parent] / (r2 * wp.sqrt(r2)))
-      child = parent
     force = wp.vec3(0.0, 0.0, 0.0)
     torque = wp.vec3(0.0, 0.0, 0.0)
     nose = wp.quat_rotate(q, wp.vec3(0.0, 0.0, 1.0))
@@ -799,11 +759,9 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
       offset = solidAt + solidSpeed * tau + solidFall * (0.5 * tau * tau)
       flowing = solidSpeed + solidFall * tau
       if seconds > SHORT_FRAME:
-        turned = circling * tau
-        offset = stationAt * wp.cos(turned) + stationVel * (
-          wp.sin(turned) / wp.max(circling, 1.0e-9)) - startAt
-        flowing = stationVel * wp.cos(turned) - stationAt * (
-          circling * wp.sin(turned))
+        coast = drifted(stationAt, stationVel, anchorMu, tau)
+        offset = stationAt + coast[0] - startAt
+        flowing = stationVel + coast[1]
       turn = solidTurn
       if spinRate > 0.0:
         turn = wp.mul(wp.quat_from_axis_angle(solidSpin / spinRate,
@@ -849,9 +807,50 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
               shove = normal * press + rub
               force = force + shove
               torque = torque + wp.cross(touch, shove)
+              struck = struck - shove * dt
+              struckTwist = struckTwist + wp.cross(there, -shove) * dt
               bump = wp.max(bump, -into)
-    # the wheels: the autopilot, each key taking its own axis over
+    # the port that caught its nose draws it in, and turns it to its
+    # docking turn; as hard back on the station
+    if latched:
+      tau = done + 0.5 * dt
+      offset = solidAt + solidSpeed * tau + solidFall * (0.5 * tau * tau)
+      flowing = solidSpeed + solidFall * tau
+      if seconds > SHORT_FRAME:
+        coast = drifted(stationAt, stationVel, anchorMu, tau)
+        offset = stationAt + coast[0] - startAt
+        flowing = stationVel + coast[1]
+      turn = solidTurn
+      if spinRate > 0.0:
+        turn = wp.mul(wp.quat_from_axis_angle(solidSpin / spinRate,
+                                              spinRate * tau), solidTurn)
+      spinWorld = wp.quat_rotate(q, w)
+      arm = wp.quat_rotate(q, latchNose)
+      mouth = wp.quat_rotate(turn, latchPort)
+      drawn = (offset + mouth) - (d + arm)
+      drawing = (flowing + wp.cross(solidSpin, mouth)) - (
+        v + wp.cross(spinWorld, arm))
+      pull = (drawn * (LATCH_OMEGA * LATCH_OMEGA)
+              + drawing * (2.0 * LATCH_OMEGA)) * mass
+      force = force + pull
+      torque = torque + wp.cross(arm, pull)
+      struck = struck - pull * dt
+      struckTwist = struckTwist + wp.cross(mouth, -pull) * dt
+      off = rotationOf(wp.mul(wp.quat_inverse(q), wp.mul(turn,
+                                                         latchTurn)))
+      lagging = w - wp.quat_rotate_inv(q, solidSpin)
+      aligning = wp.cw_mul(inertia, off * (LATCH_OMEGA * LATCH_OMEGA)
+                           - lagging * (2.0 * LATCH_OMEGA))
+      twist = wp.quat_rotate(q, aligning)
+      torque = torque + twist
+      struckTwist = struckTwist - twist * dt
+    # the attitude thrusters: the autopilot, each key taking its own axis
+    # over; the anchor's pull twisting it (stronger on its near end)
     own = wp.quat_rotate(wp.quat_inverse(q), torque)
+    rb = wp.quat_rotate_inv(q, p)
+    rr = wp.dot(rb, rb)
+    own = own + wp.cross(rb, wp.cw_mul(inertia, rb)) * (
+      3.0 * anchorMu / (rr * rr * wp.sqrt(rr)))
     target = aimFor(mode, p, v, ground, height < airTop, spin, aimPitch,
                     aimTurn, aimHeading, aimTravel)
     aim = wp.vec3(target[0], target[1], target[2])
@@ -875,9 +874,9 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
           want = wp.vec3(want[0], want[1], 0.0)
         wanted = wp.cw_mul(inertia, want - w) * TORQUE_GAIN
       for k in range(3):
-        wanted[k] = wp.clamp(wanted[k], -wheels[k], wheels[k])
+        wanted[k] = wp.clamp(wanted[k], -thrusters[k], thrusters[k])
         if steer[k] != 0.0:
-          wanted[k] = steer[k] * wheels[k]
+          wanted[k] = steer[k] * thrusters[k]
       own = own + wanted
     # what pushes it but gravity, felt in its own axes over the step
     felt = felt + wp.quat_rotate_inv(q, force / mass) * dt
@@ -932,3 +931,5 @@ def flown(sky: Sky, fleet: Fleet, start: float, seconds: float,
   lasted = wp.max(done, LEAST_STEP)
   vecPut(states, i, FELT, felt / lasted)
   vecPut(states, i, SPINNING, (w - spun) / lasted)
+  vecPut(states, i, STRUCK, struck)
+  vecPut(states, i, STRUCK_TWIST, struckTwist)

@@ -14,7 +14,7 @@ import math
 
 from worQt.gaming.sandbox._skin import PARTS
 from worQt.gaming.space._aerospike import G0
-from worQt.gaming.space._cockpit import FLOOR, Cockpit
+from worQt.gaming.space._cockpit import FLOOR, NECK_YAW, Cockpit
 from worQt.gaming.space._crewman import JUMP, PUSH, STRIDE
 from worQt.gaming.space._turns import dot, norm
 
@@ -72,7 +72,9 @@ class TestCrewman(SpaceTest):
     self.assertEqual(wanting, 0)
 
   def test_righted(self) -> None:
-    """His up turns to stand against the pull; weightless it stays."""
+    """Standing, his feet turn his up to stand against the pull (a
+    sideways one within a few seconds, no harder than his stance holds);
+    weightless, touching nothing, he keeps spinning as he spins."""
     crewman = Cockpit().crewman
     crewman.unbuckled()
     crewman.righted((0.0, 0.0, 0.0), 10.0)
@@ -81,6 +83,39 @@ class TestCrewman(SpaceTest):
       crewman.righted((G0, 0.0, 0.0), 1.0 / 60.0)
     self.assertClose(crewman.up, (-1.0, 0.0, 0.0), 1e-3)
     self.assertLess(abs(dot(crewman.up, crewman.ahead)), 1e-9)
+    free = Cockpit().crewman
+    free.unbuckled()
+    free.touches, free.spin = False, (0.5, 0.0, 0.0)
+    free.righted((0.0, 0.0, 0.0), 2.0)
+    self.assertClose(free.spin, (0.5, 0.0, 0.0), 1e-9)
+    self.assertClose(free.up, (0.0, -math.sin(1.0), math.cos(1.0)), 1e-6)
+
+  def test_fans(self) -> None:
+    """Floating free, his jetpack's fans turn his body to where his head
+    looks (user, 2026-11-18: "AsgerJon can turn, because of his
+    'jetpack'"), and what they turned him by they give back to the air
+    (started and ended still: nought in all); off, his head turns alone,
+    no further than his neck reaches."""
+    crewman = Cockpit().crewman
+    crewman.unbuckled()
+    crewman.touches = False
+    yaw, pitch, back = crewman.righted((0.0, 0.0, 0.0), 3.0, 1.0, 0.0,
+                                       21.0)
+    self.assertLess(abs(yaw), 1e-3)
+    self.assertClose(crewman.ahead, (math.cos(1.0), math.sin(1.0), 0.0),
+                     1e-3)
+    self.assertClose(back, (0.0, 0.0, 0.0), 1e-3)
+    still = Cockpit().crewman
+    still.unbuckled()
+    still.touches = False
+    yaw, _, back = still.righted((0.0, 0.0, 0.0), 3.0, 1.0, 0.0, 0.0)
+    self.assertAlmostEqual(yaw, 1.0, 9)
+    self.assertClose(still.ahead, (1.0, 0.0, 0.0), 1e-12)
+    self.assertEqual(back, (0.0, 0.0, 0.0))
+    turned = Cockpit()
+    turned.gotUp()
+    turned.turned(-1000.0, 0.0)
+    self.assertAlmostEqual(turned.yaw, NECK_YAW, 9)
 
   def test_leap(self) -> None:
     """Pulled, a jump as high as 'JUMP'; weightless, a push off what he

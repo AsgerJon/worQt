@@ -52,9 +52,9 @@ from ._savegame import QUICK, SaveGame, keptOf, keptTo, savesFolder
 from ._savegame import skyOf, skyTo
 from ._sight import inSight
 from ._elevator import ARRIVED, AWAY, DECK_STOP, HUB_STOP, Elevator
-from ._elevator import backBoxes
+from ._elevator import CAGE_MASS, backBoxes
 from ._kolonihave import gardenSolids
-from ._night import MORNING, morningIn, nightIn
+from ._night import MORNING, morningIn, nightIn, restWhy
 from ._headlamp import Headlamp
 from ._inventory import HOTBAR, ITEMS, Inventory
 from ._jetpack import Jetpack
@@ -326,9 +326,13 @@ class SpaceWindow(QMainWindow):
     QMainWindow.__init__(self)
     self.setWindowTitle('Space')
     self.began = datetime.now(timezone.utc)
+    from worQt.phys._compiled import gpuDevice
+    self.device = gpuDevice() or 'cpu'
+    print('[space] flying the sky on %s (the first time ~20 s)'
+          % self.device, flush=True)
     if START_OUTSIDE:
-      self.began += timedelta(0, _nightStart(self.began))
-    self.system = solarSystemOn(julianOf(self.began))
+      self.began += timedelta(0, _nightStart(self.began, self.device))
+    self.system = solarSystemOn(julianOf(self.began), self.device)
     self.keeper = Timekeeper(self.system)
     self.station = (Station(self.system, -RISEN) if START_OUTSIDE else
                     Station(self.system))
@@ -342,6 +346,7 @@ class SpaceWindow(QMainWindow):
     self.vitals, self.bolts = Vitals(), rocketBolts()
     self.egg = Egg()
     self.jetpack, self.headlamp = Jetpack(), Headlamp()
+    self._turnedBack = (0.0, 0.0, 0.0)
     self.gravgun = GravGun()
     self.sleep = Sleep()
     self.docking = DockingPort(self.station)
@@ -515,13 +520,16 @@ class SpaceWindow(QMainWindow):
     self._warpKept()
     seconds = keeper.secondsOf(real)
     self._docking()
+    station = self.station
+    flown = (station.body,) if vessel.docked else (vessel, station.body)
+    self.flight.flown(flown, system, keeper.now, seconds, math.inf,
+                      station, keeper.factor > 1)
     if not vessel.docked:
-      self.flight.flown((vessel,), system, keeper.now, seconds, math.inf,
-                        self.station, keeper.factor > 1)
       self._bumped()
     self._flightRate.counted(0 if vessel.docked else self.flight.lastSteps,
                              time.perf_counter())
     keeper.ticked(seconds)
+    station.at = keeper.now
     self._dockedOrNot()
     self._approachKept(now)
     self.accelerometer.measured(vessel, seconds)
@@ -613,8 +621,7 @@ class SpaceWindow(QMainWindow):
       from ._cabinworld import CabinWorld
       from ._flight import Flight, preloadedFlight
       from ._looks import looksReady
-      from worQt.phys._compiled import gpuDevice
-      device = gpuDevice() or 'cpu'
+      device = self.device
       self._said('the flight computer on %s (the first time ~10 s)'
                  % device)
       from ._transfers import Transfers
@@ -988,7 +995,8 @@ class SpaceWindow(QMainWindow):
       return
     vessel, now = self.vessel, self.keeper.now
     if where == 'spawn':
-      vessel.docked, vessel.jolt = False, (0.0, 0.0, 0.0)
+      self.docking.parted(vessel, self.system, now)
+      vessel.jolt, vessel.latch = (0.0, 0.0, 0.0), None
       self._padded()
       self.walkway, self.towerLift = Walkway(True), TowerLift()
     elif where == 'hub' and not vessel.docked:
@@ -1206,13 +1214,18 @@ class SpaceWindow(QMainWindow):
 
   def _sleepWhy(self, ) -> str:
     """Returns why Asger may not sleep now ('' he may): on the ground,
-    the engine burning; off it, whatever stops a warp; the automatic
-    systems flying."""
+    the engine burning, or the rocket not at rest on all its legs (the
+    night is then skipped as it would pass: at rest on the turning
+    ground it stays at rest, carried round with it; user, 2026-11-18,
+    "PHYSICS MUST BE REAL"); off it, whatever stops a warp; the
+    automatic systems flying."""
     vessel = self.vessel
     if self.autodock.on or self.rendezvous.on or self.guidance.on:
       return 'the automatic systems are flying'
     if vessel.touching:
-      return 'the engine burns' if vessel.engine.throttle > 0.0 else ''
+      if vessel.engine.throttle > 0.0:
+        return 'the engine burns'
+      return restWhy(self.vessel, self.system)
     return self._noWarp()
 
   def _sleepKept(self, now: float) -> None:
@@ -1225,8 +1238,12 @@ class SpaceWindow(QMainWindow):
     if sleep.due(now):
       sleep.sent = True
       if vessel.touching:
+        station = self.station
+        self.flight.flown((station.body,), self.system, keeper.now,
+                          sleep.wait, math.inf, station, True)
         vessel.carried(self.system, sleep.wait)
         keeper.leapt(sleep.wait)
+        station.at = keeper.now
       else:
         keeper.aim(sleep.wait)
       return
@@ -1290,10 +1307,12 @@ class SpaceWindow(QMainWindow):
     pulling him), the loose things and the gravity egg's marble."""
     cockpit, accelerometer = self.cockpit, self.accelerometer
     crewman = cockpit.crewman
-    want = STILL
+    want, self._turnedBack = STILL, (0.0, 0.0, 0.0)
     if not crewman.buckled and self.vitals.cause is None:
       pull = accelerometer.pullAt(crewman.middle, crewman.velocity)
-      crewman.righted(pull, real)
+      fans = self.jetpack.thrust if self.jetpack.on else 0.0
+      cockpit.yaw, cockpit.pitch, self._turnedBack = crewman.righted(
+        pull, real, cockpit.yaw, cockpit.pitch, fans)
       held = {MOVING[key] for key in self.held if key in MOVING}
       if Qt.Key.Key_Shift not in self.held:
         self._stoodBy = False
@@ -1321,18 +1340,25 @@ class SpaceWindow(QMainWindow):
     """Pushes the vessel back by what the cabin's world pushed this
     frame ('CabinWorld.pushedBack'; Asger's own, 'asgerPushed', while he
     is in the cabin: out of it on the pad he stands on the tower and
-    the ground, Terra's, too heavy to stir); docked, nothing: the
-    station holds the rocket (it is not flown yet)."""
+    the ground, Terra's, too heavy to stir); docked, the pair (the
+    station's flown body: its rooms are the rocket's world's then)."""
     vessel, world = self.vessel, self.world
-    if vessel.docked:
-      return
     push, twist = world.pushedBack
     crewman = self.cockpit.crewman
-    if not crewman.sitting and cabinInside(crewman.middle) >= 0.0:
+    if not crewman.sitting and (vessel.docked or cabinInside(
+        crewman.middle) >= 0.0):
       own, turned = world.asgerPushed
       push = tuple(a + b for a, b in zip(push, own))
-      twist = tuple(a + b for a, b in zip(twist, turned))
-    if any(push) or any(twist):
+      twist = tuple(a + b + c for a, b, c in zip(twist, turned,
+                                                 self._turnedBack))
+    if not (any(push) or any(twist)):
+      return
+    if vessel.docked:
+      station = self.station
+      arm = rotated(station.body.turn, self.docking.held)
+      self.station.kickedAt(rotated(vessel.turn, push),
+                            rotated(vessel.turn, twist), arm)
+    else:
       vessel.kicked(push, twist)
 
   def _jetOf(self, ) -> tuple:
@@ -1385,14 +1411,40 @@ class SpaceWindow(QMainWindow):
       self._solidsSent(True, ways, tuple(
         box for elevator, way in zip(self.elevators, ways)
         for box in elevator.boxesOf(way)) + self._fixed[1])
-      for elevator in self.elevators:
-        elevator.moved(real)
+      self._hoisted(real, ways)
       self.bolts = rocketBolts() + stationBolts(ways, tuple(
         elevator.floor for elevator in self.elevators))
     elif self._stationed:
       self._solidsSent(False, (), ())
       self.bolts = rocketBolts()
     self._stationed = docked
+
+  def _hoisted(self, real: float, ways: tuple) -> None:
+    """Moves the station's elevators 'real' s on, each by its motor
+    ('_hoist'), pulled along its shaft as the station's turning pulls
+    there, carrying Asger if he is in its cage; what the station pushed
+    each cage by (its motor, its brake, the shaft's walls: the cage's
+    mass times how it sped up less how it is pulled) each pushes the
+    pair back by, at the cage (his own pushes the cabin's world gives
+    back: '_pushedBack')."""
+    crewman = self.cockpit.crewman
+    push, twist = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    for elevator, way in zip(self.elevators, ways):
+      middle = elevator.middleOf(way)
+      moving = tuple(elevator.speed * w for w in way)
+      pull = self.accelerometer.pullAt(middle, moving)
+      along = dot(pull, way)
+      rider = HEFT if not crewman.sitting and elevator.holds(
+        way, crewman.middle) else 0.0
+      faster = elevator.moved(real, along, rider)
+      back = tuple(-CAGE_MASS * (faster * w - p) * real
+                   for w, p in zip(way, pull))
+      push = [a + b for a, b in zip(push, back)]
+      twist = [a + b for a, b in zip(twist, cross(middle, back))]
+    vessel, station = self.vessel, self.station
+    arm = rotated(station.body.turn, self.docking.held)
+    station.kickedAt(rotated(vessel.turn, tuple(push)),
+                     rotated(vessel.turn, tuple(twist)), arm)
 
   def _solidsSent(self, docked: bool, ways: tuple, boxes: tuple) -> None:
     """Puts the station's or the launch tower's solids in the cabin's
@@ -1436,7 +1488,13 @@ class SpaceWindow(QMainWindow):
     if self.vessel.docked:
       return
     if self.walkway.attached:
-      self.towerLift.moved(real)
+      lift = self.towerLift
+      middle = lift.middleOf()
+      pull = self.accelerometer.pullAt(middle, (0.0, 0.0, lift.speed))
+      crewman = self.cockpit.crewman
+      rider = HEFT if not crewman.sitting and lift.holds(
+        crewman.middle) else 0.0
+      lift.moved(real, pull[2], rider)
       self._solidsSent(False, (), towerSolids() + self.towerLift.boxesOf())
       self._towered = True
     elif self._towered:
@@ -2000,18 +2058,23 @@ class SpaceWindow(QMainWindow):
   def _dockedOrNot(self, ) -> None:
     """After the frame's flight: docked, the station carries the rocket;
     else the latch catches it if it may (said, and heard)."""
-    vessel, now = self.vessel, self.keeper.now
+    vessel, now, docking = self.vessel, self.keeper.now, self.docking
     if vessel.docked:
-      self.docking.heldOn(vessel, self.system, now)
-      self._reading = self.docking.readingOf(vessel, self.system, now)
+      docking.heldOn(vessel, self.system, now)
+      self._reading = docking.readingOf(vessel, self.system, now)
       return
-    reading = self.docking.readingOf(vessel, self.system, now)
+    reading = docking.readingOf(vessel, self.system, now)
     self._reading = reading
-    if self.docking.caught(reading):
-      self.docking.latched(vessel, self.system, now)
+    if vessel.latch is not None:
+      if docking.home(vessel, reading, now):
+        docking.latched(vessel, self.system, now)
+        self._docks += 1
+        self._noteOf('Docked to Terra Prime')
+      return
+    if docking.caught(reading):
+      docking.captured(vessel, now)
       self.autodock.stopped(vessel)
-      self._docks += 1
-      self._noteOf('Docked to Terra Prime')
+      self._noteOf('Terra Prime\'s port caught the nose: drawing it in')
 
   def _statusOf(self, ) -> str:
     """Returns the AUTOPILOT's status line (user, 2026-11-17: "All the
@@ -2264,6 +2327,7 @@ class SpaceWindow(QMainWindow):
             'elevators': [keptOf(e) for e in self.elevators],
             'instruments': keptOf(self.instruments),
             'world': self.world.kept(), 'egg': keptOf(self.egg),
+            'station': keptOf(self.station),
             'jetpack': keptOf(self.jetpack),
             'headlamp': keptOf(self.headlamp),
             'gun': keptOf(gun) if gun.holding else None,
@@ -2295,6 +2359,7 @@ class SpaceWindow(QMainWindow):
     for elevator, kept in zip(self.elevators, state['elevators']):
       keptTo(elevator, kept)
     keptTo(self.egg, state['egg'])
+    keptTo(self.station, state['station'])
     keptTo(self.jetpack, state['jetpack'])
     keptTo(self.headlamp, state['headlamp'])
     self.world.keptFrom(state['world'])
@@ -2504,12 +2569,12 @@ def _signed(speed: float) -> str:
   return '-----'
 
 
-def _nightStart(now: datetime) -> float:
+def _nightStart(now: datetime, device: str) -> float:
   """Returns how long after 'now' the game starts outside: nought if it
   is night on the pad with 'NIGHT_LEFT' s of it left; else 'INTO_NIGHT'
-  s after the next dusk there."""
+  s after the next dusk there (the sky flown on 'device')."""
   from ._vessel import LEGS
-  system = solarSystemOn(julianOf(now))
+  system = solarSystemOn(julianOf(now), device)
   vessel = Vessel()
   vessel.stood(system, system.named('Terra'), PAD[0], PAD[1], 0.0)
   vessel.touching = len(LEGS)

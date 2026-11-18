@@ -3,6 +3,8 @@ SolarSystem is Sol and every heavenly body round it (user, 2026-11-16:
 "the Sun the star, provides the origin of the coordinate system"; "just
 put in the 9 planets around Terra, and yes, Pluto *is* a fucking
 planet!"): where each is from any other, and how they pull a vessel.
+Their paths are flown, each pulling every other (user, 2026-11-18:
+real gravity, "PHYSICS MUST BE REAL": '_ephemeris').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -11,7 +13,10 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from ._conic import Conic
+
 if TYPE_CHECKING:  # pragma: no cover, no mutate
+  from ._ephemeris import Ephemeris
   from ._heavenlybody import HeavenlyBody
 
 #  How far past a body's reach a vessel goes before it is kept from the
@@ -24,17 +29,17 @@ OUTWARD = 1.02
 class SolarSystem:
   """
   SolarSystem holds the heavenly bodies ('bodies', Sol first, each
-  parent before its children; each body by its index). Gravity runs
-  down its tree alone (user: "gravity affects only from planet pulled to
-  sun, moons pulled to planet, vehicles/Asger pulled to any"): each body
-  is pulled by its parent only, a vessel by every body. Where one body
-  is from another is summed along the tree from their nearest common
-  forebear ('relative'): nothing is ever taken from Sol and back, so the
-  numbers stay as small as the bodies are near. 'version' counts the
-  leaps folded in ('fold'). Its 'satellites' are made things on rails
-  round a body (a space station: user, 2026-11-17, "We are going to
-  have a space station in orbit"): each a 'HeavenlyBody' that pulls
-  nothing and holds nothing near it, folded with the bodies.
+  parent before its children; each body by its index) and their flown
+  paths ('ephemeris': each pulling every other). Where one body is from
+  another is summed along the tree from their nearest common forebear
+  ('relative'): nothing is ever taken from Sol and back, so the numbers
+  stay as small as the bodies are near. A vessel is pulled by every
+  body ('pullOn'). Its 'satellites' are made things flown round a body
+  (the space station: '_station'), listed for the views and folded with
+  it. 'version' counts the leaps folded in ('fold'); at
+  each the bodies' paths drawn (their 'conic', the ellipse each
+  follows from then on as if nothing else pulled it: the map's lines,
+  their reach) are taken anew from where they are.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -45,13 +50,14 @@ class SolarSystem:
   bodies: tuple
   parents: tuple
   version: int
+  ephemeris: Ephemeris
   satellites: list
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, bodies: tuple) -> None:
+  def __init__(self, bodies: tuple, ephemeris: Ephemeris) -> None:
     bodies = tuple(bodies)
     if not bodies or bodies[0].parent is not None:
       raise ValueError('a solar system starts with its star')
@@ -65,8 +71,11 @@ class SolarSystem:
       if body.parent not in bodies[:index]:
         raise ValueError('%s comes before its parent' % body.name)
       parents.append(bodies.index(body.parent))
+    if tuple(parents) != ephemeris.parents:
+      raise ValueError('the ephemeris flies another tree')
     self.bodies, self.parents, self.version = bodies, tuple(parents), 0
-    self.satellites = []
+    self.ephemeris, self.satellites = ephemeris, []
+    self._osculated()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -84,6 +93,22 @@ class SolarSystem:
     round body 'index'."""
     return tuple(k for k, parent in enumerate(self.parents)
                  if parent == index)
+
+  def stateOf(self, index: int, t: float) -> tuple:
+    """The 'stateOf' method returns where body 'index' is from its parent
+    and how fast it moves at time 't' (s since the last leap; the sky
+    flown on to it first, if it is not yet: '_ephemeris'): two triples,
+    m and m/s; Sol's are nought."""
+    if index == 0:
+      return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    if t > self.ephemeris.end:
+      self.ephemeris.coveredTo(t)
+    return self.ephemeris.stateOf(index, t)
+
+  def coveredTo(self, t: float) -> None:
+    """The 'coveredTo' method has the bodies flown on to time 't' (and
+    some way past: '_ephemeris.AHEAD')."""
+    self.ephemeris.coveredTo(t)
 
   def relative(self, body: int, to: int, t: float) -> tuple:
     """The 'relative' method returns where body 'body' is and how fast it
@@ -108,20 +133,16 @@ class SolarSystem:
     """The 'pullOn' method returns how a vessel at 'place' (m, from body
     'anchor', the ecliptic's axes) is pulled at time 't', m/s², as it is
     seen from its anchor: every body's pull on it, less the anchor's own
-    fall (its parent's pull on it, and its parent's fall). The flight's
-    kernel holds to this."""
+    fall (every other body's pull on the anchor). The flight's kernel
+    holds to this."""
     out = [0.0, 0.0, 0.0]
     for index, body in enumerate(self.bodies):
       there = self.relative(index, anchor, t)[0]
       _pulled(out, body.mu, there, place)
-    child = anchor
-    while self.parents[child] >= 0:
-      parent = self.parents[child]
-      there = self.relative(parent, child, t)[0]
-      fall = [0.0, 0.0, 0.0]
-      _pulled(fall, self.bodies[parent].mu, there, (0.0, 0.0, 0.0))
-      out = [a - b for a, b in zip(out, fall)]
-      child = parent
+      if index != anchor:
+        fall = [0.0, 0.0, 0.0]
+        _pulled(fall, body.mu, there, (0.0, 0.0, 0.0))
+        out = [a - b for a, b in zip(out, fall)]
     return tuple(out)
 
   def anchorFor(self, anchor: int, place: tuple, t: float) -> int:
@@ -140,23 +161,47 @@ class SolarSystem:
     return anchor
 
   def fold(self, seconds: float) -> None:
-    """The 'fold' method carries 'seconds' s into every body and
-    satellite (a leap): what was at time 'seconds' is at time nought."""
+    """The 'fold' method carries 'seconds' s into every body (a leap):
+    what was at time 'seconds' is at time nought; the bodies' drawn
+    paths taken anew from where they are then."""
+    self.ephemeris.coveredTo(seconds)
+    self.ephemeris.fold(seconds)
     for body in self.bodies:
       body.fold(seconds)
     for satellite in self.satellites:
       satellite.fold(seconds)
+    self.ephemeris.trimmed(0.0)
+    self._osculated()
+    self.version += 1
+
+  def restored(self, kept: dict) -> None:
+    """The 'restored' method flies its paths anew from what a saved game
+    kept of them ('Ephemeris.kept'), its drawn paths taken anew."""
+    self.ephemeris.keptFrom(kept)
+    self.ephemeris.coveredTo(0.0)
+    self._osculated()
     self.version += 1
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+  def _osculated(self, ) -> None:
+    """Takes each body's drawn path anew from where it is at time
+    nought: the ellipse (or hyperbola) it and its parent alone would
+    follow, their G M summed."""
+    for index, body in enumerate(self.bodies):
+      if index == 0:
+        continue
+      place, speed = self.stateOf(index, 0.0)
+      mu = self.bodies[self.parents[index]].mu + body.mu
+      body.conic = Conic.fromState(mu, place, speed)
+
   def _added(self, place: list, speed: list, index: int, t: float,
              sign: float) -> None:
     """Adds body 'index''s place and velocity from its parent at 't',
     times 'sign', to 'place' and 'speed'."""
-    there, moving = self.bodies[index].stateAt(t)
+    there, moving = self.stateOf(index, t)
     for k in range(3):
       place[k] += sign * there[k]
       speed[k] += sign * moving[k]

@@ -28,7 +28,7 @@ class SpaceTest(BaseTest):
 
   def systemOf(self, ) -> object:
     """Returns the solar system on 'TODAY'."""
-    return solarSystemOn(TODAY)
+    return solarSystemOn(TODAY, 'cpu')
 
   def warpedByHand(self, keeper: object, vessel: object,
                    system: object) -> None:

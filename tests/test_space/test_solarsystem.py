@@ -94,10 +94,10 @@ class TestSolarSystem(SpaceTest):
     self.assertClose(back[0], tuple(-x for x in direct[0]), 1e-3)
 
   def test_pull(self) -> None:
-    """On Terra's ground the pull is 9.82 m/s² down, the rest (Luna's
-    whole pull, Terra not falling to it; Sol's tide) a few hundred
-    thousandths; the pull seen from Terra and Terra's
-    own fall add up to every body's pull."""
+    """On Terra's ground the pull is 9.82 m/s² down, the rest (the
+    tides: Luna's and Sol's pull there less theirs on Terra) a few
+    millionths; the pull seen from Terra and Terra's own fall (every
+    other body's pull on it) add up to every body's pull."""
     system = self.systemOf()
     terra = system.named('Terra')
     body = system.bodies[terra]
@@ -106,16 +106,17 @@ class TestSolarSystem(SpaceTest):
     self.assertClose(pull, (-9.82025, 0.0, 0.0), 1e-4)
     luna = system.relative(system.named('Luna'), terra, 0.0)[0]
     toward = tuple(1e8 * x / math.dist(luna, (0, 0, 0)) for x in luna)
-    sol = system.relative(0, terra, 0.0)[0]
-    fall = tuple(system.bodies[0].mu * x / math.dist(sol, (0, 0, 0)) ** 3
-                 for x in sol)
-    every = [0.0, 0.0, 0.0]
+    fall, every = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
     for k, other in enumerate(system.bodies):
-      d = tuple(a - b for a, b in zip(system.relative(k, terra, 0.0)[0],
-                                      toward))
+      there = system.relative(k, terra, 0.0)[0]
+      d = tuple(a - b for a, b in zip(there, toward))
       r = math.dist(d, (0, 0, 0))
       for j in range(3):
         every[j] += other.mu * d[j] / r ** 3
+      if k != terra:
+        r = math.dist(there, (0, 0, 0))
+        for j in range(3):
+          fall[j] += other.mu * there[j] / r ** 3
     seen = system.pullOn(terra, toward, 0.0)
     self.assertClose(tuple(a + b for a, b in zip(seen, fall)), every, 1e-12)
 

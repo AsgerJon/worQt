@@ -17,7 +17,8 @@ import math
 from worQt.gaming.sandbox._gait import Gait
 
 from ._aerospike import G0
-from ._cockpit import CUSHION, FLOOR, HIPS, LIMBS, SCALE, seated
+from ._cockpit import CUSHION, FLOOR, HIPS, LIMBS, NECK_YAW, SCALE
+from ._cockpit import UP_PITCH_MOST, seated
 from ._turns import aboutAxis, cross, dot, norm, product, quaternionOf
 from ._turns import rotated, unit
 
@@ -50,9 +51,10 @@ SIT = 1.0
 #  hips (his eyes and head lower with it); stepping up, his eyes follow
 #  most of the way in 'EASE_STEP' s (not at once: a jump); he jumps
 #  'JUMP' m high. Pulled less, he pushes off what he touches at 'PUSH'
-#  m/s. Pulled harder than 'UPRIGHT' g his up turns to stand against the
-#  pull, most of the way in 'RIGHTING' s (standing on a floor within
-#  'SQUARE' (a cosine) of that, square on the floor).
+#  m/s. Pulled harder than 'UPRIGHT' g, standing, his feet turn him to
+#  stand against the pull (on a floor within 'SQUARE' (a cosine) of
+#  that, square on the floor; 'RIGHTING' is left of the old easing's
+#  time for the gait).
 WALK = 0.3
 STRIDE = 3.0
 CROUCHED = 0.3
@@ -68,6 +70,25 @@ SQUARE = 0.7
 #  before him).
 SWING = 0.6
 FLOAT_LEGS, FLOAT_ARMS = -0.35, -0.7
+#  His body turning (user, 2026-11-18: "PHYSICS MUST BE REAL"; "AsgerJon
+#  can turn, because of his 'jetpack'"): his moments of inertia, kg m²,
+#  about his own axes (ahead, left, up: a standing man's, across him and
+#  along him); his neck's reach either way ('_cockpit.NECK_YAW'); what
+#  turns his body toward where his head looks
+#  (and, standing, up against the pull): his feet on the floor, as hard
+#  as his weight on half his stance ('STANCE' m) holds, his hands on what
+#  he touches weightless ('ARMS' N m), his jetpack's fans across their
+#  lever ('FAN_ARM' m times their push), each a turning spring of
+#  'TURNING' rad/s critically damped, no harder than that; its steps, s.
+#  Nothing else turns him: weightless and touching nothing he keeps
+#  spinning as he spins.
+MOMENTS = (13.0, 13.0, 1.5)
+NECK = NECK_YAW
+STANCE = 0.15
+ARMS = 30.0
+FAN_ARM = 0.3
+TURNING = 6.0
+TURN_STEP = 1.0 / 240.0
 #  The keys' wishes: ahead, back, left, right.
 #  Off the sofa he stands this far before its seat's middle, m.
 LEAVE = 0.6
@@ -79,15 +100,18 @@ class Crewman:
   """
   Crewman is Asger's body: 'buckled' in his chair (then nothing of it
   moves) or out of it, its 'middle' and 'velocity' (the kernel's), its
-  'up' and 'ahead' (unit, across each other: his head turns from them),
+  'up' and 'ahead' (unit, across each other: his head turns from them)
+  and its 'spin' (rad/s, the vessel's own axes),
   whether it 'touches' anything and the way out of what it touches
   ('ground', summed normals' unit, None: nothing), his 'gait', and on
   the sofa ('lounge': the seat's
   top middle and the way it faces; None: not on it; user, 2026-11-17:
   "chill out by sitting in sofa"), sitting as in his chair, still.
   'unbuckled' gets him up, 'satDown' sits him if near enough; 'righted'
-  stands him against the pull; 'wantOf' is how his legs want to move for
-  the keys held; 'eyeOf' and 'figureOf' where his eyes and limbs are.
+  turns his body as his feet, hands or jetpack turn it toward where his
+  head looks (standing, up against the pull) and as it spins; 'wantOf'
+  is how his legs want to move for the keys held; 'eyeOf' and
+  'figureOf' where his eyes and limbs are.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -95,8 +119,9 @@ class Crewman:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  What a saved game keeps of it ('_savegame'): its fields.
-  SAVED = ('buckled', 'lounge', 'crouching', 'up', 'ahead', 'middle',
-           'velocity', 'touches', 'ground', 'crouched', 'rising', 'floor')
+  SAVED = ('buckled', 'lounge', 'crouching', 'up', 'ahead', 'spin',
+           'middle', 'velocity', 'touches', 'ground', 'crouched', 'rising',
+           'floor')
 
   #  Public Variables
   buckled: bool
@@ -104,6 +129,7 @@ class Crewman:
   velocity: tuple
   up: tuple
   ahead: tuple
+  spin: tuple
   touches: bool
   ground: tuple | None
   gait: Gait
@@ -229,29 +255,68 @@ class Crewman:
     self.crouched = bool(crouched)
     self.rising += float(rose)
 
-  def righted(self, pull: tuple, seconds: float) -> None:
-    """The 'righted' method turns his up a share of the way to stand
-    against 'pull' (m/s²; pulled less than 'UPRIGHT' g his up stays as
-    it is: floating, nothing is down), or standing on a floor, square on
-    it (as Minecraft's player stands: the pull sideways in a moving
-    elevator's cage does not tilt him) and moves his stride on."""
+  def righted(self, pull: tuple, seconds: float, yaw: float = 0.0,
+              pitch: float = 0.0, fans: float = 0.0) -> tuple:
+    """The 'righted' method turns his body 'seconds' s on, his head
+    turned 'yaw' and 'pitch' from it, pulled 'pull' (m/s²), his jetpack's
+    fans pushing 'fans' N (nought: off): standing (touching, pulled
+    harder than 'UPRIGHT' g) his feet turn him up against the pull
+    (square on the floor within 'SQUARE') and round to where his head
+    looks; weightless, touching something, his hands turn him to it
+    whole (his up his head's), or not touching, his jetpack's fans; else
+    he spins on (as a free body: his moments differ). Each no harder
+    than it can ('STANCE', 'ARMS', 'FAN_ARM'). His head keeps looking
+    where it looked (within his neck's reach: 'NECK'). Moves his stride
+    on. Returns his head's yaw and pitch from his body then and the
+    twist what turned him took back (N m s, the vessel's own axes: his
+    feet's and hands' on what he touches, the fans' on the air)."""
+    self._squared()
+    look, head = self.lookOf(yaw, pitch), self.headUpOf(yaw, pitch)
     weight = norm(pull)
-    if weight > UPRIGHT * G0:
-      want = tuple(-p / weight for p in pull)
-      if self.floor is not None and dot(self.floor, want) > SQUARE:
-        want = self.floor
-      share = 1.0 - math.exp(-seconds / RIGHTING)
-      up = unit(tuple(u + share * (w - u) for u, w in zip(self.up, want)))
-      ahead = tuple(a - dot(self.ahead, up) * u for a, u in zip(
-        self.ahead, up))
+    most, aim = 0.0, None
+    if self.touches and weight > UPRIGHT * G0:
+      up = tuple(-p / weight for p in pull)
+      if self.floor is not None and dot(self.floor, up) > SQUARE:
+        up = self.floor
+      facing = self.facing(yaw)
+      along = dot(facing, up)
+      ahead = tuple(f - along * u for f, u in zip(facing, up))
       if norm(ahead) < 1e-6:
-        ahead = cross(up, cross(self.ahead, up))
-      self.up, self.ahead = up, unit(ahead)
+        along = dot(self.up, up)
+        ahead = tuple(b - along * u for b, u in zip(self.up, up))
+      if norm(ahead) > 1e-6:
+        aim, most = (unit(ahead), up), HEFT * weight * STANCE
+    elif self.touches:
+      aim, most = (look, head), ARMS
+    elif fans > 0.0:
+      aim, most = (look, head), fans * FAN_ARM
+    back = [0.0, 0.0, 0.0]
+    steps = max(1, math.ceil(seconds / TURN_STEP))
+    dt = seconds / steps
+    for _ in range(steps):
+      torque = (0.0, 0.0, 0.0)
+      if aim is not None:
+        torque = self._turningTo(aim, most)
+      self._spun(torque, dt)
+      back = [b - q * dt for b, q in zip(back, torque)]
+    left = cross(self.up, self.ahead)
+    yaw = math.atan2(dot(look, left), dot(look, self.ahead))
+    yaw = max(-NECK, min(NECK, yaw))
+    pitch = math.asin(max(-1.0, min(1.0, dot(look, self.up))))
+    pitch = max(-UP_PITCH_MOST, min(UP_PITCH_MOST, pitch))
     along = tuple(v - dot(self.velocity, self.up) * u for v, u in zip(
       self.velocity, self.up))
     walking = self.touches and weight > WALK * G0
     self.gait.stepped(norm(along), walking, seconds)
     self.rising *= math.exp(-seconds / EASE_STEP)
+    return yaw, pitch, tuple(back)
+
+  def headUpOf(self, yaw: float, pitch: float) -> tuple:
+    """The 'headUpOf' method returns his head's up, his head turned 'yaw'
+    and 'pitch' from his body."""
+    facing = self.facing(yaw)
+    c, s = math.cos(pitch), math.sin(pitch)
+    return tuple(-s * f + c * u for f, u in zip(facing, self.up))
 
   def wantOf(self, held: set, yaw: float, pitch: float,
              pull: tuple) -> tuple:
@@ -374,11 +439,97 @@ class Crewman:
       out.append((index, place, product(body, limb)))
     return tuple(out)
 
+  def _turningTo(self, aim: tuple, most: float) -> tuple:
+    """Returns the twist turning his body to 'aim' (its ahead and up), a
+    turning spring critically damped, no harder than 'most' N m (the
+    vessel's own axes)."""
+    ahead, up = aim
+    left = cross(up, ahead)
+    body = self._rows()
+    wanted = tuple((ahead[i], left[i], up[i]) for i in range(3))
+    turn = product(quaternionOf(wanted), _inverse(quaternionOf(body)))
+    error = _rotationOf(turn)
+    own = _back(body, error)
+    spun = _back(body, self.spin)
+    torque = _forth(body, tuple(m * (TURNING * TURNING * e - 2.0 * TURNING
+                                     * w) for m, e, w in zip(
+      MOMENTS, own, spun)))
+    size = norm(torque)
+    if size > most:
+      torque = tuple(q * most / size for q in torque)
+    return torque
+
+  def _spun(self, torque: tuple, dt: float) -> None:
+    """Turns his body 'dt' s on, twisted 'torque' (N m, the vessel's own
+    axes): Euler's equations in its own axes, then turned by its spin."""
+    body = self._rows()
+    own = _back(body, self.spin)
+    pushed = _back(body, torque)
+    held = tuple(m * w for m, w in zip(MOMENTS, own))
+    gyro = cross(own, held)
+    own = tuple(w + (q - g) / m * dt for w, q, g, m in zip(
+      own, pushed, gyro, MOMENTS))
+    self.spin = _forth(body, own)
+    rate = norm(self.spin)
+    if rate * dt > 0.0:
+      turn = aboutAxis(tuple(s / rate for s in self.spin), rate * dt)
+      up = unit(rotated(turn, self.up))
+      ahead = rotated(turn, self.ahead)
+      ahead = unit(tuple(a - dot(ahead, up) * u for a, u in zip(ahead, up)))
+      self.up, self.ahead = up, ahead
+
+  def _squared(self, ) -> None:
+    """Makes his ahead square to his up (set from outside, it may lean on
+    it: any way across it, his old ahead's if it can)."""
+    self.up = unit(self.up)
+    along = dot(self.ahead, self.up)
+    ahead = tuple(a - along * u for a, u in zip(self.ahead, self.up))
+    if norm(ahead) < 1e-6:
+      other = (1.0, 0.0, 0.0) if abs(self.up[0]) < 0.9 else (0.0, 1.0, 0.0)
+      ahead = cross(self.up, cross(other, self.up))
+    self.ahead = unit(ahead)
+
+  def _rows(self, ) -> tuple:
+    """Returns his body's axes as rows' columns: ahead, left, up."""
+    left = cross(self.up, self.ahead)
+    return tuple((self.ahead[i], left[i], self.up[i]) for i in range(3))
+
   def _stood(self, ) -> None:
     """Stands him behind his chair, still, upright, facing ahead,
     touching the floor."""
     self.up, self.ahead, self.lounge = (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), None
+    self.spin = (0.0, 0.0, 0.0)
     self.middle = tuple(s + MIDDLE * u for s, u in zip(STAND, self.up))
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)
     self.crouched, self.rising, self.floor = False, 0.0, (0.0, 0.0, 1.0)
+
+
+def _back(rows: tuple, x: tuple) -> tuple:
+  """Returns 'x' in the axes whose columns are 'rows'."""
+  return tuple(sum(rows[i][j] * x[i] for i in range(3)) for j in range(3))
+
+
+def _forth(rows: tuple, x: tuple) -> tuple:
+  """Returns 'x' (in the axes whose columns are 'rows') in the vessel's
+  own."""
+  return tuple(sum(rows[i][j] * x[j] for j in range(3)) for i in range(3))
+
+
+def _inverse(turn: tuple) -> tuple:
+  """Returns the turn 'turn' undoes (w x y z)."""
+  w, x, y, z = turn
+  return w, -x, -y, -z
+
+
+def _rotationOf(turn: tuple) -> tuple:
+  """Returns 'turn' as a rotation vector (axis times angle, rad), the
+  short way round."""
+  w, x, y, z = turn
+  if w < 0.0:
+    w, x, y, z = -w, -x, -y, -z
+  size = math.sqrt(x * x + y * y + z * z)
+  if size < 1e-12:
+    return 2.0 * x, 2.0 * y, 2.0 * z
+  angle = 2.0 * math.atan2(size, w)
+  return x * angle / size, y * angle / size, z * angle / size

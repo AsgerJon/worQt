@@ -49,7 +49,7 @@ class TestStation(SpaceTest):
     system = self.systemOf()
     station = Station(system)
     terra = system.bodies[station.parent]
-    self.assertIn(station.body, system.satellites)
+    self.assertIn(station, system.satellites)
     for t in (0.0, 1000.0, 3000.0):
       place, velocity = station.stateAt(t)
       self.assertAlmostEqual(norm(place) - terra.radius, HIGH, 0)

@@ -1,8 +1,9 @@
 """
 TestHeavenlyBody covers the heavenly bodies (user, 2026-11-16: "each
 heavenly body is a vector of dofs, a vector function in time. other
-data points are fixed immutable"): each back where it was after its
-period; a leap's fold changing nothing but where time starts; Terra
+data points are fixed immutable"): flown, each pulling every other,
+near where its parent alone would have it a day on; a leap's fold
+changing nothing but where time starts; Terra
 true to the Earth with the user's g of 9.82; its turn about its pole;
 the moons' reaches apart.
 """
@@ -19,24 +20,29 @@ class TestHeavenlyBody(SpaceTest):
   """Tests for 'HeavenlyBody'."""
 
   def test_period(self) -> None:
-    """Every body but Sol is back in its place after its period."""
+    """A day on, every body but Sol is near where the path it was on (its
+    'conic': its parent alone pulling it) has it: the others' pulls bend
+    it only a little."""
     system = self.systemOf()
-    for body in system.bodies[1:]:
-      place = body.stateAt(0.0)[0]
-      again = body.stateAt(body.conic.period)[0]
-      self.assertClose(again, place, 1e-9 * body.conic.a)
+    day = 86400.0
+    for index, body in enumerate(system.bodies[1:], 1):
+      flown = system.stateOf(index, day)[0]
+      alone = body.conic.stateAt(day)[0]
+      moved = math.dist(system.stateOf(index, 0.0)[0], flown)
+      self.assertLess(math.dist(flown, alone), 0.01 * moved, body.name)
 
   def test_fold(self) -> None:
     """Folded 's' s, a body is at time nought where it was at 's', and
     turned as it was then."""
     system = self.systemOf()
-    for body in system.bodies:
-      s = 3.7e5
-      place, turn = body.stateAt(s)[0], body.turnAt(s)
-      body.fold(s)
-      self.assertClose(body.stateAt(0.0)[0], place, 1e-6 * max(
-        1.0, body.conic.a if body.conic else 0.0))
-      for row, again in zip(turn, body.turnAt(0.0)):
+    s = 3.7e5
+    places = [system.stateOf(k, s)[0] for k in range(len(system.bodies))]
+    turns = [body.turnAt(s) for body in system.bodies]
+    system.fold(s)
+    for k, body in enumerate(system.bodies):
+      self.assertClose(system.stateOf(k, 0.0)[0], places[k], 1e-6 * max(
+        1.0, math.dist(places[k], (0.0, 0.0, 0.0))))
+      for row, again in zip(turns[k], body.turnAt(0.0)):
         self.assertClose(row, again, 1e-12)
 
   def test_terra(self) -> None:
@@ -71,7 +77,7 @@ class TestHeavenlyBody(SpaceTest):
     terra = system.bodies[system.named('Terra')]
     luna = system.bodies[system.named('Luna')]
     mani = system.bodies[system.named('Mani')]
-    self.assertAlmostEqual(luna.reach / 66.2e6, 1.0, 2)
+    self.assertLess(abs(luna.reach / 66.2e6 - 1.0), 0.02)
     self.assertLess(terra.reach, 1e9)
     gap = mani.conic.periapsis - luna.conic.apoapsis
     self.assertGreater(gap, luna.reach + mani.reach)

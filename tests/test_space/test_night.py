@@ -17,7 +17,8 @@ import math
 
 from worQt.gaming.space._cockpit import Cockpit
 from worQt.gaming.space._furnishings import bedBox
-from worQt.gaming.space._night import MORNING, isDark, morningIn, shineOf
+from worQt.gaming.space._night import MORNING, isDark, morningIn, restWhy
+from worQt.gaming.space._night import shineOf
 from worQt.gaming.space._planets import PAD
 from worQt.gaming.space._sleep import FALL, WAKE, Sleep
 from worQt.gaming.space._timekeeper import Timekeeper
@@ -123,3 +124,25 @@ class TestNight(SpaceTest):
     self.assertTrue(sleep.on)
     self.assertEqual(sleep.shade(30.0 + 1.01 * WAKE), 0.0)
     self.assertFalse(sleep.on)
+
+  def test_rest(self) -> None:
+    """Standing still on its legs on the pad the rocket is at rest (a
+    night may be skipped); off a leg, moving or rocking it is not
+    (user, 2026-11-18: "PHYSICS MUST BE REAL")."""
+    system = self.systemOf()
+    vessel = self.padded(system)
+    vessel.touching = len(vessel.legs)
+    self.assertEqual(restWhy(vessel, system), '')
+    vessel.touching = len(vessel.legs) - 1
+    self.assertIn('legs', restWhy(vessel, system))
+    vessel.touching = len(vessel.legs)
+    vessel.placed(vessel.anchor, vessel.place, tuple(
+      v + 0.1 * u for v, u in zip(vessel.velocity, (1.0, 0.0, 0.0))),
+                  vessel.turn, vessel.spin)
+    self.assertIn('moving', restWhy(vessel, system))
+    vessel = self.padded(system)
+    vessel.touching = len(vessel.legs)
+    rocked = tuple(s + d for s, d in zip(vessel.spin, (0.01, 0.0, 0.0)))
+    vessel.placed(vessel.anchor, vessel.place, vessel.velocity, vessel.turn,
+                  rocked)
+    self.assertIn('rocking', restWhy(vessel, system))

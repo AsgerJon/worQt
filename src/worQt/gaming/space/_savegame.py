@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ._conic import Conic
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
@@ -28,8 +27,10 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 #  A save says which way it was written; another way is not read (2:
 #  Terra Prime's two ports, the docking port's 'side'; 3: no loose things
 #  in the cabin, user 2026-11-18: "remove them completely"; 4: Asger's
-#  jetpack and headlamp, the vessel's 'twirl').
-SAVE_VERSION = 4
+#  jetpack and headlamp, the vessel's 'twirl'; 5: the sky flown, each
+#  body pulling every other, and the space station flown, user
+#  2026-11-18: "PHYSICS MUST BE REAL").
+SAVE_VERSION = 5
 #  The quick save's file in the saves' folder (F5 writes it, F9 reads
 #  it).
 QUICK = 'quicksave.json'
@@ -69,30 +70,25 @@ def keptTo(thing: object, kept: dict) -> None:
     keptTo(getattr(thing, part), kept[part])
 
 
-def skyOf(system: SolarSystem) -> list:
-  """Returns where the sky is: each body's and satellite's name, path
-  (its conic's numbers; None: Sol's), turn and pole."""
-  out = []
-  for body in tuple(system.bodies) + tuple(system.satellites):
-    conic = body.conic
-    path = None if conic is None else [
-      conic.mu, conic.a, conic.e, conic.i, conic.node, conic.peri,
-      conic.anomaly]
-    out.append([body.name, path, body.angle, list(body.pole)])
-  return out
+def skyOf(system: SolarSystem) -> dict:
+  """Returns where the sky is: its flown paths (the row at the last
+  leap: '_ephemeris'), and each body's name, turn and pole."""
+  return {'flown': system.ephemeris.kept(),
+          'bodies': [[body.name, body.angle, list(body.pole)]
+                     for body in system.bodies]}
 
 
-def skyTo(system: SolarSystem, sky: list) -> None:
-  """Puts the sky 'skyOf' took back into 'system' (the same bodies and
-  satellites, in their order: raises if not), its time anew."""
-  bodies = tuple(system.bodies) + tuple(system.satellites)
-  if [body.name for body in bodies] != [row[0] for row in sky]:
+def skyTo(system: SolarSystem, sky: dict) -> None:
+  """Puts the sky 'skyOf' took back into 'system' (the same bodies, in
+  their order: raises if not): its paths flown on again from there,
+  each body turned as it was."""
+  bodies = system.bodies
+  if [body.name for body in bodies] != [row[0] for row in sky['bodies']]:
     raise ValueError('the save\'s sky has %s, this one %s' % (
-      [row[0] for row in sky], [body.name for body in bodies]))
-  for body, (_, path, angle, pole) in zip(bodies, sky):
-    body.restored(None if path is None else Conic(*path), angle,
-                  tuple(pole))
-  system.version += 1
+      [row[0] for row in sky['bodies']], [body.name for body in bodies]))
+  for body, (_, angle, pole) in zip(bodies, sky['bodies']):
+    body.restored(angle, tuple(pole))
+  system.restored(sky['flown'])
 
 
 class SaveGame:

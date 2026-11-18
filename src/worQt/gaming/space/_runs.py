@@ -17,6 +17,7 @@ from worQt.gaming._gamescope import scopedModule
 #  The tests the space stands on.
 SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_heavenlybody',
+               'tests.test_space.test_sky',
                'tests.test_space.test_solarsystem',
                'tests.test_space.test_timekeeper',
                'tests.test_space.test_flight',
@@ -54,6 +55,7 @@ SPACE_TESTS = ('tests.test_space.test_conic',
                'tests.test_space.test_egg',
                'tests.test_space.test_jetpack',
                'tests.test_space.test_pushedback',
+               'tests.test_space.test_hoist',
                'tests.test_sandbox.test_peepkinds',
                'tests.test_sandbox.test_mousetrail')
 
