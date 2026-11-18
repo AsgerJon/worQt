@@ -135,15 +135,23 @@ class TowerLift:
             and self.floor < z < self.floor + CAR_HIGH)
 
   def moved(self, seconds: float, along: float = -9.82,
-            rider: float = 0.0) -> float:
+            load: float = 0.0) -> float:
     """The 'moved' method moves it 'seconds' s on toward its stop, its
     motor driving it ('_hoist.hoisted': at most 'FAST', speeding up and
     slowing down at 'ACCEL', no harder than 'MOTOR_MOST'), pulled
-    'along' m/s² up its shaft (on the pad: its weight, down), carrying
-    'rider' kg; returns how fast it sped up (m/s², on the average)."""
+    'along' m/s² up its shaft (on the pad: its weight, down), pushed
+    'load' N s up it by what is in it over the last frame (Asger
+    standing in it: user, 2026-11-18, "PHYSICS MUST BE REAL"; the
+    cabin's world says how hard, '_cabinworld.CabinWorld.struck'), as
+    hard over this one (its drive weighs it, as a lift's does; standing
+    at a stop its brake takes it); returns how fast it sped up (m/s², on
+    the average)."""
+    if seconds <= 0.0:
+      return 0.0
     self.floor, self.speed, self.target, faster = hoisted(
-      self.floor, self.speed, self.target, seconds, along,
-      CAGE_MASS + rider, MOTOR_MOST, ACCEL, FAST)
+      self.floor, self.speed, self.target, seconds,
+      along + load / (CAGE_MASS * seconds), CAGE_MASS, MOTOR_MOST, ACCEL,
+      FAST)
     return faster
 
   def middleOf(self, ) -> tuple:

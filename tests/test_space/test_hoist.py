@@ -21,6 +21,8 @@ from worQt.gaming.space._towerlift import FOOT, TOP, TowerLift
 from . import SpaceTest
 
 FRAME = 1.0 / 60.0
+#  A rider's mass, kg.
+RIDER = 80.0
 
 
 class TestHoist(SpaceTest):
@@ -52,13 +54,14 @@ class TestHoist(SpaceTest):
     self.assertEqual((floor, speed, target, faster), (5.0, 0.0, None, 0.0))
 
   def test_lifts(self) -> None:
-    """The tower's lift takes a rider down to the ground and stops there;
-    a station's elevator takes him out to the deck against the turning's
-    pull, at most 'FAST'."""
+    """The tower's lift takes a rider (his weight pushing its floor down
+    each frame) down to the ground and stops there; a station's elevator
+    takes him out to the deck against the turning's pull (his weight
+    pushing it out), at most 'FAST'."""
     lift = TowerLift()
     lift.sent(FOOT)
     for _ in range(int(60.0 / FRAME)):
-      lift.moved(FRAME, -G0, 80.0)
+      lift.moved(FRAME, -G0, -RIDER * G0 * FRAME)
       if lift.target is None:
         break
     self.assertTrue(lift.atFoot)
@@ -66,7 +69,8 @@ class TestHoist(SpaceTest):
     elevator.sent(DECK_STOP)
     fastest = 0.0
     for _ in range(int(120.0 / FRAME)):
-      elevator.moved(FRAME, SPIN * SPIN * elevator.floor, 80.0)
+      pull = SPIN * SPIN * elevator.floor
+      elevator.moved(FRAME, pull, RIDER * pull * FRAME)
       fastest = max(fastest, abs(elevator.speed))
       if elevator.target is None:
         break

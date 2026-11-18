@@ -5,13 +5,12 @@ way Asger faces, but behind him and behind where all those books were
 at"; "The door out of the rocket should be connected to a retractable
 walk way. Here the quest begins"; "Asger must start outside in the
 night where we can reasonably spot Terra Prime from the ground"): the
-door is cut through both walls; it opens only unlocked with the walkway
-there, locks only shut, the walkway goes only with the door locked,
-clear of the hull all the way (user: "geometric collision between
-rocket and walk way");
-the walkway's rooms and the doorway join the cabin's; Asger stands in
-the tower's hall, walks the walkway to the shut door and no further, and
-through it open into the cabin; the door's key outside is worked from
+door is cut through both walls; dismissed, the walkway goes, clear of
+the hull all the way (user: "geometric collision between rocket and
+walk way"); the walkway's rooms and the doorway join the cabin's; Asger
+stands in the tower's hall, walks the walkway to the shut door (its
+leaf in the way: '_door', 'test_door') and no further, and through it
+open into the cabin; the door's key outside is worked from
 outside, its keys inside from inside; the quest ticks off its steps;
 the game starts at night with Terra Prime high over the pad.
 """
@@ -36,17 +35,16 @@ from worQt.gaming.space._planets import PAD, julianOf, solarSystemOn
 from worQt.gaming.space._quest import STEPS, Quest
 from worQt.gaming.space._spacewindow import RISEN, _nightStart
 from worQt.gaming.space._station import Station
-from worQt.gaming.space._turns import dot, unit
+from worQt.gaming.space._turns import dot, rotated, unit
 from worQt.gaming.space._vessel import LEGS, Vessel
 from worQt.gaming.space._walkway import DOOR_HIGH, DOOR_SPAN
 from worQt.gaming.space._launchtower import START, groundsInside
 from worQt.gaming.space._launchtower import towerSolids
-from worQt.gaming.space._walkway import SLIDE, SWING_AWAY, Walkway
+from worQt.gaming.space._walkway import SECTION_LONG, Walkway
+from worQt.gaming.space._door import TRAVEL, Door
 from worQt.gaming.space._walkway import doorwayInside, walkwayInside
-from worQt.gaming.space._walkwaymeshes import armParts, armPivot
 from worQt.gaming.space._walkwaymeshes import outsideKey
 from worQt.gaming.space._vessel import RADIUS
-from worQt.gaming.space._walkway import PAD_UP
 
 from . import FRAME, SpaceTest
 
@@ -57,30 +55,25 @@ class TestWalkway(SpaceTest):
   #  The cabin's kernels step on the CPU here: minutes, not half one.
   __time_out__ = 900.0
 
-  def test_door(self) -> None:
-    """Open, it slides fully open over 'SLIDE' s; it shuts; it locks
-    only shut; locked it will not open; the walkway goes only with the
-    door locked, swings away and is gone (no door then)."""
+  def test_away(self) -> None:
+    """At the door its rooms join the cabin's; dismissed (once) it folds
+    on its motor, its sections into each other, then swings away on the
+    other, and is gone (its rooms with it) within half a minute (user,
+    2026-11-18: "harmonica away and turn to a different direction")."""
     walkway = Walkway(True)
     self.assertEqual(walkway.outside, 1)
-    self.assertEqual(walkway.dismissed(), 'lock the door first')
-    self.assertEqual(walkway.opened(), '')
-    walkway.moved(0.5 * SLIDE)
-    self.assertFalse(walkway.passable)
-    walkway.moved(0.6 * SLIDE)
-    self.assertTrue(walkway.passable)
-    self.assertEqual(walkway.outside, 3)
-    self.assertEqual(walkway.locking(), 'close the door first')
-    self.assertEqual(walkway.closed(), '')
-    walkway.moved(SLIDE)
-    self.assertTrue(walkway.shut)
-    self.assertEqual(walkway.locking(), '')
-    self.assertEqual(walkway.opened(), 'the door is locked')
     self.assertEqual(walkway.dismissed(), '')
     self.assertEqual(walkway.outside, 0)
-    walkway.moved(SWING_AWAY / math.radians(12.0) + 5.0)
+    self.assertNotEqual(walkway.dismissed(), '')
+    folded = None
+    for _ in range(int(30.0 / FRAME)):
+      walkway.moved(FRAME, 0.0, 0.0)
+      if folded is None and walkway.swing > 1e-3:
+        folded = walkway.long
+      if walkway.away:
+        break
     self.assertTrue(walkway.away)
-    self.assertNotEqual(walkway.locking(), '')
+    self.assertLess(abs(folded - SECTION_LONG), 0.01)
     self.assertTrue(Walkway(False).away)
 
   def test_window(self) -> None:
@@ -131,8 +124,8 @@ class TestWalkway(SpaceTest):
 
   def test_rooms(self) -> None:
     """The tower's hall and the walkway are rooms, the hull's wall is
-    not; the doorway runs through it from the walkway into the
-    cabin."""
+    not; the doorway runs through it from the walkway (the two meeting
+    a hair past the hull's skin) into the cabin."""
     self.assertGreater(groundsInside((-15.0, 0.0, FLOOR + 1.0), False,
                                      False), 0.9)
     self.assertGreater(walkwayInside((-8.0, 0.0, FLOOR + 1.0)), 0.9)
@@ -140,7 +133,10 @@ class TestWalkway(SpaceTest):
     self.assertLess(walkwayInside(wall), 0.0)
     self.assertFalse(inCabin(wall))
     self.assertGreater(doorwayInside(wall), 0.3)
-    self.assertGreater(doorwayInside((-5.4, 0.0, FLOOR + 1.0)), 0.1)
+    self.assertLess(doorwayInside((-5.4, 0.0, FLOOR + 1.0)), 0.0)
+    self.assertGreater(walkwayInside((-5.4, 0.0, FLOOR + 1.0)), 0.1)
+    meet = (-5.06, 0.0, FLOOR + 1.0)
+    self.assertGreater(min(doorwayInside(meet), walkwayInside(meet)), 0.0)
     self.assertTrue(inCabin((-4.6, 0.0, FLOOR + 1.0)))
     self.assertGreater(doorwayInside((-4.6, 0.0, FLOOR + 1.0)), 0.3)
 
@@ -156,15 +152,18 @@ class TestWalkway(SpaceTest):
     soles = START[0]
     crewman.placed((soles[0], 0.0, soles[2] + MIDDLE), (0.0, 0.0, 0.0), 0,
                    (0.0, 0.0, 0.0))
-    world.walked(1)
-    world.stationed(False, (), towerSolids())
+    world.walked(3)
+    world.stationed(False, (), towerSolids() + Walkway(True).boxesOf())
+    door = Door(False)
+    world.doorPlaced(*door.boxOf())
     self._walked(world, meter, cockpit, set(), 0.5)
     self.assertLess(abs(crewman.soles()[2] - FLOOR), 0.02)
     self._walked(world, meter, cockpit, {'ahead'}, 6.0)
     skin = capsuleRadius(FLOOR + 1.0)
     self.assertLess(crewman.middle[0], -skin)
     self.assertGreater(crewman.middle[0], -skin - 0.51)
-    world.walked(3)
+    door.arc = TRAVEL
+    world.doorPlaced(*door.boxOf())
     self._walked(world, meter, cockpit, {'ahead'}, 1.5)
     self.assertTrue(inCabin(crewman.middle), crewman.middle)
     self.assertLess(abs(crewman.soles()[2] - FLOOR), 0.02)
@@ -238,30 +237,28 @@ class TestWalkway(SpaceTest):
     crewman = cockpit.crewman
     for _ in range(int(round(seconds / FRAME))):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
-      crewman.righted(pull, FRAME)
+      cockpit.yaw, cockpit.pitch, _ = crewman.righted(
+        pull, FRAME, cockpit.yaw, cockpit.pitch)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
       world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
 
   def test_clear(self) -> None:
-    """Dismissed, the walkway slides back and swings away without ever
-    cutting into the rocket's hull (at the door a hair off it)."""
-    rows = numpy.concatenate([part[:, :3] for part, _ in
-                              armParts().values()])
+    """Out at the door and folding and swinging away, its sections never
+    cut into the rocket's hull (at the door a hair off it)."""
     walkway = Walkway(True)
-    walkway.opened()
-    walkway.closed()
-    walkway.locking()
     walkway.dismissed()
     nearest = math.inf
-    while not walkway.away:
-      a = walkway.swing
-      c, s = math.cos(a), math.sin(a)
-      local = rows[:, 0] - walkway.back
-      x = armPivot()[0] + c * local - s * rows[:, 1]
-      y = armPivot()[1] + s * local + c * rows[:, 1]
-      z = armPivot()[2] + rows[:, 2] - PAD_UP
-      skin = numpy.where(z < FLOOR, RADIUS, numpy.vectorize(
-        capsuleRadius)(z))
-      nearest = min(nearest, float((numpy.hypot(x, y) - skin).min()))
-      walkway.moved(0.05)
-    self.assertGreater(nearest, 0.05)
+    for _ in range(int(30.0 / FRAME)):
+      for middle, half, turn, _ in walkway.boxesOf():
+        for sx in (-1.0, 1.0):
+          for sy in (-1.0, 1.0):
+            for sz in (-1.0, 1.0):
+              x, y, z = (m + r for m, r in zip(middle, rotated(turn, (
+                sx * half[0], sy * half[1], sz * half[2]))))
+              skin = RADIUS if z < FLOOR else capsuleRadius(z)
+              nearest = min(nearest, math.hypot(x, y) - skin)
+      if walkway.away:
+        break
+      walkway.moved(FRAME, 0.0, 0.0)
+    self.assertGreater(nearest, 0.0)
+    self.assertLess(nearest, 0.2)

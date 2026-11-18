@@ -33,7 +33,10 @@ MOST_STEPS = 120
 #  The solids' places kept for the space station's (docked: its
 #  elevators' cages, its garden's furniture) or the launch tower's (its
 #  stairs' steps), after the cabin's own; Asger's box after them.
-STATION_SLOTS = 320
+STATION_SLOTS = 352
+#  What 'CabinWorld.struck' reads besides the station's or the tower's
+#  solids: the door's leaf, the rooms' faces (the rocket's, the pad's).
+DOOR, ROCKET_FACES, PAD_FACES = -1, -2, -3
 #  Where a solid not there is kept (far from everything), m.
 AWAY = (0.0, 0.0, -1e4)
 #  His legs wanting nothing ('stepped''s 'want': no velocity, not
@@ -65,8 +68,12 @@ class CabinWorld:
   frame as long as the real time passed, in steps of 'STEP' (none, no
   steps: Asger's box alone, a step a frame). Docked to the space
   station ('stationed') its rooms join the cabin's and its solids
-  (moving, some) the cabin's own. 'shown' says where each loose thing
-  is and
+  (moving, some) the cabin's own. Its axes are the rocket's (the
+  cabin's world) or the pad's ('furnished' False: the pad's world, user,
+  2026-11-18: "the pad needs to be there"; the cabin's own solids not
+  in it); 'posed' says where the rocket and the pad are in them (their
+  rooms are where they are). 'shown' says where each loose thing is
+  and
   how it is turned from how it rests; 'thuds' counts the meetings begun
   hard and 'loudest' says how hard the loudest of the last frame was
   (m/s, by its heft); 'landed' how fast Asger met anything the last
@@ -80,7 +87,14 @@ class CabinWorld:
   chair stopping him as he sat down, its push (N s) and the twist about
   its middle (N m s), its own axes; 'asgerPushed' what Asger out of his
   chair pushed back likewise (the vessel's while he is in its cabin;
-  outside it, on the pad, the tower's and the ground's).
+  outside it, on the pad, the tower's and the ground's); what of
+  Asger's pushes the station's or the tower's solids or the door's leaf
+  took ('struck': the window pushes what moves them by it, an
+  elevator's cage, the door) and the twist his meetings gave him over
+  the last frame ('twisted', N m s: user, 2026-11-18, "You Spin me
+  Round (Like a Record)": what he meets pushes him where it meets him,
+  his spin back into 'Crewman.spin'). The door's leaf has a solid's
+  slot of its own ('doorPlaced').
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -103,7 +117,8 @@ class CabinWorld:
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, device: str, things: tuple = None) -> None:
+  def __init__(self, device: str, things: tuple = None,
+               furnished: bool = True) -> None:
     import warp as wp
 
     from . import _cabin_kernels
@@ -113,6 +128,8 @@ class CabinWorld:
     self.lastSteps, self.lastMs = 0, 0.0
     self.pushedBack = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     self.asgerPushed = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    self.twisted, self._doorMoving = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    self._struck = None
     self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     self.docked, self.outside = False, 0
     things = looseThings() if things is None else tuple(things)
@@ -139,7 +156,7 @@ class CabinWorld:
             locals_.append((sx * inset[0], sy * inset[1], sz * inset[2]))
             radii.append(skin)
     self.pointCount = len(owners)
-    held = solids()
+    held = solids() if furnished else ()
     self._held = len(held)
     vec3, quat = wp.vec3, wp.quat
     self.places = self._sent(self._places, vec3)
@@ -153,21 +170,26 @@ class CabinWorld:
     self.owners = self._sent(owners, wp.int32)
     self.locals = self._sent(locals_, vec3)
     self.radii = self._sent(radii, wp.float32)
-    away = [AWAY] * (STATION_SLOTS + 1)
-    self.own = self._held + STATION_SLOTS
+    away = [AWAY] * (STATION_SLOTS + 2)
+    self.doorSlot = self._held
+    self._first = self._held + 1
+    self.own = self._first + STATION_SLOTS
     self._middles = numpy.array([m for m, _, _ in held] + away,
                                 numpy.float64)
     self._solidTurns = numpy.array([_turnOf(axes) for _, _, axes in held]
                                    + [(1.0, 0.0, 0.0, 0.0)] * (
-                                     STATION_SLOTS + 1), numpy.float64)
+                                     STATION_SLOTS + 2), numpy.float64)
     self._halves = numpy.array([h for _, h, _ in held] + [
-      (0.1, 0.1, 0.1)] * (STATION_SLOTS + 1), numpy.float64)
+      (0.1, 0.1, 0.1)] * (STATION_SLOTS + 2), numpy.float64)
     self.solidMiddles = self._sent(self._middles, vec3)
     self.solidTurns = self._sent(_warpQuats(self._solidTurns), quat)
     self.solidHalves = self._sent(self._halves, vec3)
     self.solidVelocities = self._sent(numpy.zeros((len(self._middles), 3)),
                                       vec3)
-    self.ways = self._sent(numpy.zeros((4, 3)), vec3)
+    self._layout = numpy.zeros((_cabin_kernels.LAYOUT_ROWS, 3))
+    for first in (_cabin_kernels.ROCKET, _cabin_kernels.PAD):
+      self._layout[first + 1:first + 4] = numpy.eye(3)
+    self.layout = self._sent(self._layout, vec3)
     self.touched = self._sent([0] * len(owners), wp.int32)
     self.pushes = self._sent(numpy.zeros((len(masses), 3)), vec3)
     self.twists = self._sent(numpy.zeros((len(masses), 3)), vec3)
@@ -182,6 +204,16 @@ class CabinWorld:
     self.near = self._sent([0] * _cabin_kernels.NEAR_MOST, wp.int32)
     self.nearCount = self._sent([0], wp.int32)
     self.reaction = self._sent(numpy.zeros((4, 3)), vec3)
+    self.turned = self._sent(numpy.zeros((3, 3)), vec3)
+    self.solidPushes = self._sent(numpy.zeros((len(self._middles) + 2,
+                                               3)), vec3)
+    self.solidMoments = self._sent(numpy.zeros((len(self._middles) + 2,
+                                                3)), vec3)
+    self.meets = self._sent(numpy.zeros((
+      _cabin_kernels.MEET_ROWS * _cabin_kernels.MEETINGS_MOST, 3)), vec3)
+    self.meetOwners = self._sent([0] * _cabin_kernels.MEETINGS_MOST,
+                                 wp.int32)
+    self._boxUp = (0.0, 0.0, 1.0)
     reaches = [0.0] * len(masses)
     for owner, local, radius in zip(owners, locals_, radii):
       reaches[owner] = max(reaches[owner], math.hypot(*local) + radius)
@@ -197,6 +229,7 @@ class CabinWorld:
         self.solidHalves, self.solidVelocities, self.bodyNear,
         self.bodyNearCount, 0.0, 1.0 / 60.0], [], [], [], device, None,
       False, False, True)
+    self._struck = self._unstruck()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -204,7 +237,7 @@ class CabinWorld:
 
   def stepped(self, seconds: float, accelerometer: Accelerometer,
               crewman: Crewman, want: tuple, gun: tuple = None,
-              jet: tuple = (0.0, 0.0, 0.0)) -> None:
+              jet: tuple = (0.0, 0.0, 0.0), here: bool = True) -> None:
     """The 'stepped' method moves the cabin's bodies 'seconds' s on (real
     time), feeling what 'accelerometer' read; Asger ('crewman') too,
     unless he sits, his legs as 'want' asks ('Crewman.wantOf' and a leap:
@@ -212,23 +245,28 @@ class CabinWorld:
     Grav-Gun's push ('gun': its force on Asger over his mass, m/s², the
     loose thing it acts on (its index in 'shown', None: none) and its
     force on that over its mass; None: no push) and his jetpack's
-    ('jet': its force on him over his mass, m/s²), its own axes; and
-    says what they pushed back by ('pushedBack', 'asgerPushed')."""
+    ('jet': its force on him over his mass, m/s²), its own axes ('here'
+    False: he is in the other world, the pad's or the cabin's: his box
+    leaves this one without his chair stopping him); and says what they
+    pushed back by ('pushedBack', 'asgerPushed')."""
     self.pushedBack = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     self.asgerPushed = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     if seconds <= 0.0:
       return
     began = time.perf_counter()
     wp = self.wp
-    present = 0 if crewman.sitting else 1
+    present = 1 if here and not crewman.sitting else 0
     if present and not self._present:
       self._asgerSent(crewman)
     seated = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     if self._present and not present:
-      seated = self._seated()
+      if here:
+        seated = self._seated()
       self._asgerAway()
     self._present = present
     self.reaction.zero_()
+    self.solidPushes.zero_()
+    self.solidMoments.zero_()
     vec3 = wp.vec3
     felt, turning, speeding = (vec3(*accelerometer.felt),
                                vec3(*accelerometer.turning),
@@ -241,7 +279,8 @@ class CabinWorld:
       for name, value in (
           ('felt', felt), ('turning', turning), ('speeding', speeding),
           ('wanted', vec3(*wanted)), ('leap', vec3(*leap)),
-          ('up', vec3(*crewman.up)), ('walking', int(walking)),
+          ('up', vec3(*crewman.up)), ('was', vec3(*self._boxUp)),
+          ('spin', vec3(*crewman.spin)), ('walking', int(walking)),
           ('wanting', int(wanting)), ('gun', vec3(*onAsger)),
           ('jet', vec3(*jet)),
           ('crouch', 1 if crewman.crouching else 0),
@@ -255,6 +294,7 @@ class CabinWorld:
         nearby.set_param_by_name(name, value)
       nearby.launch()
       walked.launch()
+      self._boxUp = tuple(crewman.up)
     if not self.pointCount:
       self._taken(crewman, present, seated)
       self.lastSteps = present
@@ -294,7 +334,7 @@ class CabinWorld:
       raise ValueError('%d station solids, room for %d' % (
         len(boxes), STATION_SLOTS))
     wp = self.wp
-    first = self._held
+    first = self._first
     count = STATION_SLOTS
     middles = numpy.array([AWAY] * count, numpy.float64)
     halves = numpy.full((count, 3), 0.1)
@@ -304,7 +344,8 @@ class CabinWorld:
       middles[k], halves[k], turns[k], velocities[k] = (middle, half,
                                                         turn, velocity)
     if docked:
-      self.ways.assign(numpy.asarray(ways, numpy.float32))
+      self._layout[:len(ways)] = ways
+      self.layout.assign(self._layout.astype(numpy.float32))
     self._middles[first:first + count] = middles
     self._halves[first:first + count] = halves
     self._solidTurns[first:first + count] = turns
@@ -314,10 +355,47 @@ class CabinWorld:
       numpy.float32))
     every = numpy.zeros((len(self._middles), 3), numpy.float32)
     every[first:first + count] = velocities
+    every[self.doorSlot] = self._doorMoving
     self.solidVelocities.assign(every)
     self.docked = bool(docked)
     if self._pressed is not None:
       self._pressed.set_param_by_name('docked', 1 if docked else 0)
+
+  def restationed(self, first: int, boxes: tuple) -> None:
+    """The 'restationed' method moves the station's or the tower's solids
+    'first' on to 'boxes' (as 'stationed' takes them: the lift's car,
+    the walkway's sections moving), the rest as they are."""
+    if not boxes:
+      return
+    k = self._first + first
+    if first < 0 or first + len(boxes) > STATION_SLOTS:
+      raise ValueError('solids %d to %d, room for %d' % (
+        first, first + len(boxes), STATION_SLOTS))
+    middles = numpy.asarray([b[0] for b in boxes], numpy.float64)
+    halves = numpy.asarray([b[1] for b in boxes], numpy.float64)
+    turns = numpy.asarray([b[2] for b in boxes], numpy.float64)
+    moving = numpy.asarray([b[3] for b in boxes], numpy.float64)
+    n = len(boxes)
+    self._middles[k:k + n], self._halves[k:k + n] = middles, halves
+    self._solidTurns[k:k + n] = turns
+    self.solidMiddles[k:k + n].assign(middles.astype(numpy.float32))
+    self.solidHalves[k:k + n].assign(halves.astype(numpy.float32))
+    self.solidTurns[k:k + n].assign(_warpQuats(turns).astype(
+      numpy.float32))
+    self.solidVelocities[k:k + n].assign(moving.astype(numpy.float32))
+
+  def posed(self, rocket: tuple, pad: tuple) -> None:
+    """The 'posed' method says where the rocket and the pad are in its
+    world (each its place and its three axes, the world's own axes: in
+    the cabin's world the rocket's own, nought and its axes; in the
+    pad's world the pad's), so their rooms are where they are
+    ('_cabin_kernels.roomGap'); sent only if they moved."""
+    rows = numpy.asarray(tuple(rocket) + tuple(pad), numpy.float64)
+    first = self.kernels.ROCKET
+    if numpy.array_equal(rows, self._layout[first:first + 8]):
+      return
+    self._layout[first:first + 8] = rows
+    self.layout.assign(self._layout.astype(numpy.float32))
 
   def walked(self, outside: int) -> None:
     """The 'walked' method joins the rooms outside the rocket on the pad
@@ -327,6 +405,43 @@ class CabinWorld:
       self.outside = int(outside)
       if self._pressed is not None:
         self._pressed.set_param_by_name('outside', self.outside)
+
+  def doorPlaced(self, middle: tuple, half: tuple, turn: tuple,
+                 velocity: tuple) -> None:
+    """The 'doorPlaced' method puts the door's leaf in the world ('_door':
+    its middle, half sizes, turn (w x y z) and velocity, the vessel's own
+    axes, as the frame begins; the world moves it on through the
+    frame)."""
+    k = self.doorSlot
+    self._middles[k], self._halves[k] = middle, half
+    self._solidTurns[k], self._doorMoving = turn, velocity
+    for array, value in (
+        (self.solidMiddles, middle), (self.solidHalves, half),
+        (self.solidTurns, (turn[1], turn[2], turn[3], turn[0])),
+        (self.solidVelocities, velocity)):
+      array[k:k + 1].assign(numpy.asarray([value], numpy.float32))
+
+  def struck(self, first: int, count: int) -> tuple:
+    """The 'struck' method returns what Asger pushed the station's or the
+    tower's solids 'first' to 'first' + 'count' by over the last frame
+    (as 'stationed' put them; 'DOOR': the door's leaf; 'ROCKET_FACES',
+    'PAD_FACES': the rooms' faces, the rocket's, the pad's), summed: the
+    push (N s) and its twist about the world's middle (N m s), its
+    axes."""
+    n = count
+    if first == DOOR:
+      k, n = self.doorSlot, 1
+    elif first == ROCKET_FACES:
+      k, n = self.own + 1, 1
+    elif first == PAD_FACES:
+      k, n = self.own + 2, 1
+    elif first < 0:
+      raise ValueError('no solids from %d' % first)
+    else:
+      k = self._first + first
+    pushes, moments = self._struck
+    return (tuple(pushes[k:k + n].sum(0).tolist()),
+            tuple(moments[k:k + n].sum(0).tolist()))
 
   def solidBoxes(self, ) -> tuple:
     """The 'solidBoxes' method returns the solids in the world now, as
@@ -382,6 +497,17 @@ class CabinWorld:
     self.spins.assign(shapes['spins'].astype(numpy.float32))
     self.teleported()
 
+  def left(self, ) -> None:
+    """The 'left' method takes Asger's box out of this world (he went
+    into the other, the pad's or the cabin's: its next step with him
+    'here' sends his box anew from where he is then; he pushes nothing
+    here any more)."""
+    if self._present:
+      self._asgerAway()
+    self._present = 0
+    self._struck = self._unstruck()
+    self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
   def teleported(self, ) -> None:
     """The 'teleported' method sends Asger's box anew with the next step
     from where he is then (a saved game loaded, the debug menu's warp;
@@ -390,6 +516,8 @@ class CabinWorld:
     self.stationed(False, (), ())
     self._asgerAway()
     self._present = 0
+    self.turned.zero_()
+    self._struck = self._unstruck()
     self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
   def shown(self, ) -> tuple:
@@ -417,15 +545,16 @@ class CabinWorld:
       self.body, self.bodyVelocity, self.ground, self.contact,
       self.bodyMet,
       self.thudding, self.solidMiddles, self.solidTurns, self.solidHalves,
-      self.solidVelocities, self.ways, self.near, self.nearCount,
-      self.reaction, zero, zero, zero, zero, zero,
-      wp.vec3(0.0, 0.0, 1.0), 0, 0, zero, zero, 0, 0, 0, self.own,
-      1.0 / 60.0], [], [], [], device, None, False, False, True)
+      self.solidVelocities, self.layout, self.near, self.nearCount,
+      self.reaction, self.turned, self.solidPushes, self.solidMoments,
+      self.meets, self.meetOwners, zero, zero, zero, zero, zero,
+      wp.vec3(0.0, 0.0, 1.0), zero, zero, 0, 0, zero, zero, 0, 0, 0,
+      self.own, 1.0 / 60.0], [], [], [], device, None, False, False, True)
     pressed = wp.launch(kernels.pressed, self.pointCount, [
       self.places, self.turns, self.velocities, self.spins, self.masses,
       self.halves, self.owners, self.locals, self.radii,
       self.solidMiddles, self.solidTurns, self.solidHalves,
-      self.solidVelocities, self.ways, self.bodyNear,
+      self.solidVelocities, self.layout, self.bodyNear,
       self.bodyNearCount, self.touched,
       self.pushes, self.twists, self.asger, self.thudding, self.landing,
       zero, 0, 0, 0, 0, 0.0], [], [], [], device, None, False, False,
@@ -446,6 +575,8 @@ class CabinWorld:
     self.bodyVelocity.assign(numpy.asarray([crewman.velocity],
                                            numpy.float32))
     self.contact.assign(numpy.asarray([(1.0, 1.0, 0.0)], numpy.float32))
+    self.turned.zero_()
+    self._boxUp = tuple(crewman.up)
 
   def _asgerAway(self, ) -> None:
     """Takes Asger's box out of the loose things' way (he sits)."""
@@ -486,14 +617,28 @@ class CabinWorld:
       velocity = tuple(self.bodyVelocity.numpy()[0].astype(
         numpy.float64).tolist())
       self._last = middle, velocity
+      turned = self.turned.numpy().astype(numpy.float64)
       crewman.placed(middle, velocity, int(round(met[0][0])),
                      tuple(met[1].tolist()), bool(contact[2] > 0.5),
-                     float(met[0][1]), tuple(met[2].tolist()))
+                     float(met[0][1]), tuple(met[2].tolist()),
+                     tuple(turned[0].tolist()))
+      self.twisted = tuple(turned[1].tolist())
+      self._struck = (
+        self.solidPushes.numpy().astype(numpy.float64),
+        self.solidMoments.numpy().astype(numpy.float64))
       self.landed = float(met[0][2])
+    else:
+      self._struck = self._unstruck()
     count, loudest = self.thudding.numpy().tolist()
     self.thuds += int(round(count))
     self.loudest = float(loudest)
     self.thudding.zero_()
+
+  def _unstruck(self, ) -> tuple:
+    """Returns no pushes on its solids (each slot's push and twist
+    nought)."""
+    nought = numpy.zeros((len(self._middles) + 2, 3))
+    return nought, nought
 
   def _sent(self, values: object, kind: object) -> object:
     """Returns 'values' as a Warp array of 'kind' on the device."""

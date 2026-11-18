@@ -16,7 +16,9 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
+import numpy
 from PySide6.QtCore import QEvent, QPointF, Qt, QTimer
 from PySide6.QtWidgets import QMainWindow
 
@@ -28,7 +30,7 @@ from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
 from ._autoflight import SAID, Autoflight
 from ._bolts import holdOf, middleBolt, rocketBolts, stationBolts
-from ._cabinworld import STEP, STILL
+from ._cabinworld import DOOR, PAD_FACES, ROCKET_FACES, STEP, STILL
 from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
 from ._cabinmixer import THUD, THUDS
 from ._cabinmixer import FOOD_NEAR, LAUGHS, SNACKS, TOLD, TOWING, TOWS
@@ -39,7 +41,7 @@ from ._dashboard import LEGENDS
 from ._dockingguidance import RCS_ACCEL, REACH, DockingGuidance
 from ._dockingport import DockingPort
 from ._egg import Egg
-from ._crewman import HEFT, MIDDLE, SIT
+from ._crewman import HEFT, MIDDLE, SIT, Crewman
 from ._dashpictures import picturesReady
 from ._furnishings import candleLight, looseThings, rationCrate, sofaSeat
 from ._instruments import Instruments, limitNotch
@@ -70,14 +72,21 @@ from ._spaceviewport import SpaceViewport
 from ._station import Station
 from ._teleprinter import ICONS
 from ._timekeeper import Timekeeper
-from ._turns import cross, dot, norm, quaternionOf, rotated, unit
+from ._turns import cross, dot, norm, product, quaternionOf, rotated
+from ._turns import unit
 from ._vessel import MASS, Vessel
 from ._vitals import Vitals
-from ._walkway import Walkway, doorwayInside, walkwayInside
+from ._walkway import SECTIONS, Walkway, doorwayInside, walkwayInside
+from ._door import LEAF_MASS, MIDDLE_FAR, Door
+from ._pad import Pad, fromPad, movingFromPad, movingToPad, posesOf
+from ._pad import toPad, turnedFromPad, turnedToPad
 from ._launchtower import LIFT_FOOT, LIFT_TOP, START, groundsInside
-from ._launchtower import towerSolids
+from ._launchtower import rocketLegs, towerSolids
 from ._towerlift import FOOT, TOP, TowerLift
 from ._cockpit import FLOOR, inCabin
+
+if TYPE_CHECKING:  # pragma: no cover, no mutate
+  from ._cabinworld import CabinWorld
 
 #  The window ticks once a frame drawn (user, 2026-11-17: "it feels like
 #  it polls every t0, whilst somethign else renders at t1. If t0 != t1,
@@ -118,8 +127,19 @@ LAUGH_EVERY = 5.0
 FOOD_HEARD = (2.0, 6.0)
 #  The launch tower's lift is called from this near its door, m.
 LIFT_CALL = 2.5
-#  Something this near the doorway (m from it) keeps the door open.
-DOORWAY_CLEAR = 0.35
+#  The doorway through the hull, a room of the cabin's world always
+#  ('_cabin_kernels.rocketRooms'): the door's leaf shuts it.
+DOORWAY = 2
+#  Asger goes out into the pad's world once his middle is this far out
+#  of the doorway and the cabin (their rooms, m: less than nought), in
+#  again once it is this far into either.
+WORLD_CROSS = (-0.15, 0.05)
+#  The rocket's pose in the pad's axes ('_pad.Pad.rocketIn'): standing
+#  where it stands nominally; off Terra, far away.
+STILL_POSE = ((0.0, 0.0, 0.0), ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+                                (0.0, 0.0, 1.0)), (0.0, 0.0, 0.0),
+              (0.0, 0.0, 0.0))
+FAR_POSE = ((0.0, 0.0, 1e7),) + STILL_POSE[1:]
 STUCK = 60.0
 #  Why nothing is saved or loaded while the game readies.
 READYING = 'the game is still readying'
@@ -337,6 +357,12 @@ class SpaceWindow(QMainWindow):
     self.station = (Station(self.system, -RISEN) if START_OUTSIDE else
                     Station(self.system))
     self.walkway, self.quest = Walkway(START_OUTSIDE), Quest()
+    self.door, self._doorSent = Door(not START_OUTSIDE), None
+    self.pad, self.padMeter = Pad(self.system), Accelerometer()
+    self.padWorld, self._padman = None, Crewman()
+    self._padman.buckled, self._outside = False, False
+    self._rocket, self._padSolids, self._padDoorSent = STILL_POSE, None, None
+    self._padMoving, self._legsFirst = None, 0
     self.towerLift, self._towered = TowerLift(), False
     self._manualOpen, self._laughedAt = False, -LAUGH_EVERY
     self.vessel = Vessel()
@@ -544,7 +570,8 @@ class SpaceWindow(QMainWindow):
     self.instruments.acted(real, vessel, system, keeper, self.guidance,
                            self.mapOpen, self._header())
     told = list(self.instruments.told(vessel, system, self.inside))
-    told[THUDS], told[THUD] = self.world.thuds, self.world.loudest
+    told[THUDS] = self.world.thuds + self.padWorld.thuds
+    told[THUD] = max(self.world.loudest, self.padWorld.loudest)
     told[HURTS], told[EATS] = self.vitals.hurts, self.vitals.meals
     told[TOWING] = 0.0 if self.gravgun.target is None else 1.0
     told[TOWS] = self.gravgun.pulses
@@ -636,6 +663,7 @@ class SpaceWindow(QMainWindow):
                                                  - began, device))
       began = time.perf_counter()
       self.world = CabinWorld(device)
+      self.padWorld = CabinWorld(device, (), False)
       self._said('the cabin\'s physics ready in %.1f s'
                  % (time.perf_counter() - began))
       self.files, self.flight = files, Flight(device)
@@ -877,8 +905,10 @@ class SpaceWindow(QMainWindow):
     elif action in ('door', 'door outside'):
       self._doorWorked()
     elif action == 'lock':
-      why = self.walkway.locking()
-      self._noteOf(why or ('The door is locked' if self.walkway.locked
+      why = self.door.locking() if (self.walkway.attached
+                                    or not self.door.locked) else (
+        'the walkway is gone: it is a long way down')
+      self._noteOf(why or ('The door is locked' if self.door.locked
                            else 'The door is unlocked'))
     elif action == 'walkway':
       self._dismissed()
@@ -999,10 +1029,11 @@ class SpaceWindow(QMainWindow):
       vessel.jolt, vessel.latch = (0.0, 0.0, 0.0), None
       self._padded()
       self.walkway, self.towerLift = Walkway(True), TowerLift()
+      self.door = Door(False)
     elif where == 'hub' and not vessel.docked:
       self.autoflight.letGo(vessel)
       self.guidance.stopped(vessel)
-      self.walkway = Walkway(False)
+      self.walkway, self.door = Walkway(False), Door(True)
       vessel.engine.lit = True
       self.docking.teleported(vessel, self.system, now)
     self.keeper.realtime()
@@ -1030,11 +1061,11 @@ class SpaceWindow(QMainWindow):
   def _promptOf(self, control: object) -> str:
     """Returns what working 'control' does now (the door's keys as the
     door is: open or shut, locked or not)."""
-    walkway = self.walkway
+    door = self.door
     if control.action in ('door', 'door outside'):
-      return 'Close the door' if walkway.wanted else 'Open the door'
+      return 'Close the door' if door.wanted else 'Open the door'
     if control.action == 'lock':
-      return 'Unlock the door' if walkway.locked else 'Lock the door'
+      return 'Unlock the door' if door.locked else 'Lock the door'
     vessel = self.vessel
     valued = {'warp': 'Warp %sx' % _grouped(self.keeper.factor, 0),
               'limit': 'Engine limited to %g g' % LIMITS[limitNotch(
@@ -1051,27 +1082,56 @@ class SpaceWindow(QMainWindow):
     return said
 
   def _doorWorked(self, ) -> None:
-    """Opens the door, or closes it if nothing is in the doorway
-    (said)."""
-    walkway = self.walkway
-    if walkway.wanted:
-      if self._inDoorway():
-        self._noteOf('Something is in the doorway')
-        return
-      walkway.closed()
+    """Opens the door (with the walkway at it), or closes it (what is in
+    the doorway stops it: '_door'), said."""
+    door = self.door
+    if door.wanted:
+      door.closed()
       self._noteOf('The door slides shut')
       return
-    why = walkway.opened()
+    why = door.opened() if self.walkway.attached else (
+      'the walkway is gone: it is a long way down')
     self._noteOf(('The door stays shut: %s' % why) if why else
                  'The door slides open')
 
-  def _inDoorway(self, ) -> bool:
-    """Returns whether Asger or something loose is in the doorway."""
-    crewman = self.cockpit.crewman
-    points = [place for place, _ in self.world.shown()]
-    if not crewman.sitting:
-      points += [crewman.middle, crewman.soles()]
-    return any(doorwayInside(point) > -DOORWAY_CLEAR for point in points)
+  def _doorMoved(self, real: float) -> None:
+    """Moves the door 'real' s on ('_door'), pushed by what Asger pushed
+    its leaf by over the last frame (round the rocket's axis), pulled as
+    the cabin pulls at its leaf, and puts its leaf in the cabin's world;
+    the rocket takes back what moving the leaf took (its mass times how
+    it sped up, less what Asger gave it if his pushes are not the
+    rocket's: outside on the pad); the leaf's weight the rocket carries
+    already (its mass is the rocket's)."""
+    door = self.door
+    way, middle = door.wayAt()
+    moving = tuple(door.speed * w for w in way)
+    pull = self.accelerometer.pullAt(middle, moving)
+    still = self.accelerometer.pullAt(middle, (0.0, 0.0, 0.0))
+    struck = self.world.struck(DOOR, 1)
+    if self._outside:
+      rocket = self._rocket
+      hit, about = self.padWorld.struck(DOOR, 1)
+      about = tuple(a - c for a, c in zip(about, cross(rocket[0], hit)))
+      struck = (turnedFromPad(rocket, hit), turnedFromPad(rocket, about))
+    push = struck[1][2] / MIDDLE_FAR
+    faster = door.moved(real, dot(pull, way), push)
+    back = [-LEAF_MASS * (faster * w - (p - s)) * real
+            for w, p, s in zip(way, pull, still)]
+    if self._outside:
+      back = [b + a for b, a in zip(back, struck[0])]
+    if any(back):
+      self._kicked(tuple(back), cross(middle, tuple(back)))
+    box = door.boxOf()
+    if box != self._doorSent:
+      self.world.doorPlaced(*box)
+      self._doorSent = box
+    if self.walkway.attached:
+      rocket = self._rocket
+      posed = (toPad(rocket, box[0]), box[1], product(
+        _turnOfPose(rocket), box[2]), movingToPad(rocket, box[0], box[3]))
+      if posed != self._padDoorSent:
+        self.padWorld.doorPlaced(*posed)
+        self._padDoorSent = posed
 
   def _dismissed(self, ) -> None:
     """Sends the walkway away if Asger and everything loose are in the
@@ -1083,7 +1143,8 @@ class SpaceWindow(QMainWindow):
     if any(not inCabin(place) for place, _ in self.world.shown()):
       self._noteOf('Something loose is out on the walkway')
       return
-    why = self.walkway.dismissed()
+    why = self.walkway.dismissed() if self.door.locked else (
+      'lock the door first')
     self._noteOf(why or 'The walkway swings back to the tower')
 
   def _launched(self, ) -> None:
@@ -1161,7 +1222,7 @@ class SpaceWindow(QMainWindow):
     done = quest.done
     checks = (
       ('aboard', not crewman.sitting and inCabin(crewman.middle)),
-      ('locked', self.walkway.locked and 'aboard' in done),
+      ('locked', self.door.locked and 'aboard' in done),
       ('dismissed', not self.walkway.attached),
       ('seated', crewman.buckled and 'aboard' in done),
       ('armed', self.autoflight.engaged
@@ -1292,8 +1353,8 @@ class SpaceWindow(QMainWindow):
     if crewman.buckled:
       pull = self.accelerometer.pullAt(EYE, (0.0, 0.0, 0.0))
     else:
-      pull = self.accelerometer.pullAt(crewman.middle, crewman.velocity)
-      self.vitals.fell(self.world.landed)
+      pull = self._pullOnAsger()
+      self.vitals.fell(self._asgerWorld().landed)
     self.vitals.lived(real, norm(pull) / G0, crewman.buckled,
                       self.keeper.factor > 1)
     if alive and self.vitals.cause is not None:
@@ -1307,9 +1368,11 @@ class SpaceWindow(QMainWindow):
     pulling him), the loose things and the gravity egg's marble."""
     cockpit, accelerometer = self.cockpit, self.accelerometer
     crewman = cockpit.crewman
+    self._padKept()
+    self._worldChosen()
     want, self._turnedBack = STILL, (0.0, 0.0, 0.0)
     if not crewman.buckled and self.vitals.cause is None:
-      pull = accelerometer.pullAt(crewman.middle, crewman.velocity)
+      pull = self._pullOnAsger()
       fans = self.jetpack.thrust if self.jetpack.on else 0.0
       cockpit.yaw, cockpit.pitch, self._turnedBack = crewman.righted(
         pull, real, cockpit.yaw, cockpit.pitch, fans)
@@ -1324,40 +1387,207 @@ class SpaceWindow(QMainWindow):
       if self._leaping:
         leap = crewman.leapOf(pull)
       want = (wanted, walking, wanting, leap)
+    elif not crewman.sitting:
+      pull = self._pullOnAsger()
+      cockpit.yaw, cockpit.pitch, _ = crewman.righted(
+        pull, real, cockpit.yaw, cockpit.pitch, 0.0, True)
     self._leaping = False
     self._towerKept(real)
     self._aboard(real)
-    self.walkway.moved(real)
-    self.world.walked(self.walkway.outside | (
-      self.towerLift.doors if self.walkway.attached else 0))
-    self.world.stepped(real, accelerometer, crewman, want,
-                       self._gunPushed(real), self._jetOf())
+    self._walkwayMoved(real)
+    self._doorMoved(real)
+    rooms = self.walkway.outside | DOORWAY | (
+      self.towerLift.doors if self.walkway.attached else 0)
+    self.world.walked(rooms)
+    gun, jet = self._gunPushed(real), self._jetOf()
+    if self._outside:
+      rocket = self._rocket
+      wanted, walking, wanting, leap = want
+      want = (turnedToPad(rocket, wanted), walking, wanting,
+              turnedToPad(rocket, leap))
+      if gun is not None:
+        gun = (turnedToPad(rocket, gun[0]), None, (0.0, 0.0, 0.0))
+      self.padWorld.walked(rooms)
+      self.padWorld.stepped(real, self.padMeter, self._padmanOf(), want,
+                            gun, turnedToPad(rocket, jet))
+      self._padmanBack()
+      self.world.stepped(real, accelerometer, crewman, STILL, None,
+                         (0.0, 0.0, 0.0), False)
+    else:
+      self.world.stepped(real, accelerometer, crewman, want, gun, jet)
     self._pushedBack()
-    self._cabinRate.counted(self.world.lastSteps, time.perf_counter())
+    self._cabinRate.counted(self._asgerWorld().lastSteps,
+                            time.perf_counter())
     self.egg.stepped(real, accelerometer)
 
   def _pushedBack(self, ) -> None:
     """Pushes the vessel back by what the cabin's world pushed this
     frame ('CabinWorld.pushedBack'; Asger's own, 'asgerPushed', while he
-    is in the cabin: out of it on the pad he stands on the tower and
-    the ground, Terra's, too heavy to stir); docked, the pair (the
-    station's flown body: its rooms are the rocket's world's then)."""
-    vessel, world = self.vessel, self.world
+    is in it, less what he pushed the pad's faces by); out on the pad,
+    what he pushed the rocket's hull and legs by (user, 2026-11-18:
+    "rocket legs are part of the rocket. If Asger pushes hard enough to
+    rocket should fall over"; the rest the tower's and the ground's,
+    Terra's); docked, the pair (the station's flown body: its rooms are
+    the rocket's world's then)."""
+    world = self.world
     push, twist = world.pushedBack
     crewman = self.cockpit.crewman
-    if not crewman.sitting and (vessel.docked or cabinInside(
-        crewman.middle) >= 0.0):
+    if not crewman.sitting and not self._outside:
       own, turned = world.asgerPushed
-      push = tuple(a + b for a, b in zip(push, own))
-      twist = tuple(a + b + c for a, b, c in zip(twist, turned,
-                                                 self._turnedBack))
-    if not (any(push) or any(twist)):
+      ground, about = world.struck(PAD_FACES, 1)
+      push = tuple(a + b - g for a, b, g in zip(push, own, ground))
+      twist = tuple(a + b + c - g for a, b, c, g in zip(
+        twist, turned, self._turnedBack, about))
+    elif self._outside:
+      rocket, pad = self._rocket, self.padWorld
+      hit, about = pad.struck(ROCKET_FACES, 1)
+      legs, round_ = pad.struck(self._legsFirst, len(rocketLegs()))
+      hit = tuple(a + b for a, b in zip(hit, legs))
+      about = tuple(a + b - c for a, b, c in zip(about, round_, cross(
+        rocket[0], hit)))
+      push = tuple(p + h for p, h in zip(push, turnedFromPad(rocket, hit)))
+      twist = tuple(t + a for t, a in zip(twist, turnedFromPad(rocket,
+                                                                about)))
+    if any(push) or any(twist):
+      self._kicked(push, twist)
+
+  def _padKept(self, ) -> None:
+    """Keeps the pad's world where the pad is (user, 2026-11-18: "the pad
+    needs to be there"): with the walkway at the rocket, what its ground
+    feels and where the rocket stands on it ('_pad.Pad.rocketIn'; both
+    worlds' rooms posed so: '_pad.posesOf'); the rocket off Terra, far
+    from it."""
+    if not self.walkway.attached:
       return
+    system, now = self.system, self.keeper.now
+    rocket = self.pad.rocketIn(self.vessel, system, now)
+    self._rocket = FAR_POSE if rocket is None else rocket
+    cabin, pad = posesOf(self._rocket)
+    self.world.posed(*cabin)
+    self.padWorld.posed(*pad)
+    self.padMeter.grounded(*self.pad.feltOf(system, now))
+
+  def _worldChosen(self, ) -> None:
+    """Puts Asger in the world he is in: the pad's once his middle is out
+    past the doorway with the walkway at the rocket (the pad's axes,
+    what its ground feels: '_padmanOf'), the cabin's once it is in the
+    doorway or in the cabin ('WORLD_CROSS': not back and forth on the
+    line); the world he leaves lets his box go."""
+    crewman = self.cockpit.crewman
+    inner = max(cabinInside(crewman.middle), doorwayInside(crewman.middle))
+    out = (self.walkway.attached and not self.vessel.docked
+           and not crewman.sitting and (
+             inner < WORLD_CROSS[1] if self._outside else
+             inner < WORLD_CROSS[0]))
+    if out == self._outside:
+      return
+    (self.world if out else self.padWorld).left()
+    self._outside = out
+
+  def _asgerWorld(self, ) -> CabinWorld:
+    """Returns the world Asger is in: the pad's or the cabin's."""
+    return self.padWorld if self._outside else self.world
+
+  def _pullOnAsger(self, ) -> tuple:
+    """Returns the pull on Asger where he is (the rocket's own axes): out
+    on the pad what its ground feels, else what the cabin feels."""
+    crewman = self.cockpit.crewman
+    if not self._outside:
+      return self.accelerometer.pullAt(crewman.middle, crewman.velocity)
+    rocket = self._rocket
+    pull = self.padMeter.pullAt(toPad(rocket, crewman.middle), movingToPad(
+      rocket, crewman.middle, crewman.velocity))
+    return turnedFromPad(rocket, pull)
+
+  def _padmanOf(self, ) -> Crewman:
+    """Returns Asger as the pad's world sees him: his body in its axes,
+    moving and spinning as it sees it ('_padman')."""
+    crewman, padman = self.cockpit.crewman, self._padman
+    rocket = self._rocket
+    padman.buckled, padman.lounge = False, None
+    padman.middle = toPad(rocket, crewman.middle)
+    padman.velocity = movingToPad(rocket, crewman.middle, crewman.velocity)
+    padman.up = turnedToPad(rocket, crewman.up)
+    padman.ahead = turnedToPad(rocket, crewman.ahead)
+    padman.spin = tuple(s + w for s, w in zip(
+      turnedToPad(rocket, crewman.spin), rocket[3]))
+    padman.ground = None if crewman.ground is None else turnedToPad(
+      rocket, crewman.ground)
+    padman.floor = None if crewman.floor is None else turnedToPad(
+      rocket, crewman.floor)
+    padman.touches, padman.crouched = crewman.touches, crewman.crouched
+    padman.crouching, padman.rising = crewman.crouching, crewman.rising
+    padman.fallen = crewman.fallen
+    return padman
+
+  def _padmanBack(self, ) -> None:
+    """Takes Asger's body back from the pad's world (the rocket's own
+    axes: '_padmanOf' undone)."""
+    crewman, padman = self.cockpit.crewman, self._padman
+    rocket = self._rocket
+    crewman.middle = fromPad(rocket, padman.middle)
+    crewman.velocity = movingFromPad(rocket, padman.middle,
+                                     padman.velocity)
+    crewman.spin = turnedFromPad(rocket, tuple(
+      s - w for s, w in zip(padman.spin, rocket[3])))
+    crewman.ground = None if padman.ground is None else turnedFromPad(
+      rocket, padman.ground)
+    crewman.floor = None if padman.floor is None else turnedFromPad(
+      rocket, padman.floor)
+    crewman.touches, crewman.crouched = padman.touches, padman.crouched
+    crewman.rising = padman.rising
+
+  def _padSolidsSent(self, boxes: tuple) -> None:
+    """Puts the launch tower's still solids in the pad's world (its axes)
+    unless they are there already (its lift's car and the walkway's
+    sections after them, moving: '_towerKept')."""
+    if boxes != self._padSolids:
+      self.padWorld.stationed(False, (), boxes)
+      self._padSolids, self._padMoving = boxes, None
+
+  def _walkwayMoved(self, real: float) -> None:
+    """Moves the walkway 'real' s on (its motors: '_walkway'), at the
+    door pushed by what Asger pushed its sections by over the last frame
+    (the pad's world: 'CabinWorld.struck') and by its seal against the
+    rocket's hull, which pushes the rocket as hard (user, 2026-11-18: "Use
+    a soft inflatable thing like for airliners")."""
+    walkway = self.walkway
+    along, about, rocket = 0.0, 0.0, None
+    if walkway.attached and self._towered:
+      first = len(towerSolids()) + len(self.towerLift.boxesOf())
+      along, about = walkway.loadsOf(tuple(
+        self.padWorld.struck(first + 4 * k, 4) for k in range(SECTIONS)))
+      rocket = self._rocket
+    pressed, point = walkway.moved(real, along, about, rocket)
+    if rocket is not None and any(pressed):
+      hit = turnedFromPad(rocket, tuple(p * real for p in pressed))
+      self._kicked(hit, cross(fromPad(rocket, point), hit))
+
+  def _solidBoxes(self, ) -> tuple:
+    """Returns the solids in the worlds now (the cabin's; with the
+    walkway at the rocket, the pad's too, in the rocket's own axes):
+    their middles, half sizes and axes as columns."""
+    middles, halves, axes = self.world.solidBoxes()
+    if not self.walkway.attached:
+      return middles, halves, axes
+    padMiddles, padHalves, padAxes = self.padWorld.solidBoxes()
+    own = numpy.asarray(self._rocket[1], numpy.float64)
+    padMiddles = (padMiddles - numpy.asarray(self._rocket[0])) @ own.T
+    padAxes = numpy.einsum('ij,njk->nik', own, padAxes)
+    return (numpy.concatenate([middles, padMiddles]),
+            numpy.concatenate([halves, padHalves]),
+            numpy.concatenate([axes, padAxes]))
+
+  def _kicked(self, push: tuple, twist: tuple) -> None:
+    """Pushes the vessel by 'push' (N s) and twists it by 'twist' about
+    its middle (N m s), its own axes; docked, the pair (the station's
+    flown body)."""
+    vessel = self.vessel
     if vessel.docked:
       station = self.station
       arm = rotated(station.body.turn, self.docking.held)
-      self.station.kickedAt(rotated(vessel.turn, push),
-                            rotated(vessel.turn, twist), arm)
+      station.kickedAt(rotated(vessel.turn, push),
+                       rotated(vessel.turn, twist), arm)
     else:
       vessel.kicked(push, twist)
 
@@ -1422,23 +1652,29 @@ class SpaceWindow(QMainWindow):
   def _hoisted(self, real: float, ways: tuple) -> None:
     """Moves the station's elevators 'real' s on, each by its motor
     ('_hoist'), pulled along its shaft as the station's turning pulls
-    there, carrying Asger if he is in its cage; what the station pushed
-    each cage by (its motor, its brake, the shaft's walls: the cage's
-    mass times how it sped up less how it is pulled) each pushes the
-    pair back by, at the cage (his own pushes the cabin's world gives
-    back: '_pushedBack')."""
-    crewman = self.cockpit.crewman
+    there, pushed by what Asger pushed its cage by over the last frame
+    ('CabinWorld.struck': his weight standing in it); what the station
+    pushed each cage by (its motor, its brake, the shaft's walls: the
+    cage's mass times how it sped up less how it is pulled, less what
+    he pushed it by) each pushes the pair back by, at the cage (his own
+    pushes the cabin's world gives back as if the cage were the pair's:
+    '_pushedBack'). Its weight there the station carries already (its
+    mass is the station's: only its moving, and the shaft holding it
+    against the turning as it moves (Coriolis), push the station)."""
     push, twist = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    first = 0
     for elevator, way in zip(self.elevators, ways):
       middle = elevator.middleOf(way)
       moving = tuple(elevator.speed * w for w in way)
       pull = self.accelerometer.pullAt(middle, moving)
       along = dot(pull, way)
-      rider = HEFT if not crewman.sitting and elevator.holds(
-        way, crewman.middle) else 0.0
-      faster = elevator.moved(real, along, rider)
-      back = tuple(-CAGE_MASS * (faster * w - p) * real
-                   for w, p in zip(way, pull))
+      count = len(elevator.boxesOf(way))
+      load = dot(self.world.struck(first, count)[0], way)
+      first += count
+      faster = elevator.moved(real, along, load)
+      still = self.accelerometer.pullAt(middle, (0.0, 0.0, 0.0))
+      back = tuple(-CAGE_MASS * (faster * w - (p - s)) * real
+                   for w, p, s in zip(way, pull, still))
       push = [a + b for a, b in zip(push, back)]
       twist = [a + b for a, b in zip(twist, cross(middle, back))]
     vessel, station = self.vessel, self.station
@@ -1465,7 +1701,7 @@ class SpaceWindow(QMainWindow):
     ways = shaftWays(self.docking.relative) if docked else ()
     depth = roomsInside(point, docked, ways)
     walkway = self.walkway
-    if walkway.passable:
+    if self.door.passable:
       depth = max(depth, doorwayInside(point))
     if docked or not walkway.attached:
       return depth
@@ -1478,27 +1714,35 @@ class SpaceWindow(QMainWindow):
     vessel's own axes): the rooms all the way, no solid (what the
     Grav-Gun sees through: user, 2026-11-17, "the fucking gravity gun
     still works through walls")."""
-    return inSight(eye, there, self._openDepth, self.world.solidBoxes())
+    return inSight(eye, there, self._openDepth, self._solidBoxes())
 
   def _towerKept(self, real: float) -> None:
     """On the pad with the walkway out, the launch tower's solids (its
     stairs, its legs, the rocket's legs) and its lift's car (moved on
-    'real' s) are in the cabin's world; else, docked or not, the
-    station's ('_aboard')."""
+    'real' s, pushed by what Asger pushed it by over the last frame) are
+    in the cabin's world; else, docked or not, the station's
+    ('_aboard')."""
     if self.vessel.docked:
       return
     if self.walkway.attached:
-      lift = self.towerLift
+      lift, solids = self.towerLift, towerSolids()
       middle = lift.middleOf()
-      pull = self.accelerometer.pullAt(middle, (0.0, 0.0, lift.speed))
-      crewman = self.cockpit.crewman
-      rider = HEFT if not crewman.sitting and lift.holds(
-        crewman.middle) else 0.0
-      lift.moved(real, pull[2], rider)
-      self._solidsSent(False, (), towerSolids() + self.towerLift.boxesOf())
+      pull = self.padMeter.pullAt(middle, (0.0, 0.0, lift.speed))
+      load = self.padWorld.struck(len(solids), len(lift.boxesOf()))[0][2]
+      lift.moved(real, pull[2], load if self._towered else 0.0)
+      self._padSolidsSent(solids)
+      walkway, rocket = self.walkway.boxesOf(), self._rocket
+      self._legsFirst = len(solids) + len(lift.boxesOf()) + len(walkway)
+      turn = _turnOfPose(rocket)
+      legs = tuple((toPad(rocket, m), h, product(turn, t), movingToPad(
+        rocket, m, v)) for m, h, t, v in rocketLegs())
+      moving = lift.boxesOf() + walkway + legs
+      if moving != self._padMoving:
+        self.padWorld.restationed(len(solids), moving)
+        self._padMoving = moving
       self._towered = True
     elif self._towered:
-      self._solidsSent(False, (), ())
+      self._padSolidsSent(())
       self._towered = False
 
   def _towerLiftOf(self, ) -> tuple | None:
@@ -1508,7 +1752,7 @@ class SpaceWindow(QMainWindow):
     lift, crewman = self.towerLift, self.cockpit.crewman
     if not self.walkway.attached or crewman.sitting:
       return None
-    middle = crewman.middle
+    middle = toPad(self._rocket, crewman.middle)
     if lift.holds(middle):
       if lift.target is not None:
         return None
@@ -1596,8 +1840,8 @@ class SpaceWindow(QMainWindow):
     dash['headlamp'] = (self.headlamp.on, cockpit.eye(), look, lookUp)
     dash['nose'] = self._noseCamera
     dash['hatch'] = self._hatch
-    dash['door'], dash['swing'] = self.walkway.door, self.walkway.swing
-    dash['back'] = self.walkway.back
+    dash['door'], dash['walkway'] = self.door.share, self.walkway.posesOf()
+    dash['outdoor'] = not self.walkway.away
     dash['sbolts'] = self.bolts[len(rocketBolts()):]
     dash['aboard'] = self.vessel.docked
     dash['checks'] = [name in self.quest.done for name, _ in CHECKLIST]
@@ -2323,6 +2567,7 @@ class SpaceWindow(QMainWindow):
             'cockpit': keptOf(self.cockpit), 'vitals': keptOf(self.vitals),
             'inventory': keptOf(self.inventory),
             'quest': keptOf(self.quest), 'walkway': keptOf(self.walkway),
+            'door': keptOf(self.door),
             'towerLift': keptOf(self.towerLift),
             'elevators': [keptOf(e) for e in self.elevators],
             'instruments': keptOf(self.instruments),
@@ -2353,6 +2598,7 @@ class SpaceWindow(QMainWindow):
                         (self.cockpit, 'cockpit'), (self.vitals, 'vitals'),
                         (self.inventory, 'inventory'),
                         (self.quest, 'quest'), (self.walkway, 'walkway'),
+                        (self.door, 'door'),
                         (self.towerLift, 'towerLift'),
                         (self.instruments, 'instruments')):
       keptTo(thing, state[name])
@@ -2380,7 +2626,12 @@ class SpaceWindow(QMainWindow):
     self.sleep, self._manualOpen = Sleep(), False
     self._scoping, self._leaping, self.cockpit.glancing = False, False, None
     self._towered, self._stationed, self._fixed = False, False, None
-    self._sentSolids = None
+    self._sentSolids, self._doorSent = None, None
+    self._padSolids, self._padDoorSent = None, None
+    self._padMoving, self._legsFirst = None, 0
+    if self.padWorld is not None:
+      self.padWorld.teleported()
+    self._outside = False
     self.bolts = rocketBolts()
     self._hatch = 1.0 if self.vessel.docked else 0.0
     self._closest, self._tubes = None, None
@@ -2514,8 +2765,7 @@ class SpaceWindow(QMainWindow):
     if vessel.docked and not crewman.buckled:
       room = roomOf(crewman.middle, shaftWays(self.docking.relative))
       if room and room != 'cabin':
-        pull = norm(self.accelerometer.pullAt(crewman.middle,
-                                              crewman.velocity))
+        pull = norm(self._pullOnAsger())
         lines.append('Aboard     %s, pulled %.2f g' % (ROOMS_SAID[room],
                                                        pull / G0))
     closest = self.orrery.closest
@@ -2541,6 +2791,14 @@ class SpaceWindow(QMainWindow):
     if self.note and time.perf_counter() - self._noted < NOTE_LASTS:
       lines.append(self.note)
     return '\n'.join(lines)
+
+
+def _turnOfPose(rocket: tuple) -> tuple:
+  """Returns the turn (w x y z) taking the rocket's own axes to the
+  pad's, its pose 'rocket'."""
+  own = rocket[1]
+  return quaternionOf(tuple((own[0][i], own[1][i], own[2][i])
+                            for i in range(3)))
 
 
 def _grouped(value: float, places: int) -> str:

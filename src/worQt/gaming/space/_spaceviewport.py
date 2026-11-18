@@ -41,8 +41,9 @@ from ._meshes import capRows, padRows, ringRows, rocketParts, sphereRows
 from ._navball import Navball, mirroredRows
 from ._scenery import AFTER_PIECES, MARK_KINDS, MECHANISM
 from ._teleprinter import FONT
-from ._turns import aboutAxis, product, rotated
-from ._walkwaymeshes import armParts, armPivot, insideParts, placardRows
+from ._turns import product, rotated
+from ._walkway import PAD_UP, SECTIONS
+from ._walkwaymeshes import insideParts, placardRows, sectionParts
 from ._walkwaymeshes import DECK, floodlights, towerParts
 from ._dashpictures import MARK_NAMES
 
@@ -368,9 +369,10 @@ class SpaceViewport(QWidget):
     near.extend(self._satelliteParts(self._slots, len(system.satellites)))
     self._slots += 2 * len(system.satellites)
     self._armSlot = self._slots
-    near.extend(self._walkwayParts(armParts(), self._armSlot))
-    near.extend(self._walkwayParts(towerParts(), self._armSlot + 1))
-    self._slots += 2
+    for k in range(SECTIONS):
+      near.extend(self._walkwayParts(sectionParts(k), self._armSlot + k))
+    near.extend(self._walkwayParts(towerParts(), self._armSlot + SECTIONS))
+    self._slots += SECTIONS + 1
     self._orbits = []
     for slot, points in enumerate(orbits[1:]):
       self._orbits.append(self._kept1(Line(points)))
@@ -446,8 +448,10 @@ class SpaceViewport(QWidget):
     fill = INSIDE_FILL if cabin.get('aboard') else 0.0
     moving += [(first + count + k, satellite + (fill,)) for k, satellite
                in enumerate(frame['satellites'])]
-    moving.append((self._armSlot, _armOf(frame['pad'], cabin['swing'])))
-    moving.append((self._armSlot + 1, frame['pad'] + (TOWER_FILL,)))
+    for k, (place, turn, _) in enumerate(cabin['walkway']):
+      moving.append((self._armSlot + k, _sectionOf(frame['pad'], place,
+                                                   turn)))
+    moving.append((self._armSlot + SECTIONS, frame['pad'] + (TOWER_FILL,)))
     for slot, (place, turn, seen, glow) in moving:
       places[slot], turns[slot] = QVector3D(*place), QQuaternion(*turn)
       shown[slot], glows[slot] = bool(seen), float(glow)
@@ -1066,17 +1070,16 @@ class SpaceViewport(QWidget):
       root.gearPicked.connect(self.gearPicked)
 
 
-def _armOf(pad: tuple, arm: tuple) -> tuple:
-  """Returns the walkway's place, turn, whether it shows and its glow,
-  from the pad's ('pad': its place, turn, whether it shows), slid back
-  and swung away ('arm': m, rad) about its pivot."""
-  place, turn, shown = pad
-  back, swing = arm
-  swung = aboutAxis((0.0, 0.0, 1.0), swing)
-  pivot = tuple(p + s for p, s in zip(armPivot(), rotated(swung, (
-    -back, 0.0, 0.0))))
-  there = tuple(p + r for p, r in zip(place, rotated(turn, pivot)))
-  return there, product(turn, swung), shown, ARM_FILL
+def _sectionOf(pad: tuple, place: tuple, turn: tuple) -> tuple:
+  """Returns a walkway section's place, turn, whether it shows and its
+  glow, from the pad's ('pad': its place on the ground, turn, whether it
+  shows) and the section's in the pad's axes ('place', 'turn':
+  '_walkway.Walkway.posesOf'; those axes are the ground's 'PAD_UP'
+  higher)."""
+  there, axes, shown = pad
+  lifted = (place[0], place[1], place[2] + PAD_UP)
+  return (tuple(p + r for p, r in zip(there, rotated(axes, lifted))),
+          product(axes, turn), shown, ARM_FILL)
 
 
 def _partOf(geometry: object, look: tuple, slot: int, culled: bool,

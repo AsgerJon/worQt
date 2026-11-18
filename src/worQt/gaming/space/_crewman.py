@@ -80,11 +80,21 @@ FLOAT_LEGS, FLOAT_ARMS = -0.35, -0.7
 #  he touches weightless ('ARMS' N m), his jetpack's fans across their
 #  lever ('FAN_ARM' m times their push), each a turning spring of
 #  'TURNING' rad/s critically damped, no harder than that; its steps, s.
-#  Nothing else turns him: weightless and touching nothing he keeps
-#  spinning as he spins.
+#  Knocked down (user, 2026-11-18: "You Spin me Round (Like a Record)":
+#  what he meets pushes him where it meets him, '_cabin_kernels.walked'),
+#  lying on what he touches, his arms and legs push him up, as hard as
+#  his weight on 'GET_UP' m (a little more than his middle is over his
+#  soles: he can rise from flat), a spring of 'RISING' rad/s, till he
+#  stands within 'RISEN' (a cosine) of up against the pull; leant past
+#  'FALLEN' (a cosine) he is down. Nothing else turns him: weightless and
+#  touching nothing he keeps spinning as he spins.
 MOMENTS = (13.0, 13.0, 1.5)
 NECK = NECK_YAW
 STANCE = 0.15
+GET_UP = 1.0
+RISING = 12.0
+RISEN = 0.985
+FALLEN = 0.7
 ARMS = 30.0
 FAN_ARM = 0.3
 TURNING = 6.0
@@ -121,7 +131,7 @@ class Crewman:
   #  What a saved game keeps of it ('_savegame'): its fields.
   SAVED = ('buckled', 'lounge', 'crouching', 'up', 'ahead', 'spin',
            'middle', 'velocity', 'touches', 'ground', 'crouched', 'rising',
-           'floor')
+           'floor', 'fallen')
 
   #  Public Variables
   buckled: bool
@@ -138,6 +148,7 @@ class Crewman:
   crouching: bool
   rising: float
   floor: tuple | None
+  fallen: bool
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -239,13 +250,17 @@ class Crewman:
 
   def placed(self, middle: tuple, velocity: tuple, met: int,
              normals: tuple, crouched: bool = False, rose: float = 0.0,
-             floors: tuple = (0.0, 0.0, 0.0)) -> None:
+             floors: tuple = (0.0, 0.0, 0.0), spin: tuple = None) -> None:
     """The 'placed' method takes his body from the kernel: its 'middle'
     and 'velocity', how many meetings it touches and their normals
     summed, whether it is crouched, how far it stepped up (his eyes
     follow it eased: 'rising'), the normals of what it stands on summed
-    ('floor': their unit, None: nothing)."""
+    ('floor': their unit, None: nothing; on his feet only: it is under
+    his soles), its spin ('spin', as what he met twisted it; None: as it
+    was)."""
     self.middle, self.velocity = tuple(middle), tuple(velocity)
+    if spin is not None:
+      self.spin = tuple(spin)
     size = norm(normals)
     self.touches = met > 0
     self.ground = tuple(n / size for n in normals) if (
@@ -256,27 +271,39 @@ class Crewman:
     self.rising += float(rose)
 
   def righted(self, pull: tuple, seconds: float, yaw: float = 0.0,
-              pitch: float = 0.0, fans: float = 0.0) -> tuple:
+              pitch: float = 0.0, fans: float = 0.0,
+              limp: bool = False) -> tuple:
     """The 'righted' method turns his body 'seconds' s on, his head
     turned 'yaw' and 'pitch' from it, pulled 'pull' (m/s²), his jetpack's
-    fans pushing 'fans' N (nought: off): standing (touching, pulled
-    harder than 'UPRIGHT' g) his feet turn him up against the pull
-    (square on the floor within 'SQUARE') and round to where his head
-    looks; weightless, touching something, his hands turn him to it
-    whole (his up his head's), or not touching, his jetpack's fans; else
+    fans pushing 'fans' N (nought: off): pulled harder than 'UPRIGHT' g,
+    standing on his feet, they turn him up against the pull (square on
+    the floor within 'SQUARE') and round to where his head looks;
+    knocked down ('fallen': leant past 'FALLEN', till he stands within
+    'RISEN' again), his arms and legs push him up so; weightless,
+    touching something, his hands turn him to it whole (his up his
+    head's), or not touching, his jetpack's fans; else (or 'limp': dead)
     he spins on (as a free body: his moments differ). Each no harder
-    than it can ('STANCE', 'ARMS', 'FAN_ARM'). His head keeps looking
-    where it looked (within his neck's reach: 'NECK'). Moves his stride
-    on. Returns his head's yaw and pitch from his body then and the
-    twist what turned him took back (N m s, the vessel's own axes: his
-    feet's and hands' on what he touches, the fans' on the air)."""
+    than it can ('STANCE', 'GET_UP', 'ARMS', 'FAN_ARM'). His head keeps
+    looking where it looked (within his neck's reach: 'NECK'). Moves his
+    stride on.
+    Returns his head's yaw and pitch from his body then and the twist
+    what turned him took back (N m s, the vessel's own axes: his feet's,
+    arms' and hands' on what he touches, the fans' on the air)."""
     self._squared()
     look, head = self.lookOf(yaw, pitch), self.headUpOf(yaw, pitch)
     weight = norm(pull)
-    most, aim = 0.0, None
-    if self.touches and weight > UPRIGHT * G0:
+    most, aim, rate = 0.0, None, TURNING
+    if limp:
+      pass
+    elif self.touches and weight > UPRIGHT * G0:
       up = tuple(-p / weight for p in pull)
-      if self.floor is not None and dot(self.floor, up) > SQUARE:
+      lean = dot(self.up, up)
+      if lean < FALLEN:
+        self.fallen = True
+      elif self.fallen and lean > RISEN and self.floor is not None:
+        self.fallen = False
+      if (self.floor is not None and dot(self.floor, up) > SQUARE
+              and not self.fallen):
         up = self.floor
       facing = self.facing(yaw)
       along = dot(facing, up)
@@ -285,7 +312,9 @@ class Crewman:
         along = dot(self.up, up)
         ahead = tuple(b - along * u for b, u in zip(self.up, up))
       if norm(ahead) > 1e-6:
-        aim, most = (unit(ahead), up), HEFT * weight * STANCE
+        aim = unit(ahead), up
+        most = HEFT * weight * (GET_UP if self.fallen else STANCE)
+        rate = RISING if self.fallen else TURNING
     elif self.touches:
       aim, most = (look, head), ARMS
     elif fans > 0.0:
@@ -296,7 +325,7 @@ class Crewman:
     for _ in range(steps):
       torque = (0.0, 0.0, 0.0)
       if aim is not None:
-        torque = self._turningTo(aim, most)
+        torque = self._turningTo(aim, most, rate)
       self._spun(torque, dt)
       back = [b - q * dt for b, q in zip(back, torque)]
     left = cross(self.up, self.ahead)
@@ -359,13 +388,16 @@ class Crewman:
     return unit(tuple(ahead * k + aside * l for k, l in zip(look, left)))
 
   def leapOf(self, pull: tuple) -> tuple:
-    """The 'leapOf' method returns the velocity a jump adds: walking,
-    up as high as 'JUMP' against the pull; floating, a push off what he
-    touches ('PUSH' along its normal); touching nothing, none."""
+    """The 'leapOf' method returns the velocity a jump adds: walking (on
+    his feet), up as high as 'JUMP' against the pull; floating, a push
+    off what he touches ('PUSH' along its normal); touching nothing, or
+    knocked down, none."""
     if not self.touches:
       return 0.0, 0.0, 0.0
     weight = norm(pull)
     if weight > WALK * G0:
+      if self.floor is None:
+        return 0.0, 0.0, 0.0
       speed = math.sqrt(2.0 * weight * JUMP)
       return tuple(speed * u for u in self.up)
     way = self.ground or self.up
@@ -439,10 +471,10 @@ class Crewman:
       out.append((index, place, product(body, limb)))
     return tuple(out)
 
-  def _turningTo(self, aim: tuple, most: float) -> tuple:
+  def _turningTo(self, aim: tuple, most: float, rate: float) -> tuple:
     """Returns the twist turning his body to 'aim' (its ahead and up), a
-    turning spring critically damped, no harder than 'most' N m (the
-    vessel's own axes)."""
+    turning spring of 'rate' rad/s critically damped, no harder than
+    'most' N m (the vessel's own axes)."""
     ahead, up = aim
     left = cross(up, ahead)
     body = self._rows()
@@ -451,9 +483,8 @@ class Crewman:
     error = _rotationOf(turn)
     own = _back(body, error)
     spun = _back(body, self.spin)
-    torque = _forth(body, tuple(m * (TURNING * TURNING * e - 2.0 * TURNING
-                                     * w) for m, e, w in zip(
-      MOMENTS, own, spun)))
+    torque = _forth(body, tuple(m * (rate * rate * e - 2.0 * rate * w)
+                                for m, e, w in zip(MOMENTS, own, spun)))
     size = norm(torque)
     if size > most:
       torque = tuple(q * most / size for q in torque)
@@ -503,6 +534,7 @@ class Crewman:
     self.velocity, self.touches = (0.0, 0.0, 0.0), True
     self.ground = (0.0, 0.0, 1.0)
     self.crouched, self.rising, self.floor = False, 0.0, (0.0, 0.0, 1.0)
+    self.fallen = False
 
 
 def _back(rows: tuple, x: tuple) -> tuple:

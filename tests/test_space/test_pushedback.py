@@ -32,16 +32,21 @@ class TestPushedBack(SpaceTest):
   def _summed(self, world: CabinWorld, meter: Accelerometer,
               cockpit: Cockpit, frames: int, want: tuple,
               jet: tuple = (0.0, 0.0, 0.0)) -> tuple:
-    """Steps 'world' 'frames' frames (Asger's legs as 'want' asks, its
-    leap the first frame only, his jetpack 'jet' m/s²) and returns what
-    they pushed back by, summed (N s, N m s): Asger's and the loose
-    things' ('asgerPushed', 'pushedBack'; here, in the cabin, all the
-    vessel's)."""
+    """Steps 'world' 'frames' frames (Asger's body turned first, as the
+    window does: 'Crewman.righted'; his legs as 'want' asks, its leap the
+    first frame only, his jetpack 'jet' m/s²) and returns what they
+    pushed back by, summed (N s, N m s): his turning's, his and the
+    loose things' ('asgerPushed', 'pushedBack'; here, in the cabin, all
+    the vessel's)."""
     push, twist = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    crewman = cockpit.crewman
     for k in range(frames):
       leap = want[3] if k == 0 else (0.0, 0.0, 0.0)
-      world.stepped(FRAME, meter, cockpit.crewman, want[:3] + (leap,),
-                    None, jet)
+      pull = meter.pullAt(crewman.middle, crewman.velocity)
+      _, _, turned = crewman.righted(pull, FRAME, cockpit.yaw,
+                                     cockpit.pitch)
+      twist = [a + b for a, b in zip(twist, turned)]
+      world.stepped(FRAME, meter, crewman, want[:3] + (leap,), None, jet)
       for back, turned in (world.pushedBack, world.asgerPushed):
         push = [a + b for a, b in zip(push, back)]
         twist = [a + b for a, b in zip(twist, turned)]
@@ -74,10 +79,11 @@ class TestPushedBack(SpaceTest):
     cockpit.gotUp()
     crewman = cockpit.crewman
     self._summed(world, meter, cockpit, 6, STILL)
+    began = crewman.velocity
     leap = crewman.leapOf((0.0, 0.0, 0.0))
     push, _ = self._summed(world, meter, cockpit, 1, STILL[:3] + (leap,))
     self.assertLess(abs(push[2] + HEFT * leap[2]), 0.05 * HEFT * leap[2])
-    total = list(push)
+    total = [p - HEFT * v for p, v in zip(push, began)]
     met = False
     for _ in range(240):
       back, _ = self._summed(world, meter, cockpit, 1, STILL)

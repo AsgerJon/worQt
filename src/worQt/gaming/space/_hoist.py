@@ -5,7 +5,9 @@ hard they were pulled; "The tower lift did feel very wrong"): its
 motor pushes it along its shaft toward the speed its run wants
 (speeding up at 'accel', at most 'fast', slowing to stop on its stop),
 no harder than its most push (its run's slowing fed ahead, as a lift's
-drive does: it does not overshoot its stop), against what pulls the
+drive does: it does not overshoot its stop; as fast as it goes along
+the slowing's curve: started near its stop it does not brake against
+itself), against what pulls the
 cage and its rider along the shaft (the pad's weight; the station's
 turning); standing at a stop its brake holds it. What the motor and the walls
 push it by, they push the rest back by (the caller's: '_spacewindow').
@@ -50,7 +52,9 @@ def hoisted(floor: float, speed: float, target: float | None,
     way = 1.0 if left > 0.0 else -1.0
     braking = math.sqrt(2.0 * accel * abs(left))
     wanted = way * min(fast, braking)
-    ahead = -way * accel if braking < fast and speed * way > 0.0 else 0.0
+    ahead = 0.0
+    if braking < fast and speed * way > 0.0 and braking > 1e-9:
+      ahead = -way * accel * min(1.0, speed * way / braking)
     push = mass * (ahead + (wanted - speed) / MOTOR_TIME - along)
     push = max(-most, min(most, push))
     speed += (push / mass + along) * dt

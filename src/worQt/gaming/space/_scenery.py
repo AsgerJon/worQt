@@ -31,7 +31,7 @@ from ._furnishings import candleLight, lampLight, looseParts
 from ._gunbeam import beamRows
 from ._meshes import CAP_REACH
 from ._night import shineOf
-from ._walkway import BACK, SWING_AWAY, leafTurn
+from ._walkway import Walkway, leafTurn
 from ._bolts import axesOf
 from ._walkwaymeshes import hallLight
 from ._orrery import SPAN
@@ -47,6 +47,9 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
   from ._vessel import Vessel
 
+#  The walkway's sections gone away (what the scene shows with no word
+#  of it).
+_AWAY = Walkway(False).posesOf()
 #  Past this from the eye a body is drawn nearer, by the logarithm of how
 #  much further it is, 'FAR_LOG' m an e-fold: Pluto lands within 2 FAR.
 #  A satellite (the space station) shows within 'SATELLITE_SEEN' of the
@@ -294,10 +297,8 @@ class Scenery:
             'hand': (bool(dash.get('hand', dash['gun'][0])) and inside,
                      tuple(dash['gun'][3]) if len(dash['gun']) > 3 else (
                        0.0, 0.0, 0.0)),
-            'swing': (dash.get('back', BACK), dash.get('swing',
-                                                        SWING_AWAY)),
-            'outdoor': (there(hallLight()), dash.get('swing', SWING_AWAY)
-                        < SWING_AWAY)}
+            'walkway': dash.get('walkway', _AWAY),
+            'outdoor': (there(hallLight()), dash.get('outdoor', False))}
 
   def _headlampOf(self, there: object, turn: tuple, lamp: tuple) -> tuple:
     """Returns Asger's headlamp ('lamp' the window's: on, his eyes,

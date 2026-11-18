@@ -29,8 +29,10 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 #  in the cabin, user 2026-11-18: "remove them completely"; 4: Asger's
 #  jetpack and headlamp, the vessel's 'twirl'; 5: the sky flown, each
 #  body pulling every other, and the space station flown, user
-#  2026-11-18: "PHYSICS MUST BE REAL").
-SAVE_VERSION = 5
+#  2026-11-18: "PHYSICS MUST BE REAL"; 6: the door a real leaf on its
+#  motor, '_door', Asger knocked down, 'Crewman.fallen', the walkway's
+#  sections on their motors, '_walkway').
+SAVE_VERSION = 6
 #  The quick save's file in the saves' folder (F5 writes it, F9 reads
 #  it).
 QUICK = 'quicksave.json'

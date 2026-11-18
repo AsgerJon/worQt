@@ -29,6 +29,8 @@ from worQt.gaming.space._launchtower import STAIR_FOOT, STEPS, TOWER
 from worQt.gaming.space._launchtower import TOWER_TOP
 from worQt.gaming.space._launchtower import flightOf, groundsInside
 from worQt.gaming.space._launchtower import landingLevel, rise, towerSolids
+from worQt.gaming.space._launchtower import rocketLegs
+from worQt.gaming.space._vessel import LEGS
 from worQt.gaming.space._dashboard import pieceRows
 from worQt.gaming.space._towerlift import FAST, FOOT, TOP, TowerLift
 from worQt.gaming.space._towerlift import carWindow
@@ -83,7 +85,8 @@ class TestLaunchTower(SpaceTest):
       self.assertAlmostEqual(high, low)
     _, (_, end), _ = flightOf(FLIGHTS - 1)
     self.assertGreater(end, STAIR_TOP[0][0] - 1.5)
-    self.assertEqual(len(towerSolids()), (STEPS + 1) * FLIGHTS + 1 + 4 + 8)
+    self.assertEqual(len(towerSolids()), (STEPS + 1) * FLIGHTS + 1 + 4)
+    self.assertEqual(len(rocketLegs()), 2 * len(LEGS))
     self.assertLess(rise() / STEPS, STEP)
 
   def test_lift(self) -> None:
@@ -159,7 +162,8 @@ class TestLaunchTower(SpaceTest):
     crewman = cockpit.crewman
     for _ in range(max(1, int(round(seconds / FRAME)))):
       pull = meter.pullAt(crewman.middle, crewman.velocity)
-      crewman.righted(pull, FRAME)
+      cockpit.yaw, cockpit.pitch, _ = crewman.righted(
+        pull, FRAME, cockpit.yaw, cockpit.pitch)
       want = crewman.wantOf(held, cockpit.yaw, cockpit.pitch, pull)
       world.stepped(FRAME, meter, crewman, want + ((0.0, 0.0, 0.0),))
 

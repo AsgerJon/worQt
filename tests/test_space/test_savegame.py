@@ -40,6 +40,7 @@ from worQt.gaming.space._towerlift import TowerLift
 from worQt.gaming.space._vessel import Vessel
 from worQt.gaming.space._vitals import Vitals
 from worQt.gaming.space._walkway import Walkway
+from worQt.gaming.space._door import Door
 
 from . import FRAME, SpaceTest
 from ._space_test import TODAY
@@ -60,7 +61,7 @@ class TestSaveGame(SpaceTest):
     return [Timekeeper(system), Vessel(), ascent, rendezvous, docking,
             port, Autoflight(ascent, rendezvous, docking, port), cockpit,
             Vitals(), Inventory(), Quest(), Walkway(True), TowerLift(),
-            Elevator(), Instruments(cockpit), GravGun()]
+            Elevator(), Instruments(cockpit), GravGun(), Door(False)]
 
   def test_values(self) -> None:
     """Tuples, lists, sets, dicts (of words), numbers, words, truths,

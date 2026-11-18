@@ -80,6 +80,13 @@ class Accelerometer:
     self.turning = tuple(vessel.spin)
     self.speeding = speeding
 
+  def grounded(self, felt: tuple, turning: tuple) -> None:
+    """The 'grounded' method reads a frame held on a turning body's
+    ground (the pad's, '_pad.Pad.feltOf'): its push 'felt' and its
+    turning 'turning', steady (its own axes)."""
+    self.felt, self.turning = tuple(felt), tuple(turning)
+    self.speeding = (0.0, 0.0, 0.0)
+
   def pullAt(self, place: tuple, velocity: tuple) -> tuple:
     """The 'pullAt' method returns the pull on something loose at
     'place' moving 'velocity' (the vessel's own axes, from its middle),

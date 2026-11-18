@@ -18,14 +18,12 @@ body) moves each body a step on by what pushed it and what is felt
 there (semi-implicit Euler; a body's spin by Euler's equations in its
 own axes).
 
-Body 0 is Asger: never turned (his up the host's), five balls along it
-from his feet to his head, moved by his legs as the host asks while he
-touches something (walking: along the ground, as fast as asked; else
-pushing off along the way asked), a leap once; left out while he sits.
-The loose things are boxes: their eight corners meet the rest (a ball
-of 'SKIN' each, inside the box), their boxes are met by the others'
-points. float32 throughout ('feedback: GPU always'): a few metres in
-the cabin.
+Body 0 is kept empty: Asger is a box of his own, stepped a frame at a time by
+'walked' (a thread; turned by what he meets, his up the host's between
+frames), a moving solid for the loose things ('own'); left out while he sits.
+The loose things are boxes: their eight corners meet the rest (a ball of
+'SKIN' each, inside the box), their boxes are met by the others' points.
+float32 throughout ('feedback: GPU always'): a few metres in the cabin.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -91,7 +89,6 @@ PLANE = _single(rooms.PLANE)
 #  the ground (each a box: its low and high corners); the yard (a box,
 #  outside the rocket's body (a round column, 'BODY' radius) and the
 #  stair tower's walls (a box)).
-HULL_LOW = _single(capsuleRadius(FLOOR))
 
 
 def _box(box: tuple) -> tuple:
@@ -99,7 +96,8 @@ def _box(box: tuple) -> tuple:
   return wp.constant(wp.vec3(*box[0])), wp.constant(wp.vec3(*box[1]))
 
 
-TUNNEL_LOW, TUNNEL_HIGH = _box(walkway.TUNNEL)
+HOLE_LOW, HOLE_HIGH = _box(walkway.HOLE)
+HALL_OUT_LOW, HALL_OUT_HIGH = _box(tower.HALL_OUT)
 DOORWAY_LOW, DOORWAY_HIGH = _box(walkway.DOORWAY)
 HALL_LOW, HALL_HIGH = _box(tower.HALL)
 STAIRS_LOW, STAIRS_HIGH = _box(tower.STAIRWELL)
@@ -114,6 +112,10 @@ TOWER_LOW = wp.constant(wp.vec3(tower.TOWER[0][0], tower.TOWER[0][1],
 TOWER_HIGH = wp.constant(wp.vec3(tower.TOWER[1][0], tower.TOWER[1][1],
                                  tower.TOWER_TOP))
 BODY = _single(tower.BODY)
+#  The rocket's base (its own axes: on the ground where it stands), m:
+#  its body is from there up to its nose ('CABIN_TOP'); nowhere else
+#  does it cut the pad's rooms.
+BASE = _single(tower.GROUND - 0.5)
 #  A meeting's spring: four of them carry a body at 'OMEGA' rad/s (its
 #  mass by them sinks g / OMEGA² under g: 0.16 mm at one g, 0.8 mm at
 #  five), damped 'DAMPING' of critical; rubbing at most 'GRIP' of the
@@ -124,7 +126,9 @@ GRIP = _single(0.5)
 #  A loose box's corners are balls this big, inside its corners.
 SKIN_SIZE = 0.004
 SKIN = _single(SKIN_SIZE)
-#  A meeting closing faster than this, m/s, thuds; Asger touches what is
+#  A meeting closing faster than this, m/s, thuds (pressing on something
+#  already, faster than a part of the frame's pull and his legs could
+#  close it: a knock while he stands); Asger touches what is
 #  within 'NEAR' of him, m (floating a hair off the floor, he can still
 #  push off it).
 THUD = _single(0.6)
@@ -226,120 +230,197 @@ def boxOutside(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
   return deeper(room, point[2] - high[2], wp.vec3(0.0, 0.0, 1.0))
 
 
+#  The rooms' layout ('layout', a row each): the station's shafts' ways
+#  ('SHAFTS' rows, the rocket's own axes: docked), then the rocket's
+#  place and its three axes ('ROCKET', four rows), then the pad's
+#  ('PAD'), each in the world's own axes (the cabin's world is the
+#  rocket's: its place nought, its axes its own, the pad's where the pad
+#  is from it; the pad's world is the pad's, Terra's turning ground,
+#  the rocket's where it stands: user, 2026-11-18, "the pad needs to be
+#  there"; '_pad'). Each room is had in its own's axes: the cabin, the
+#  doorway and the station's the rocket's, the walkway's tunnel, the
+#  tower's and the yard the pad's.
+SHAFTS = 4
+ROCKET = 4
+PAD = 8
+LAYOUT_ROWS = 12
+
+
 @wp.func
-def towerRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
-  """Returns 'best' or the launch tower's rooms if deeper: its hall,
-  stairwell and lift shaft, the stairwell's doorways, the lift's open
-  ones ('outside' four: the hall's, eight: the ground's), the yard round
-  it (outside the rocket's body and the stair tower)."""
-  room = boxRoom(point, HALL_LOW, HALL_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = boxRoom(point, STAIRS_LOW, STAIRS_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = boxRoom(point, SHAFT_LOW, SHAFT_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = boxRoom(point, STAIR_TOP_LOW, STAIR_TOP_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = boxRoom(point, STAIR_FOOT_LOW, STAIR_FOOT_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+def localIn(layout: wp.array(dtype=wp.vec3), first: int,
+            point: wp.vec3) -> wp.vec3:
+  """Returns 'point' (the world's own axes) in the axes whose place and
+  axes are 'layout''s rows from 'first'."""
+  off = point - layout[first]
+  return wp.vec3(wp.dot(off, layout[first + 1]),
+                 wp.dot(off, layout[first + 2]),
+                 wp.dot(off, layout[first + 3]))
+
+
+@wp.func
+def worldOf(layout: wp.array(dtype=wp.vec3), first: int,
+            room: wp.vec4) -> wp.vec4:
+  """Returns 'room' (its way in, in the axes of 'layout''s rows from
+  'first', and its depth) with its way in the world's own axes."""
+  way = (room[0] * layout[first + 1] + room[1] * layout[first + 2]
+         + room[2] * layout[first + 3])
+  return wp.vec4(way[0], way[1], way[2], room[3])
+
+
+@wp.func
+def deeperRoom(best: wp.vec4, room: wp.vec4) -> wp.vec4:
+  """Returns 'best' or 'room', whichever is deeper inside."""
+  return deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+
+
+@wp.func
+def towerRooms(p: wp.vec3, q: wp.vec3, best: wp.vec4, outside: int,
+               layout: wp.array(dtype=wp.vec3)) -> wp.vec4:
+  """Returns 'best' or the launch tower's rooms if deeper ('p' the
+  point in the pad's axes, 'q' in the rocket's): its hall, stairwell
+  and lift shaft, the stairwell's doorways, the lift's open ones
+  ('outside' four: the hall's, eight: the ground's), the yard round it
+  (outside the rocket's body and the stair tower)."""
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(p, HALL_LOW,
+                                                       HALL_HIGH)))
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(p, STAIRS_LOW,
+                                                       STAIRS_HIGH)))
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(p, SHAFT_LOW,
+                                                       SHAFT_HIGH)))
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(
+    p, STAIR_TOP_LOW, STAIR_TOP_HIGH)))
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(
+    p, STAIR_FOOT_LOW, STAIR_FOOT_HIGH)))
   if outside % 8 >= 4:
-    room = boxRoom(point, LIFT_TOP_LOW, LIFT_TOP_HIGH)
-    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+    best = deeperRoom(best, worldOf(layout, PAD, boxRoom(
+      p, LIFT_TOP_LOW, LIFT_TOP_HIGH)))
   if outside >= 8:
-    room = boxRoom(point, LIFT_FOOT_LOW, LIFT_FOOT_HIGH)
-    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  yard = boxRoom(point, YARD_LOW, YARD_HIGH)
-  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
-  outward = wp.vec3(1.0, 0.0, 0.0)
+    best = deeperRoom(best, worldOf(layout, PAD, boxRoom(
+      p, LIFT_FOOT_LOW, LIFT_FOOT_HIGH)))
+  yard = worldOf(layout, PAD, boxRoom(p, YARD_LOW, YARD_HIGH))
+  across = wp.sqrt(q[0] * q[0] + q[1] * q[1])
+  outward = wp.vec4(1.0, 0.0, 0.0, 0.0)
   if across > 1.0e-6:
-    outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
-  yard = shallower(yard, across - BODY, outward)
-  walls = boxOutside(point, TOWER_LOW, TOWER_HIGH)
+    outward = wp.vec4(q[0] / across, q[1] / across, 0.0, 0.0)
+  outward = worldOf(layout, ROCKET, outward)
+  if q[2] > BASE and q[2] < CABIN_TOP:
+    yard = shallower(yard, across - BODY, wp.vec3(outward[0], outward[1],
+                                                  outward[2]))
+  walls = worldOf(layout, PAD, boxOutside(p, TOWER_LOW, TOWER_HIGH))
   yard = shallower(yard, walls[3], wp.vec3(walls[0], walls[1], walls[2]))
-  return deeper(best, yard[3], wp.vec3(yard[0], yard[1], yard[2]))
+  walls = worldOf(layout, PAD, boxOutside(p, HALL_OUT_LOW, HALL_OUT_HIGH))
+  yard = shallower(yard, walls[3], wp.vec3(walls[0], walls[1], walls[2]))
+  return deeperRoom(best, yard)
 
 
 @wp.func
-def outsideRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
-  """Returns 'best' or the rooms outside the rocket on the pad if
-  deeper: 'outside' one, the walkway's tunnel (outside the hull's skin)
-  and the launch tower's rooms ('towerRooms'); two, the doorway."""
-  if outside % 2 == 1:
-    across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
-    outward = wp.vec3(1.0, 0.0, 0.0)
-    if across > 1.0e-6:
-      outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
-    skin = HULL_LOW + CABIN_SLOPE * wp.clamp(point[2] - CABIN_FLOOR, 0.0,
-                                             CABIN_TOP - CABIN_FLOOR)
-    tunnel = boxRoom(point, TUNNEL_LOW, TUNNEL_HIGH)
-    tunnel = shallower(tunnel, (across - skin) * CABIN_LEAN, wp.vec3(
-      outward[0] * CABIN_LEAN, outward[1] * CABIN_LEAN,
-      -CABIN_SLOPE * CABIN_LEAN))
-    best = deeper(best, tunnel[3], wp.vec3(tunnel[0], tunnel[1],
-                                           tunnel[2]))
-    best = towerRooms(point, best, outside)
-  if outside % 4 >= 2:
-    room = boxRoom(point, DOORWAY_LOW, DOORWAY_HIGH)
-    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  return best
+def padRooms(p: wp.vec3, q: wp.vec3, best: wp.vec4, outside: int,
+             layout: wp.array(dtype=wp.vec3)) -> wp.vec4:
+  """Returns 'best' or the rooms outside the rocket on the pad if deeper
+  ('p' the point in the pad's axes, 'q' in the rocket's): the hole from
+  the hall out to the walkway (its sections are solids in the open
+  air: '_walkway') and the launch tower's rooms ('towerRooms'), the
+  world's own axes."""
+  best = deeperRoom(best, worldOf(layout, PAD, boxRoom(p, HOLE_LOW,
+                                                       HOLE_HIGH)))
+  return towerRooms(p, q, best, outside, layout)
 
 
 @wp.func
-def roomGap(point: wp.vec3, docked: int, outside: int,
-            ways: wp.array(dtype=wp.vec3)) -> wp.vec4:
-  """Returns how far 'point' is inside the rooms (the cabin; docked
-  also the hatch, the ports, the hub, the shafts out along 'ways', the
-  ring; on the pad the walkway's and the doorway as 'outside' says
-  ('outsideRooms'): as deep as the room it is deepest in; less than
-  nought: in a wall) and the way into them from the nearest face (x y
-  z, then the depth)."""
-  across = wp.sqrt(point[0] * point[0] + point[1] * point[1])
+def rocketRooms(q: wp.vec3, docked: int, outside: int,
+                layout: wp.array(dtype=wp.vec3)) -> wp.vec4:
+  """Returns how far 'q' (the rocket's own axes) is inside the rocket's
+  rooms (the cabin; 'outside' two, the doorway through its wall;
+  docked, also the hatch, the ports, the hub, the shafts out along
+  'layout''s first rows, the ring) and the way into them (its axes)."""
+  across = wp.sqrt(q[0] * q[0] + q[1] * q[1])
   outward = wp.vec3(1.0, 0.0, 0.0)
   if across > 1.0e-6:
-    outward = wp.vec3(point[0] / across, point[1] / across, 0.0)
-  inner = CABIN_LOW + CABIN_SLOPE * wp.clamp(point[2] - CABIN_FLOOR, 0.0,
+    outward = wp.vec3(q[0] / across, q[1] / across, 0.0)
+  inner = CABIN_LOW + CABIN_SLOPE * wp.clamp(q[2] - CABIN_FLOOR, 0.0,
                                              CABIN_TOP - CABIN_FLOOR)
   wall = wp.vec3(-outward[0] * CABIN_LEAN, -outward[1] * CABIN_LEAN,
                  CABIN_SLOPE * CABIN_LEAN)
-  cabin = wp.vec4(wall[0], wall[1], wall[2], (inner - across) * CABIN_LEAN)
-  cabin = shallower(cabin, point[2] - CABIN_FLOOR, wp.vec3(0.0, 0.0, 1.0))
-  cabin = shallower(cabin, CABIN_TOP - point[2], wp.vec3(0.0, 0.0, -1.0))
-  if outside != 0:
-    cabin = outsideRooms(point, cabin, outside)
+  best = wp.vec4(wall[0], wall[1], wall[2], (inner - across) * CABIN_LEAN)
+  best = shallower(best, q[2] - CABIN_FLOOR, wp.vec3(0.0, 0.0, 1.0))
+  best = shallower(best, CABIN_TOP - q[2], wp.vec3(0.0, 0.0, -1.0))
+  if outside % 4 >= 2:
+    best = deeperRoom(best, boxRoom(q, DOORWAY_LOW, DOORWAY_HIGH))
   if docked == 0:
-    return cabin
-  best = cabin
-  room = roundRoom(point, HATCH, HATCH_LOW, HATCH_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = roundRoom(point, PORT_INSIDE, PORT_LOW, PORT_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = roundRoom(point, PORT_INSIDE, FAR_LOW, FAR_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  room = roundRoom(point, HUB_INSIDE, HUB_LOW, HUB_HIGH)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+    return best
+  best = deeperRoom(best, roundRoom(q, HATCH, HATCH_LOW, HATCH_HIGH))
+  best = deeperRoom(best, roundRoom(q, PORT_INSIDE, PORT_LOW, PORT_HIGH))
+  best = deeperRoom(best, roundRoom(q, PORT_INSIDE, FAR_LOW, FAR_HIGH))
+  best = deeperRoom(best, roundRoom(q, HUB_INSIDE, HUB_LOW, HUB_HIGH))
   floor = -outward
   tube = wp.vec3(outward[0] * (across - TUBE_MIDDLE),
-                 outward[1] * (across - TUBE_MIDDLE), point[2] - PLANE)
+                 outward[1] * (across - TUBE_MIDDLE), q[2] - PLANE)
   size = wp.length(tube)
   inward = -outward
   if size > 1.0e-6:
     inward = -tube / size
   room = wp.vec4(inward[0], inward[1], inward[2], TUBE_INSIDE - size)
   room = shallower(room, DECK - across, floor)
-  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
-  for k in range(ways.shape[0]):
-    way = ways[k]
-    out = wp.clamp(point[0] * way[0] + point[1] * way[1], SHAFT_FROM,
-                   DECK)
-    off = point - wp.vec3(out * way[0], out * way[1], PLANE)
+  best = deeperRoom(best, room)
+  for k in range(SHAFTS):
+    way = layout[k]
+    out = wp.clamp(q[0] * way[0] + q[1] * way[1], SHAFT_FROM, DECK)
+    off = q - wp.vec3(out * way[0], out * way[1], PLANE)
     size = wp.length(off)
     inward = floor
     if size > 1.0e-6:
       inward = -off / size
     room = wp.vec4(inward[0], inward[1], inward[2], SHAFT_INSIDE - size)
     room = shallower(room, DECK - across, floor)
-    best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+    best = deeperRoom(best, room)
   return best
+
+
+@wp.func
+def roomGap(point: wp.vec3, docked: int, outside: int,
+            layout: wp.array(dtype=wp.vec3)) -> wp.vec4:
+  """Returns how far 'point' (the world's own axes) is inside the rooms
+  (the rocket's, 'rocketRooms', where the rocket is; on the pad,
+  'outside' one, the pad's, 'padRooms', where the pad is: 'layout'):
+  as deep as the room it is deepest in; less than nought: in a wall)
+  and the way into them from the nearest face (x y z, the world's own
+  axes, then the depth)."""
+  q = localIn(layout, ROCKET, point)
+  best = worldOf(layout, ROCKET, rocketRooms(q, docked, outside, layout))
+  if outside % 2 == 1:
+    best = padRooms(localIn(layout, PAD, point), q, best, outside, layout)
+  return best
+
+
+#  Whose a room's face is ('roomOwner', and a meeting's on it, 'walked'):
+#  the rocket's (its cabin, its doorway, the station's docked, its body
+#  met from the pad's air) or the pad's (the tower's, the ground, the
+#  hole out of the hall).
+ROCKET_FACE = -2
+PAD_FACE = -1
+
+
+@wp.func
+def roomOwner(point: wp.vec3, docked: int, outside: int,
+              layout: wp.array(dtype=wp.vec3)) -> int:
+  """Returns whose face of the rooms is nearest 'point' ('roomGap''s):
+  'ROCKET_FACE' or 'PAD_FACE'."""
+  q = localIn(layout, ROCKET, point)
+  inRocket = rocketRooms(q, docked, outside, layout)[3]
+  if outside % 2 == 0:
+    return ROCKET_FACE
+  pad = padRooms(localIn(layout, PAD, point), q, wp.vec4(
+    0.0, 0.0, 1.0, -1.0e9), outside, layout)
+  if inRocket >= pad[3]:
+    return ROCKET_FACE
+  across = wp.sqrt(q[0] * q[0] + q[1] * q[1])
+  if q[2] > BASE and q[2] < CABIN_TOP and across > 1.0e-6:
+    if wp.abs(across - BODY - pad[3]) < 1.0e-4:
+      out = worldOf(layout, ROCKET, wp.vec4(q[0] / across, q[1] / across,
+                                            0.0, 0.0))
+      if (pad[0] * out[0] + pad[1] * out[1] + pad[2] * out[2]) > 0.99:
+        return ROCKET_FACE
+  return PAD_FACE
 
 
 @wp.func
@@ -455,7 +536,7 @@ def pressed(places: wp.array(dtype=wp.vec3),
             solidTurns: wp.array(dtype=wp.quat),
             solidHalves: wp.array(dtype=wp.vec3),
             solidVelocities: wp.array(dtype=wp.vec3),
-            ways: wp.array(dtype=wp.vec3),
+            layout: wp.array(dtype=wp.vec3),
             bodyNear: wp.array2d(dtype=wp.int32),
             bodyNearCount: wp.array(dtype=wp.int32),
             touched: wp.array(dtype=wp.int32),
@@ -467,8 +548,8 @@ def pressed(places: wp.array(dtype=wp.vec3),
             up: wp.vec3, present: int, legs: int, docked: int,
             outside: int, elapsed: float):
   """Pushes each point (a thread a point) out of what it is in: the
-  rooms' walls ('roomGap'; 'docked': the station's rooms too, its shafts
-  out along 'ways'; 'outside': the walkway's), the solids (where they
+  rooms' walls ('roomGap'; 'docked': the station's rooms too; 'outside':
+  the walkway's; 'layout': where each is), the solids (where they
   were at the frame's start, moved on at their velocities 'elapsed' s
   since: an elevator's cage at 30 m/s left still a frame long had him
   0.4 m into its plates), the other bodies' boxes
@@ -503,7 +584,7 @@ def pressed(places: wp.array(dtype=wp.vec3),
   touching = int(0)
   push = wp.vec3(0.0, 0.0, 0.0)
   normals = wp.vec3(0.0, 0.0, 0.0)
-  room = roomGap(point, docked, outside, ways)
+  room = roomGap(point, docked, outside, layout)
   depth = radius - room[3]
   if depth > 0.0:
     normal = wp.vec3(room[0], room[1], room[2])
@@ -655,12 +736,38 @@ MOVE_MOST = _single(0.08)
 ITERATIONS = 5
 LEVELS = 9
 FLOORED = _single(0.6)
+#  His legs walk him only while what he stands on is within this of his
+#  up (a cosine: 45 deg, '_crewman.FALLEN'; leant further, knocked down,
+#  they cannot push him along it: he lies on it till he gets up).
+LEGS_UPRIGHT = _single(0.7)
 #  How far up is no way out ('upOnto').
 BLOCKED = _single(1.0e9)
-#  Shoved out of what he met, he moves on as fast as it moved him, no
-#  faster than the fastest solid near him by this, m/s ('shovedBy': a
-#  solid put where he stood throws him no faster).
-SHOVE_MORE = _single(1.0)
+#  His body turns (user, 2026-11-18: "You Spin me Round (Like a Record)": a
+#  knock off his middle twists him): his moments across his up and along it,
+#  kg m² ('_crewman.MOMENTS'); what he meets pushes him where it meets him
+#  (his points pressed on a room's face, on the average; on a solid, those in
+#  it), each meeting never pulling and set against the others 'PASSES' times
+#  over (Gauss and Seidel's way), rubbing at most 'RUB' of its push (cloth or
+#  a shoe on a floor or a wall). While his legs hold him on what he stands
+#  on, they are his grip (nothing rubs) and they keep his feet under him:
+#  what he stands on holds him up through his middle (no tipping off a
+#  stair's edge); whatever else meets him, his legs too, turns him (user,
+#  2026-11-18: "if you hit Asgers legs like that he should start spinning").
+#  His point within 'PRESSED' of a face presses on it, within 'PATCH' of a
+#  solid it touches it, m; a room's faces whose normals are within
+#  'SAME_FACE' (a cosine) are one meeting; at most 'MEETINGS_MOST' meetings a
+#  part, each 'MEET_ROWS' rows in 'meets' (its points summed, then their
+#  middle; its normal; how fast what it meets moves there; the push it gave
+#  him so far; how many points).
+MOMENT_ACROSS = _single(crew.MOMENTS[0])
+MOMENT_ALONG = _single(crew.MOMENTS[2])
+PASSES = 4
+RUB = _single(0.5)
+PRESSED = _single(0.004)
+PATCH = _single(0.006)
+SAME_FACE = _single(0.95)
+MEETINGS_MOST = 16
+MEET_ROWS = 5
 #  The most solids near him a frame ('nearby': his box looks at those
 #  alone; a GPU thread reading all four hundred each time it looked took
 #  18 ms a frame walking).
@@ -852,7 +959,7 @@ def sampled(level: int, i: int, j: int) -> int:
 @wp.func
 def deepestIn(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
               own: int, docked: int, outside: int,
-              ways: wp.array(dtype=wp.vec3),
+              layout: wp.array(dtype=wp.vec3),
               solidMiddles: wp.array(dtype=wp.vec3),
               solidTurns: wp.array(dtype=wp.quat),
               solidHalves: wp.array(dtype=wp.vec3),
@@ -868,7 +975,7 @@ def deepestIn(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
       for j in range(-1, 2):
         if sampled(level, i, j) == 1:
           room = roomGap(samplePoint(soles, axes, high, level, i, j), docked,
-                         outside, ways)
+                         outside, layout)
           if -room[3] > best[3]:
             best = wp.vec4(room[0], room[1], room[2], -room[3])
   up = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
@@ -889,7 +996,7 @@ def deepestIn(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
 @wp.func
 def pushedOut(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
               own: int, docked: int, outside: int,
-              ways: wp.array(dtype=wp.vec3),
+              layout: wp.array(dtype=wp.vec3),
               solidMiddles: wp.array(dtype=wp.vec3),
               solidTurns: wp.array(dtype=wp.quat),
               solidHalves: wp.array(dtype=wp.vec3),
@@ -901,7 +1008,7 @@ def pushedOut(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
   free = int(0)
   for _ in range(ITERATIONS):
     if free == 0:
-      met = deepestIn(out, axes, high, t, own, docked, outside, ways,
+      met = deepestIn(out, axes, high, t, own, docked, outside, layout,
                       solidMiddles, solidTurns, solidHalves,
                       solidVelocities, near, count)
       if met[3] > 0.0:
@@ -912,28 +1019,110 @@ def pushedOut(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
 
 
 @wp.func
-def shovedBy(v: wp.vec3, shove: wp.vec3, dt: float,
-             fastest: float) -> wp.vec3:
-  """Returns his velocity 'v' after what he met shoved his box 'shove'
-  (m) out of it in a part of 'dt' s (how hard they met is had from his
-  velocity before the part's meetings, 'walked'): along the shove he
-  moves as much faster as it moved him (a still wall stops him going
-  into it; a moving one, an elevator's cage, carries him at its speed:
-  the user's let's play, 2026-11-18, the cage moved him and kept its
-  speed, its roof and floor met him at 25 m/s), at most 'fastest' and
-  'SHOVE_MORE' that way."""
-  size = wp.length(shove)
-  if size < 1.0e-6 or dt <= 0.0:
-    return v
-  way = shove / size
-  along = wp.dot(v, way)
-  after = wp.min(along + size / dt, wp.max(along, fastest + SHOVE_MORE))
-  return v + (after - along) * way
+def turnedBy(up: wp.vec3, twist: wp.vec3) -> wp.vec3:
+  """Returns how much faster his body spins for the twist 'twist' (N m
+  s), his up 'up': his moments' inverse."""
+  along = wp.dot(twist, up)
+  return (twist - along * up) / MOMENT_ACROSS + (along / MOMENT_ALONG) * up
+
+
+@wp.func
+def boxGap(point: wp.vec3, middle: wp.vec3, turn: wp.quat,
+           half: wp.vec3) -> float:
+  """Returns how far 'point' is outside a box ('middle', 'turn',
+  'half'), m (below nought: inside it so far)."""
+  local = wp.quat_rotate_inv(turn, point - middle)
+  qx = wp.abs(local[0]) - half[0]
+  qy = wp.abs(local[1]) - half[1]
+  qz = wp.abs(local[2]) - half[2]
+  out = wp.length(wp.vec3(wp.max(qx, 0.0), wp.max(qy, 0.0),
+                          wp.max(qz, 0.0)))
+  return out + wp.min(wp.max(qx, wp.max(qy, qz)), 0.0)
+
+
+@wp.func
+def patchOf(soles: wp.vec3, axes: wp.mat33, high: float, centre: wp.vec3,
+            half: wp.vec3, there: wp.vec3, turn: wp.quat,
+            hb: wp.vec3) -> wp.vec3:
+  """Returns where his box (its soles at 'soles', 'high'; its middle
+  'centre', 'half') meets a solid ('there', 'turn', 'hb'): the middle
+  of his points touching it ('PATCH'); none touching it (an edge of it
+  between them), the point of his box nearest its middle."""
+  total = wp.vec3(0.0, 0.0, 0.0)
+  count = float(0.0)
+  for level in range(LEVELS):
+    for i in range(-1, 2):
+      for j in range(-1, 2):
+        if sampled(level, i, j) == 1:
+          point = samplePoint(soles, axes, high, level, i, j)
+          if boxGap(point, there, turn, hb) < PATCH:
+            total = total + point
+            count = count + 1.0
+  if count > 0.5:
+    return total / count
+  a = wp.vec3(axes[0, 0], axes[1, 0], axes[2, 0])
+  b = wp.vec3(axes[0, 1], axes[1, 1], axes[2, 1])
+  up = wp.vec3(axes[0, 2], axes[1, 2], axes[2, 2])
+  off = there - centre
+  return (centre + wp.clamp(wp.dot(off, a), -half[0], half[0]) * a
+          + wp.clamp(wp.dot(off, b), -half[1], half[1]) * b
+          + wp.clamp(wp.dot(off, up), -half[2], half[2]) * up)
+
+
+@wp.func
+def roomMet(meets: wp.array(dtype=wp.vec3),
+            owners: wp.array(dtype=wp.int32), count: int, point: wp.vec3,
+            normal: wp.vec3, owner: int) -> int:
+  """Adds his point 'point' pressed on a room's face ('normal', the
+  rocket's or the pad's: 'owner', 'ROCKET_FACE' or 'PAD_FACE') to that
+  face's meeting (one of the same owner's whose normal is within
+  'SAME_FACE' of it), or a new one; returns how many meetings there are
+  then."""
+  found = int(-1)
+  for c in range(count):
+    if found < 0 and owners[c] == owner:
+      if wp.dot(meets[MEET_ROWS * c + 1], normal) > SAME_FACE:
+        found = c
+  out = int(count)
+  if found < 0:
+    if out >= MEETINGS_MOST:
+      return out
+    found = out
+    out = out + 1
+    zero = wp.vec3(0.0, 0.0, 0.0)
+    meets[MEET_ROWS * found] = zero
+    meets[MEET_ROWS * found + 1] = normal
+    meets[MEET_ROWS * found + 2] = zero
+    meets[MEET_ROWS * found + 3] = zero
+    meets[MEET_ROWS * found + 4] = zero
+    owners[found] = owner
+  meets[MEET_ROWS * found] = meets[MEET_ROWS * found] + point
+  meets[MEET_ROWS * found + 4] = meets[MEET_ROWS * found + 4] + wp.vec3(
+    1.0, 0.0, 0.0)
+  return out
+
+
+@wp.func
+def solidMet(meets: wp.array(dtype=wp.vec3),
+             owners: wp.array(dtype=wp.int32), count: int, point: wp.vec3,
+             normal: wp.vec3, moving: wp.vec3, solid: int) -> int:
+  """Adds his meeting with solid 'solid' (where: 'point', its way out:
+  'normal', how fast it moves: 'moving'); returns how many meetings
+  there are then."""
+  if count >= MEETINGS_MOST:
+    return count
+  meets[MEET_ROWS * count] = point
+  meets[MEET_ROWS * count + 1] = normal
+  meets[MEET_ROWS * count + 2] = moving
+  meets[MEET_ROWS * count + 3] = wp.vec3(0.0, 0.0, 0.0)
+  meets[MEET_ROWS * count + 4] = wp.vec3(1.0, 0.0, 0.0)
+  owners[count] = solid
+  return count + 1
 
 
 @wp.func
 def upOnto(soles: wp.vec3, axes: wp.mat33, high: float, t: float, own: int,
-           docked: int, outside: int, ways: wp.array(dtype=wp.vec3),
+           docked: int, outside: int, layout: wp.array(dtype=wp.vec3),
            solidMiddles: wp.array(dtype=wp.vec3),
            solidTurns: wp.array(dtype=wp.quat),
            solidHalves: wp.array(dtype=wp.vec3),
@@ -951,7 +1140,7 @@ def upOnto(soles: wp.vec3, axes: wp.mat33, high: float, t: float, own: int,
       for j in range(-1, 2):
         if sampled(level, i, j) == 1:
           room = roomGap(samplePoint(soles, axes, high, level, i, j), docked,
-                         outside, ways)
+                         outside, layout)
           if room[3] < 0.0:
             lean = wp.dot(wp.vec3(room[0], room[1], room[2]), up)
             if lean > 0.3:
@@ -1009,70 +1198,98 @@ def walked(place: wp.array(dtype=wp.vec3),
            solidTurns: wp.array(dtype=wp.quat),
            solidHalves: wp.array(dtype=wp.vec3),
            solidVelocities: wp.array(dtype=wp.vec3),
-           ways: wp.array(dtype=wp.vec3),
+           layout: wp.array(dtype=wp.vec3),
            near: wp.array(dtype=wp.int32),
            nearCount: wp.array(dtype=wp.int32),
            reaction: wp.array(dtype=wp.vec3),
+           turned: wp.array(dtype=wp.vec3),
+           solidPushes: wp.array(dtype=wp.vec3),
+           solidMoments: wp.array(dtype=wp.vec3),
+           meets: wp.array(dtype=wp.vec3),
+           owners: wp.array(dtype=wp.int32),
            felt: wp.vec3, turning: wp.vec3, speeding: wp.vec3,
-           wanted: wp.vec3, leap: wp.vec3, up: wp.vec3, walking: int,
-           wanting: int, gun: wp.vec3, jet: wp.vec3, crouch: int,
-           docked: int, outside: int, own: int, seconds: float):
+           wanted: wp.vec3, leap: wp.vec3, up: wp.vec3, was: wp.vec3,
+           spin: wp.vec3, walking: int, wanting: int, gun: wp.vec3,
+           jet: wp.vec3, crouch: int, docked: int, outside: int, own: int,
+           seconds: float):
   """Moves Asger's box a frame ('seconds' s) on, one thread: what is
   felt there moves it (as a loose thing: 'felt', 'turning', 'speeding'),
-  his legs while he touches something ('wanted', 'walking', 'wanting',
+  his legs while he stands upright on his feet ('LEGS_UPRIGHT';
+  'wanted', 'walking', 'wanting',
   a 'leap' once: as against what he stands on, 'ground' its velocity,
   kept from frame to frame: the user's let's play, 2026-11-18, standing
   on the side of an elevator's cage running 30 m/s out his legs held him
-  still to the station, the cage's roof and floor beat him to death),
-  the Grav-Gun's field or pulse ('gun': its force on him
-  over his mass, m/s², '_gravgun'), his jetpack ('jet': likewise,
-  '_jetpack'); in parts of the frame no longer than
-  'MOVE_MOST',
-  first along his up, then across, each pushed out of what it meets
-  ('pushedOut'): what it meets stops it and it slides along (Minecraft's
-  way, his box upright along 'up'); walking, it steps up onto what is
-  no higher than 'STEP_UP' and keeps to the ground going down (a ledge
-  deeper than that: he falls; crouched ('crouch'), he stops at it). It
-  stands up again only with room overhead. Its place, velocity, what it
-  touches ('contact': touching, standing on something, crouched; 'met'
-  0: how many meetings, how far it stepped up, the fastest it met
-  anything; 1: their normals summed; 2: those it stands on's) back for
-  the host ('place': his soles, not his middle: his up turning, he turns
-  about his feet); the thuds; its
-  box into the solids' slot 'own' (moving as it does through the frame)
-  for the loose things. Whatever really changed his speed (his legs on
-  what he stands on, the leap, what he met, the gun, the jetpack's and
-  the air's pushes: all but what the vessel's own moving makes him
-  feel) pushes the vessel back as hard ('reaction' 0: the push, N s; 1:
-  its twist about the vessel's middle, N m s, his mass at his middle;
-  the vessel's own axes): the walls, the bolts and the air are the
-  vessel's."""
+  still to the station, the cage's roof and floor beat him to death;
+  weightless, pushing off what he touches), the Grav-Gun's field or
+  pulse ('gun': its force on him over his mass, m/s², '_gravgun'), his
+  jetpack ('jet': likewise, '_jetpack'); in parts of the frame no
+  longer than 'MOVE_MOST', first along his up, then across, each pushed
+  out of what it meets ('pushedOut'), his box upright along 'up'
+  (Minecraft's way); walking, it steps up onto what is no higher than
+  'STEP_UP' and keeps to the ground going down (a ledge deeper than
+  that: he falls; crouched ('crouch'), he stops at it). It stands up
+  again only with room overhead. His body turns about its middle
+  ('BOX_MIDDLE' over his soles: 'was' his up as the last frame left
+  him, 'up' as the host turned him since) and spins 'spin' (rad/s):
+  what he meets pushes him where it meets him (user, 2026-11-18: "You
+  Spin me Round (Like a Record)"; 'MOMENT_ACROSS'), so a knock off his
+  middle twists him as well as stopping him, and what he stands on
+  holds him up where it holds him (off its edge, he topples). Its
+  place, velocity, what it touches ('contact': touching, standing on
+  something (two: upright), crouched; 'met' 0: how many meetings, how
+  far it stepped up, the fastest it met anything; 1: their normals
+  summed; 2: those it stands on's) back for the host ('place': his
+  soles); his spin ('turned' 0) and the twist his meetings gave him
+  over the frame ('turned' 1, N m s), the solid he stands on ('turned'
+  2: its slot and one, nought none, kept from frame to frame); the
+  thuds; its box into
+  the solids' slot 'own'
+  (moving as it does through the frame) for the loose things. Whatever
+  really changed his speed and spin (his legs on what he stands on, the
+  leap, what he met, the gun, the jetpack's and the air's pushes: all
+  but what the vessel's own moving makes him feel) pushes the vessel
+  back as hard ('reaction' 0: the push, N s; 1: its twist about the
+  vessel's middle, N m s, his legs' at his middle, a meeting's where it
+  met him; the vessel's own axes); what of that a solid took (his
+  meetings with it, his legs and leap on it standing on it) is in
+  'solidPushes' (N s) and 'solidMoments' (its twist about the world's
+  middle, N m s), summed (the host's to empty) for the host to push
+  what moves the solid (an elevator's cage, the door, the walkway, the
+  rocket's legs) by; what the rooms' faces took, after the solids: 'own'
+  + 1 the rocket's faces', + 2 the pad's ('roomOwner')."""
   v = velocity[0]
+  w = spin
   under = ground[0]
   up = wp.normalize(up)
   axes = boxAxes(up)
   soles = place[0]
+  if wp.length(was) > 0.5:
+    soles = soles + BOX_MIDDLE * (wp.normalize(was) - up)
   known = wp.min(nearCount[0], NEAR_MOST)
   nearCount[0] = 0
   touching = int(0)
   pressing = int(0)
   grounded = int(0)
+  upright = int(0)
   crouched = int(0)
+  standing = int(turned[2][0] + 0.5) - 1
   if contact[0][0] > 0.5:
     touching = int(1)
   if contact[0][0] > 1.5:
     pressing = int(1)
   if contact[0][1] > 0.5:
     grounded = int(1)
+  if contact[0][1] > 1.5:
+    upright = int(1)
   if contact[0][2] > 0.5:
     crouched = int(1)
   if crouch == 1:
     crouched = int(1)
   elif crouched == 1:
-    standing = deepestIn(soles, axes, BOX_TALL, 0.0, own, docked, outside,
-                         ways, solidMiddles, solidTurns, solidHalves,
-                         solidVelocities, near, known)
-    if standing[3] <= 0.0:
+    risen = deepestIn(soles, axes, BOX_TALL, 0.0, own, docked, outside,
+                      layout, solidMiddles, solidTurns, solidHalves,
+                      solidVelocities, near, known)
+    if risen[3] <= 0.0:
       crouched = int(0)
   high = BOX_TALL
   if crouched == 1:
@@ -1082,10 +1299,6 @@ def walked(place: wp.array(dtype=wp.vec3),
   solidMiddles[own] = start
   solidTurns[own] = wp.quat_from_matrix(axes)
   solidHalves[own] = half
-  fastest = float(0.0)
-  for m in range(known):
-    if near[m] != own:
-      fastest = wp.max(fastest, wp.length(solidVelocities[near[m]]))
   count = int(wp.ceil(seconds * (wp.length(v) + 2.0) / MOVE_MOST))
   count = wp.clamp(count, 1, 24)
   dt = seconds / float(count)
@@ -1097,6 +1310,7 @@ def walked(place: wp.array(dtype=wp.vec3),
   meetings = int(0)
   pushedBack = wp.vec3(0.0, 0.0, 0.0)
   twistedBack = wp.vec3(0.0, 0.0, 0.0)
+  twisted = wp.vec3(0.0, 0.0, 0.0)
   for k in range(count):
     t = float(k + 1) * dt
     body = soles + BOX_MIDDLE * up
@@ -1104,9 +1318,12 @@ def walked(place: wp.array(dtype=wp.vec3),
             - 2.0 * wp.cross(turning, v) - wp.cross(speeding, body))
     framed = feel
     began = v
+    footing = wp.vec3(0.0, 0.0, 0.0)
     if k == 0 and touching == 1:
       v = v + leap
+      footing = footing + ASGER_HEFT * leap
     feel = feel + gun + jet
+    gripping = int(0)
     if touching == 1:
       rel = v - under
       legs = (wanted - rel) / LEGS_TIME
@@ -1116,8 +1333,15 @@ def walked(place: wp.array(dtype=wp.vec3),
       size = wp.length(legs)
       if size > LEGS_MOST:
         legs = legs * (LEGS_MOST / size)
-      if walking == 1 or wanting == 1:
+      if (walking == 1 and upright == 1) or (walking == 0
+                                             and wanting == 1):
         feel = feel + legs
+        footing = footing + ASGER_HEFT * dt * legs
+        gripping = upright
+    if standing >= 0:
+      solidPushes[standing] = solidPushes[standing] - footing
+      solidMoments[standing] = solidMoments[standing] - wp.cross(
+        body, footing)
     v = v + (feel - ASGER_DRAG * wp.length(v) * v) * dt
     meeting = v
     move = v * dt
@@ -1126,43 +1350,38 @@ def walked(place: wp.array(dtype=wp.vec3),
     p = soles + rise
     settled = int(0)
     if wp.dot(rise, up) < 0.0:
-      onto = upOnto(p, axes, high, t, own, docked, outside, ways,
+      onto = upOnto(p, axes, high, t, own, docked, outside, layout,
                     solidMiddles, solidTurns, solidHalves, solidVelocities,
                     near, known)
       if onto < BLOCKED:
         settled = int(1)
         if onto > 0.0:
           p = p + (onto + GAP) * up
-          v = shovedBy(v, (onto + GAP) * up, dt, fastest)
     if settled == 0:
-      aimed = p
-      p = pushedOut(p, axes, high, t, own, docked, outside, ways,
+      p = pushedOut(p, axes, high, t, own, docked, outside, layout,
                     solidMiddles, solidTurns, solidHalves, solidVelocities,
                     near, known)
-      v = shovedBy(v, p - aimed, dt, fastest)
     before = p
     p = pushedOut(before + across, axes, high, t, own, docked, outside,
-                  ways, solidMiddles, solidTurns, solidHalves,
+                  layout, solidMiddles, solidTurns, solidHalves,
                   solidVelocities, near, known)
-    shoved = p - (before + across)
-    climbedNow = int(0)
     wide = wp.length(across)
     onFoot = int(0)
-    if grounded == 1 and walking == 1 and wp.dot(v, up) < 0.5:
+    if upright == 1 and walking == 1 and wp.dot(v, up) < 0.5:
       onFoot = int(1)
     if onFoot == 1 and wide > 1.0e-6:
       way = across / wide
       gone = wp.dot(p - before, way)
       if gone < 0.95 * wide - 1.0e-4:
         raised = pushedOut(before + STEP_UP * up, axes, high, t, own,
-                           docked, outside, ways, solidMiddles, solidTurns,
+                           docked, outside, layout, solidMiddles, solidTurns,
                            solidHalves, solidVelocities, near, known)
         lift = wp.dot(raised - before, up)
         ahead = pushedOut(raised + across, axes, high, t, own, docked,
-                          outside, ways, solidMiddles, solidTurns,
+                          outside, layout, solidMiddles, solidTurns,
                           solidHalves, solidVelocities, near, known)
         lowered = ahead - (lift + 0.002) * up
-        onto = upOnto(lowered, axes, high, t, own, docked, outside, ways,
+        onto = upOnto(lowered, axes, high, t, own, docked, outside, layout,
                       solidMiddles, solidTurns, solidHalves,
                       solidVelocities, near, known)
         if onto < BLOCKED:
@@ -1171,12 +1390,9 @@ def walked(place: wp.array(dtype=wp.vec3),
           if wp.dot(down - before, way) > gone + 0.002 and climbed > 0.002:
             p = down
             rose = rose + climbed
-            climbedNow = int(1)
-    if climbedNow == 0:
-      v = shovedBy(v, shoved, dt, fastest)
     if onFoot == 1:
       dropped = p - STEP_UP * up
-      onto = upOnto(dropped, axes, high, t, own, docked, outside, ways,
+      onto = upOnto(dropped, axes, high, t, own, docked, outside, layout,
                     solidMiddles, solidTurns, solidHalves, solidVelocities,
                     near, known)
       if onto < BLOCKED and onto > 0.003:
@@ -1185,37 +1401,47 @@ def walked(place: wp.array(dtype=wp.vec3),
         p = before
         v = wp.dot(v, up) * up
     soles = p
-    was = pressing
+    core = soles + BOX_MIDDLE * up
+    middle = soles + 0.5 * high * up
+    wasPressing = pressing
     touching = int(0)
     pressing = int(0)
     grounded = int(0)
+    upright = int(0)
+    standing = int(-1)
     closing = float(0.0)
     floorMost = float(-2.0)
     beneath = wp.vec3(0.0, 0.0, 0.0)
+    held = int(0)
     for level in range(LEVELS):
       for i in range(-1, 2):
         for j in range(-1, 2):
           if sampled(level, i, j) == 1:
-            room = roomGap(samplePoint(soles, axes, high, level, i, j),
-                           docked, outside, ways)
+            point = samplePoint(soles, axes, high, level, i, j)
+            room = roomGap(point, docked, outside, layout)
             if room[3] < NEAR:
               normal = wp.vec3(room[0], room[1], room[2])
               touching = int(1)
               meetings = meetings + 1
               normals = normals + normal
+              face = roomOwner(point, docked, outside, layout)
               if wp.dot(normal, up) > floorMost:
                 floorMost = wp.dot(normal, up)
                 beneath = wp.vec3(0.0, 0.0, 0.0)
+                standing = own + 1
+                if face == PAD_FACE:
+                  standing = own + 2
               if wp.dot(normal, up) > FLOORED:
                 grounded = int(1)
                 floors = floors + normal
-              into = wp.dot(v, normal)
-              if room[3] < 0.004:
+              if room[3] < PRESSED:
                 pressing = int(1)
-                closing = wp.max(closing, -wp.dot(meeting, normal))
-                if into < 0.0:
-                  v = v - into * normal
-    middle = soles + 0.5 * high * up
+                closing = wp.max(closing, -wp.dot(
+                  meeting + wp.cross(w, point - core), normal))
+                held = roomMet(meets, owners, held, point, normal, face)
+    for c in range(held):
+      meets[MEET_ROWS * c] = meets[MEET_ROWS * c] / meets[
+        MEET_ROWS * c + 4][0]
     for m in range(known):
       n = near[m]
       if n != own:
@@ -1232,10 +1458,10 @@ def walked(place: wp.array(dtype=wp.vec3),
             if wp.dot(normal, up) > floorMost:
               floorMost = wp.dot(normal, up)
               beneath = solidVelocities[n]
+              standing = n
             if wp.dot(normal, up) > FLOORED:
               grounded = int(1)
               floors = floors + normal
-            into = wp.dot(v - solidVelocities[n], normal)
             turn = solidTurns[n]
             hb = solidHalves[n]
             top = wp.dot(there - soles, up) + spanOf(up, wp.quat_rotate(
@@ -1251,20 +1477,80 @@ def walked(place: wp.array(dtype=wp.vec3),
                 and top > 0.005 and top <= STEP_UP + 0.01
                 and foot < 0.005):
               step = int(1)
-            if box[3] > -0.004 and step == 0:
+            if box[3] > -PRESSED and step == 0:
               pressing = int(1)
+              point = patchOf(soles, axes, high, middle, half, there,
+                              turn, hb)
               closing = wp.max(closing, -wp.dot(
-                meeting - solidVelocities[n], normal))
-              if into < 0.0:
-                v = v - into * normal
+                meeting + wp.cross(w, point - core) - solidVelocities[n],
+                normal))
+              held = solidMet(meets, owners, held, point, normal,
+                              solidVelocities[n], n)
+    if gripping == 1:
+      for c in range(held):
+        if wp.dot(meets[MEET_ROWS * c + 1], up) > FLOORED:
+          meets[MEET_ROWS * c] = core - BOX_MIDDLE * meets[
+            MEET_ROWS * c + 1]
+    for _ in range(PASSES):
+      for c in range(held):
+        point = meets[MEET_ROWS * c]
+        normal = meets[MEET_ROWS * c + 1]
+        moving = meets[MEET_ROWS * c + 2]
+        given = meets[MEET_ROWS * c + 3]
+        arm = point - core
+        u = v + wp.cross(w, arm) - moving
+        lever = wp.cross(arm, normal)
+        give = 1.0 / ASGER_HEFT + wp.dot(lever, turnedBy(up, lever))
+        old = wp.dot(given, normal)
+        fresh = wp.max(old - wp.dot(u, normal) / give, 0.0)
+        push = (fresh - old) * normal
+        v = v + push / ASGER_HEFT
+        w = w + turnedBy(up, wp.cross(arm, push))
+        given = given + push
+        if gripping == 0:
+          u = v + wp.cross(w, arm) - moving
+          slide = u - wp.dot(u, normal) * normal
+          speed = wp.length(slide)
+          if speed > 1.0e-6:
+            way = slide / speed
+            lever = wp.cross(arm, way)
+            give = 1.0 / ASGER_HEFT + wp.dot(lever, turnedBy(up, lever))
+            rubbed = given - wp.dot(given, normal) * normal
+            wish = rubbed - (speed / give) * way
+            most = RUB * wp.dot(given, normal)
+            size = wp.length(wish)
+            if size > most:
+              wish = wish * (most / size)
+            push = wish - rubbed
+            v = v + push / ASGER_HEFT
+            w = w + turnedBy(up, wp.cross(arm, push))
+            given = given + push
+        meets[MEET_ROWS * c + 3] = given
+    offMiddle = wp.vec3(0.0, 0.0, 0.0)
+    for c in range(held):
+      point = meets[MEET_ROWS * c]
+      given = meets[MEET_ROWS * c + 3]
+      offMiddle = offMiddle + wp.cross(point - core, given)
+      solid = owners[c]
+      if solid == ROCKET_FACE:
+        solid = own + 1
+      elif solid == PAD_FACE:
+        solid = own + 2
+      solidPushes[solid] = solidPushes[solid] - given
+      solidMoments[solid] = solidMoments[solid] - wp.cross(point, given)
+    twisted = twisted + offMiddle
+    if floorMost > LEGS_UPRIGHT:
+      upright = grounded
     if touching == 1:
       under = beneath
-    if was == 0:
+    if wasPressing == 0:
       hardest = wp.max(hardest, closing)
       landing = wp.max(landing, closing)
+    elif closing > THUD + (LEGS_MOST + wp.length(framed)) * dt:
+      hardest = wp.max(hardest, closing)
     really = ASGER_HEFT * ((v - began) - framed * dt)
     pushedBack = pushedBack - really
-    twistedBack = twistedBack - wp.cross(body, really)
+    twistedBack = twistedBack - wp.cross(body, really) - offMiddle
   wp.atomic_add(reaction, 0, pushedBack)
   wp.atomic_add(reaction, 1, twistedBack)
   if hardest > THUD:
@@ -1273,10 +1559,13 @@ def walked(place: wp.array(dtype=wp.vec3),
   place[0] = soles
   velocity[0] = v
   ground[0] = under
+  turned[0] = w
+  turned[1] = twisted
+  turned[2] = wp.vec3(float(standing + 1), 0.0, 0.0)
   solidVelocities[own] = (soles + 0.5 * high * up - start) / seconds
   stood = float(0.0)
   if grounded == 1:
-    stood = 1.0
+    stood = 1.0 + float(upright)
   touched = float(0.0)
   if pressing == 1:
     touched = 2.0

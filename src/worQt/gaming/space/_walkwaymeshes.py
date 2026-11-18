@@ -36,8 +36,8 @@ from ._launchtower import LIFT_FOOT, LIFT_TOP, SHAFT, STAIR_FOOT, STAIR_TOP
 from ._launchtower import STAIRWELL, TOWER, TOWER_LEGS, TOWER_TOP
 from ._launchtower import STEPS, flightOf, landingLevel, rise
 from ._walkway import DOOR_HIGH, DOOR_SPAN, DOOR_WINDOW, PAD_UP, SLOPE
-from ._walkway import TUNNEL_FROM
-from ._walkway import TUNNEL_HALF, TUNNEL_HIGH
+from ._walkway import HELD, NEST, PLATE, SEAL, SECTION_LONG, SECTIONS
+from ._walkway import TUNNEL_FROM, TUNNEL_HALF, TUNNEL_HIGH
 
 #  The hall's floor's height over the ground (the cabin's floor's), m.
 DECK = FLOOR + PAD_UP
@@ -48,12 +48,10 @@ STOREY = 4.0
 BRACE = 0.06
 HALL_WALL = 0.2
 #  The walkway: how far it reaches from its pivot to the hull (the skin
-#  at the floor), its walls' thickness, its windows' sill and head over
-#  its floor, the mullions' spacing, m.
+#  at the floor), its windows' sill and head over its floor, m (its
+#  sections: '_walkway', 'sectionParts').
 ARM_LONG = TUNNEL_FROM * -1.0 - capsuleRadius(FLOOR)
-SKIN = 0.06
 SILL, HEAD = 0.9, 2.0
-MULLION_EVERY = 1.0
 #  The door's panel outside, on the walkway's left wall by the door (its
 #  middle in the rocket's own axes; its half sizes), the panel inside by
 #  the door (the wall's angle (deg), height over the floor) and its keys
@@ -322,65 +320,72 @@ def _stairs(put: object) -> None:
                             UNTURNED))
 
 
-def armPivot() -> tuple:
-  """Returns the walkway's pivot (the pad's own axes)."""
-  return TUNNEL_FROM, 0.0, DECK
-
-
-@functools.lru_cache(maxsize=1)
-def armParts() -> dict:
-  """Returns the walkway's meshes by look, in its own axes (its pivot at
-  the hall's east wall, x out to the rocket, z up from its floor)."""
+@functools.lru_cache(maxsize=None)
+def sectionParts(k: int) -> dict:
+  """Returns walkway section 'k''s meshes by look ('_walkway.SECTIONS':
+  nested, each 'NEST' smaller than the one after), in its own axes (its
+  near end at its floor, x out along it, z up): its floor's grating,
+  its roof, its walls below its windows' sills and over their heads,
+  their mullions and glass, a lamp; the last at the rocket also its
+  rubber seal and hood round the door (its air bumper, 'SEAL' deep
+  past its end: user, 2026-11-18, "Use a soft inflatable thing like for
+  airliners") and the door's panel outside."""
   parts = {}
 
   def put(look: str, mesh: tuple) -> None:
     """Adds 'mesh' to 'look''s."""
     parts.setdefault(look, []).append(mesh)
 
-  long, wide = ARM_LONG, TUNNEL_HALF + SKIN
-  middle = 0.5 * long
-  put('grating', boxRows((middle, 0.0, -0.1), (middle, wide, 0.1),
-                         UNTURNED))
-  put('tunnel', boxRows((middle, 0.0, TUNNEL_HIGH + 0.05),
-                        (middle, wide, 0.05), UNTURNED))
+  long, middle = SECTION_LONG, 0.5 * SECTION_LONG
+  inset = (SECTIONS - 1 - k) * NEST
+  wide, low = TUNNEL_HALF - inset, inset
+  high = TUNNEL_HIGH - inset
+  outer = wide + PLATE
+  put('grating', boxRows((middle, 0.0, low - 0.5 * PLATE), (
+    middle, outer, 0.5 * PLATE), UNTURNED))
+  put('tunnel', boxRows((middle, 0.0, high + 0.5 * PLATE), (
+    middle, outer, 0.5 * PLATE), UNTURNED))
+  sill, head = low + SILL, min(high - 0.1, low + HEAD)
   for side in (-1.0, 1.0):
-    y = side * (TUNNEL_HALF + 0.5 * SKIN)
-    put('tunnel', boxRows((middle, y, 0.5 * SILL), (middle, 0.5 * SKIN,
-                                                    0.5 * SILL), UNTURNED))
-    put('tunnel', boxRows((middle, y, 0.5 * (HEAD + TUNNEL_HIGH)), (
-      middle, 0.5 * SKIN, 0.5 * (TUNNEL_HIGH - HEAD)), UNTURNED))
-    count = int(long // MULLION_EVERY)
-    for k in range(count + 1):
-      x = min(long - 0.05, k * MULLION_EVERY + 0.05)
-      put('tunnel', boxRows((x, y, 0.5 * (SILL + HEAD)), (
-        0.05, 0.5 * SKIN, 0.5 * (HEAD - SILL)), UNTURNED))
-    put('glass', boxRows((middle, y, 0.5 * (SILL + HEAD)), (
-      middle, 0.005, 0.5 * (HEAD - SILL)), UNTURNED))
-    put('rubber', boxRows((long - 0.1, side * (TUNNEL_HALF + 0.05),
-                           0.5 * TUNNEL_HIGH), (0.12, 0.05,
-                                                0.5 * TUNNEL_HIGH),
-                          UNTURNED))
+    y = side * (wide + 0.5 * PLATE)
+    put('tunnel', boxRows((middle, y, 0.5 * (low + sill)), (
+      middle, 0.5 * PLATE, 0.5 * (sill - low)), UNTURNED))
+    put('tunnel', boxRows((middle, y, 0.5 * (head + high)), (
+      middle, 0.5 * PLATE, 0.5 * (high - head)), UNTURNED))
+    for x in (0.05, middle, long - 0.05):
+      put('tunnel', boxRows((x, y, 0.5 * (sill + head)), (
+        0.05, 0.5 * PLATE, 0.5 * (head - sill)), UNTURNED))
+    put('glass', boxRows((middle, y, 0.5 * (sill + head)), (
+      middle, 0.005, 0.5 * (head - sill)), UNTURNED))
+  put('lamp', boxRows((middle, 0.0, high - 0.02), (middle - 0.4, 0.06,
+                                                  0.02), UNTURNED))
+  if k < SECTIONS - 1:
+    return {look: joined(meshes) for look, meshes in parts.items()}
+  for side in (-1.0, 1.0):
+    put('rubber', boxRows((long - 0.1, side * (wide - 0.05),
+                           low + 0.5 * (high - low)), (
+      0.12, 0.05, 0.5 * (high - low)), UNTURNED))
+    put('rubber', boxRows((long + 0.5 * SEAL, side * (outer + 0.04),
+                           0.5 * (low + high)), (
+      0.5 * SEAL, 0.08, 0.5 * (high - low)), UNTURNED))
+  put('rubber', boxRows((long + 0.5 * SEAL, 0.0, high + 0.06), (
+    0.5 * SEAL, outer + 0.12, 0.08), UNTURNED))
   hood = DOOR_HIGH - FLOOR
   inward = -SLOPE * hood
-  put('rubber', _beam((long - 0.05, -wide, TUNNEL_HIGH + 0.05),
-                      (long + inward, -wide, hood + 0.05), 0.05,
+  put('rubber', _beam((long - 0.05, -outer, high + 0.05),
+                      (long + inward, -outer, hood + 0.05), 0.05,
                       (0.0, 1.0, 0.0)))
-  put('rubber', _beam((long - 0.05, wide, TUNNEL_HIGH + 0.05),
-                      (long + inward, wide, hood + 0.05), 0.05,
+  put('rubber', _beam((long - 0.05, outer, high + 0.05),
+                      (long + inward, outer, hood + 0.05), 0.05,
                       (0.0, 1.0, 0.0)))
   put('tunnel', quadRows((long + 0.5 * inward - 0.02, 0.0,
-                          0.5 * (TUNNEL_HIGH + hood) + 0.05), (
-    (0.0, 1.0, 0.0), _unit((inward + 0.05, 0.0, hood - TUNNEL_HIGH)),
-    _unit((TUNNEL_HIGH - hood, 0.0, inward + 0.05))), (
-    wide, 0.5 * math.hypot(inward + 0.05, TUNNEL_HIGH - hood))))
-  put('lamp', boxRows((middle, 0.0, TUNNEL_HIGH - 0.02), (
-    middle - 0.5, 0.06, 0.02), UNTURNED))
-  for side in (-1.0, 1.0):
-    put('tower', _beam((0.3, side * wide, -0.25), (long - 0.3, side * wide,
-                                                    -0.25), 0.12))
+                          0.5 * (high + hood) + 0.05), (
+    (0.0, 1.0, 0.0), _unit((inward + 0.05, 0.0, hood - high)),
+    _unit((high - hood, 0.0, inward + 0.05))), (
+    outer, 0.5 * math.hypot(inward + 0.05, high - hood))))
   (x, y, z), half = OUTSIDE_PANEL
   axes = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))
-  local = (x - TUNNEL_FROM, y, z - FLOOR)
+  local = (x - (TUNNEL_FROM + HELD - SECTION_LONG), y, z - FLOOR)
   put('panel', boxRows(local, half, axes))
   put('key green', boxRows((local[0], local[1] - half[2] - 0.006,
                             local[2]), (0.04, 0.04, 0.006), axes))

@@ -28,7 +28,7 @@ import math
 
 from ._cockpit import FLOOR, capsuleRadius
 from ._vessel import LEGS, RADIUS, SIZE
-from ._walkway import LEAN, PAD_UP, TUNNEL_FROM, boxInside
+from ._walkway import HOLE, LEAN, PAD_UP, TUNNEL_FROM, boxInside
 
 #  The ground (the pad's top: the rocket's own z), m.
 GROUND = -PAD_UP + 0.02
@@ -59,9 +59,13 @@ LIFT_FOOT = ((-20.7, 2.2, GROUND), (-18.9, 3.6, GROUND + 2.2))
 #  The stair tower's walls outside (its footprint, its top), m.
 TOWER = ((-24.7, -3.2), (-18.5, 3.2))
 TOWER_TOP = FLOOR + 3.2
-#  The yard: how far it reaches round the pad (x and y), how high (it
-#  stops under the hall's floor), m.
-YARD = ((-60.0, -60.0, GROUND), (60.0, 60.0, FLOOR - 1.0))
+#  The yard: the open air round the pad (x and y), up past the walkway
+#  (user, 2026-11-18: the walkway real sections moving in it, '_walkway':
+#  off its end he falls), m; the hall in it, walls, floor and roof (its
+#  outside), m.
+YARD = ((-60.0, -60.0, GROUND), (60.0, 60.0, FLOOR + 6.0))
+HALL_OUT = ((HALL[0][0] - WALL, HALL[0][1] - WALL, FLOOR - 1.0),
+            (HALL[1][0] + WALL, HALL[1][1] + WALL, HALL[1][2] + WALL))
 #  The rocket's body met from the yard: its radius (its tank's, a little
 #  more), m.
 BODY = RADIUS + 0.05
@@ -117,14 +121,16 @@ def boxOutside(point: tuple, low: tuple, high: tuple) -> float:
 
 def groundsInside(point: tuple, top: bool, foot: bool) -> float:
   """Returns how far 'point' is inside the tower's rooms: the hall, the
-  stairwell, the lift's shaft, the yard (outside the rocket's body and
-  the stair tower), the stairwell's doorways, the lift's ('top', 'foot':
-  its car there, its door open), m."""
+  hole out of it into the walkway, the stairwell, the lift's shaft, the
+  yard (the open air: outside the rocket's body, the stair tower and the
+  hall), the stairwell's doorways, the lift's ('top', 'foot': its car
+  there, its door open), m."""
   low, high = TOWER
   tower = ((low[0], low[1], GROUND - 1.0), (high[0], high[1], TOWER_TOP))
   yard = min(boxInside(point, *YARD), bodyOutside(point),
-             boxOutside(point, *tower))
-  rooms = [boxInside(point, *HALL), boxInside(point, *STAIRWELL),
+             boxOutside(point, *tower), boxOutside(point, *HALL_OUT))
+  rooms = [boxInside(point, *HALL), boxInside(point, *HOLE),
+           boxInside(point, *STAIRWELL),
            boxInside(point, *SHAFT), boxInside(point, *STAIR_TOP),
            boxInside(point, *STAIR_FOOT), yard]
   if top:
@@ -136,11 +142,11 @@ def groundsInside(point: tuple, top: bool, foot: bool) -> float:
 
 @functools.lru_cache(maxsize=1)
 def towerSolids() -> tuple:
-  """Returns the tower's still solids in the cabin's world (each its
+  """Returns the tower's still solids in the pad's world (each its
   middle, half sizes, turn (w x y z) and velocity, still): the flights'
   steps (each a block from under its flight's foot up to its tread) and
-  the landings, the wall between the lanes, the steel tower's legs, the
-  rocket's legs and feet."""
+  the landings, the wall between the lanes, the steel tower's legs (the
+  rocket's legs are the rocket's: 'rocketLegs')."""
   out = []
   thick = 0.15
   for k in range(FLIGHTS):
@@ -167,13 +173,16 @@ def towerSolids() -> tuple:
   for x, y in TOWER_LEGS:
     out.append(((x, y, GROUND + high), (LEG_HALF, LEG_HALF, high),
                 (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
-  out += _rocketLegs()
   return tuple(out)
 
 
-def _rocketLegs() -> list:
-  """Returns the rocket's legs as solids: each strut (from the tank out
-  and down to its foot) and its foot."""
+@functools.lru_cache(maxsize=1)
+def rocketLegs() -> tuple:
+  """Returns the rocket's legs as solids, the rocket's own axes (user,
+  2026-11-18: "rocket legs are part of the rocket. If Asger pushes hard
+  enough to rocket should fall over": the pad's world has them where the
+  rocket stands, what he pushes them by the rocket's): each strut (from
+  the tank out and down to its foot) and its foot."""
   out = []
   low = -PAD_UP
   for foot in LEGS:
@@ -195,4 +204,4 @@ def _rocketLegs() -> list:
     out.append(((foot[0], foot[1], low + 0.125 * SIZE), (
       0.32 * SIZE, 0.32 * SIZE, 0.125 * SIZE), (1.0, 0.0, 0.0, 0.0),
                 (0.0, 0.0, 0.0)))
-  return out
+  return tuple(out)
