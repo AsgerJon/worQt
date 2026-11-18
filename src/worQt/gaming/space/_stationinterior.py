@@ -43,9 +43,18 @@ PLANE = NOSE_PORT[2] + portTip()[2]
 #  from 'SHAFT_FROM' off the axis to the deck), the ring's tube (radius),
 #  the deck (its distance from the axis: one g at the station's turn).
 PORT_INSIDE = PORT[0] - HULL_WALL
-PORT_LOW, PORT_HIGH = NOSE_PORT[2], PLANE - 0.5 * HUB[1] + HULL_WALL
 HUB_INSIDE = HUB[0] - HULL_WALL
 HUB_LOW = PLANE - 0.5 * HUB[1] + HULL_WALL
+#  The port's room reaches 'SEAM' m into the hub's, as the hatch's into
+#  the port's (two rooms meeting at a plane are nought deep there: his
+#  box rising up the axis stopped dead on it, the user's let's play,
+#  2026-11-18, under the hub's end wall's open mouth).
+SEAM = 1.0
+PORT_LOW, PORT_HIGH = NOSE_PORT[2], HUB_LOW + SEAM
+#  The other port, at the hub's far end (user, 2026-11-18: "Terra Prime
+#  should have docking ports on both sides"): its room the docked port's
+#  mirrored in the station's plane (its outer door shut).
+FAR_LOW, FAR_HIGH = 2.0 * PLANE - PORT_HIGH, 2.0 * PLANE - PORT_LOW
 HUB_HIGH = PLANE + 0.5 * HUB[1] - HULL_WALL
 SHAFT_INSIDE = SPOKES[1] - HULL_WALL
 SHAFT_FROM = 0.5 * HUB[0]
@@ -111,6 +120,7 @@ def roomsInside(point: tuple, docked: bool, ways: tuple) -> float:
     return inside
   inside = max(inside, tubeInside(point, HATCH, HATCH_LOW, HATCH_HIGH),
                tubeInside(point, PORT_INSIDE, PORT_LOW, PORT_HIGH),
+               tubeInside(point, PORT_INSIDE, FAR_LOW, FAR_HIGH),
                tubeInside(point, HUB_INSIDE, HUB_LOW, HUB_HIGH),
                ringInside(point))
   for way in ways:
@@ -120,10 +130,12 @@ def roomsInside(point: tuple, docked: bool, ways: tuple) -> float:
 
 def roomOf(point: tuple, ways: tuple) -> str:
   """Returns the room 'point' is deepest in, docked: 'cabin', 'hatch',
-  'port', 'hub', 'shaft', 'ring' ('' none)."""
+  'port', 'far port', 'hub', 'shaft', 'ring' ('' none)."""
   rooms = [('cabin', cabinInside(point)),
            ('hatch', tubeInside(point, HATCH, HATCH_LOW, HATCH_HIGH)),
            ('port', tubeInside(point, PORT_INSIDE, PORT_LOW, PORT_HIGH)),
+           ('far port', tubeInside(point, PORT_INSIDE, FAR_LOW,
+                                   FAR_HIGH)),
            ('hub', tubeInside(point, HUB_INSIDE, HUB_LOW, HUB_HIGH)),
            ('ring', ringInside(point))]
   rooms += [('shaft', shaftInside(point, way)) for way in ways]
@@ -134,8 +146,11 @@ def roomOf(point: tuple, ways: tuple) -> str:
 def stationPoint(point: tuple, relative: tuple) -> tuple:
   """Returns 'point' (the station's own axes, m from its middle) in the
   docked rocket's own axes ('relative': its axes in the station's; the
-  rocket's middle lies on the station's axis 'PLANE' up it)."""
-  return stationWay((point[0], point[1], point[2] - PLANE), relative)
+  rocket's middle lies on the station's axis 'PLANE' from it, against
+  its own z: docked at either port, the station's middle is 'PLANE' up
+  the rocket's z)."""
+  middle = tuple(-PLANE * z for z in relative[2])
+  return stationWay(tuple(p - m for p, m in zip(point, middle)), relative)
 
 
 def stationWay(way: tuple, relative: tuple) -> tuple:

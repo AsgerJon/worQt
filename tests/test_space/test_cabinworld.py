@@ -24,7 +24,7 @@ import math
 from worQt.gaming.space._accelerometer import Accelerometer
 from worQt.gaming.space._bolts import rocketBolts
 from worQt.gaming.space._aerospike import G0
-from worQt.gaming.space._cabinworld import CabinWorld, restingLoose
+from worQt.gaming.space._cabinworld import STILL, CabinWorld, restingLoose
 from worQt.gaming.space._cockpit import FLOOR, Cockpit
 from worQt.gaming.space._crewman import HEFT, LOW, MIDDLE, PUSH, STEP
 from worQt.gaming.space._crewman import TALL, WIDE
@@ -34,8 +34,6 @@ from worQt.gaming.space._launchtower import GROUND
 
 from . import FRAME, SpaceTest
 
-#  Asger's legs at rest: nothing wanted, no leap.
-STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
 #  Where on the pad's open ground his box is tried (his soles), m.
 ARENA = (12.0, 12.0, GROUND)
 

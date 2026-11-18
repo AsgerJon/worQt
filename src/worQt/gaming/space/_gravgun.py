@@ -13,9 +13,13 @@ The field pulls the two together, 'PULL' N for every metre between them,
 each the other way (a magic bolt is held by the hull, so the holder
 goes to it; a loose mug is light, so it comes to him), while the button
 is held ('letUp' ends it). Once what it pulls is within 'NEAR' m of the
-muzzle it holds it ('hold'): a loose thing is held that far before the
-muzzle, along the way it points; a bolt holds its holder that far from
-it (a rod from the bolt to his middle: he may look round). The hold is
+muzzle it holds it ('hold'), reeling it in at 'REEL' m/s: a loose thing
+to 'CARRY' m before the muzzle, along the way it points; a bolt holds
+its holder by a rod from it to his middle, reeled in to 'GRIP' (he may
+look round: by a floor's bolt he stands over it, by a ceiling's his
+head is at the ceiling). 'NEAR' is as far as his gun stays from a bolt
+under his feet (the user's let's play, 2026-11-18: at 1 m he stood on
+the floor's bolt and it never held). The hold is
 a stiff spring, 'HOLD' rad/s on the two, critically damped, solved
 backward over each frame (it never rings up, however long the frame).
 The pulse pushes them apart 'PUNT' times as hard as the field would for
@@ -34,10 +38,15 @@ PULL = 10.0
 PUNT = 10.0
 PULSE = 0.15
 #  What the field pulls within this of the muzzle is held, m (a bolt:
-#  the muzzle within it); held no nearer than 'LEAST', m; the hold's
-#  spring, rad/s on the two (critically damped).
-NEAR = 1.0
+#  the muzzle within it); held no nearer than 'LEAST', m; reeled in at
+#  'REEL' m/s to 'CARRY' m before the muzzle (a loose thing) or 'GRIP' m
+#  from his middle (a bolt: his middle's height over his soles); the
+#  hold's spring, rad/s on the two (critically damped).
+NEAR = 2.0
 LEAST = 0.4
+REEL = 1.5
+CARRY = 1.0
+GRIP = 0.9
 HOLD = 20.0
 #  What the gun takes hold of: a magic bolt ('_bolts') or a loose thing
 #  ('_furnishings.looseThings'), each by its index there.
@@ -154,6 +163,9 @@ class GravGun:
                       else math.hypot(*off))
     if seconds <= 0.0:
       return 0.0, 0.0, 0.0
+    reeled = GRIP if bolt else CARRY
+    if self.hold > reeled:
+      self.hold = max(reeled, self.hold - REEL * seconds)
     if bolt:
       change = _rodded(tuple(t - h for t, h in zip(there, holder)),
                        self.hold, moving, seconds)

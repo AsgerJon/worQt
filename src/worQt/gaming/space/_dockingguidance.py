@@ -6,7 +6,12 @@ system for the rest of. Same with docking"): from within 'REACH' of the
 station's port it turns the rocket to match the station (nose down its
 axis, turning with it: the autopilot's 'match'), brings the nose by the
 docking thrusters to a point 'HOLD_OUT' out on the axis, steady, then
-straight in at 'FINAL_SPEED' till the latch catches. Qt-free.
+straight in at 'FINAL_SPEED' till the latch catches. Beside or behind
+the station it goes round first ('routeOf': the rendezvous leaves the
+rocket 2 km along the station's path, on whatever side of its axis
+that is; the user's let's play, 2026-11-18, straight at the point from
+behind: the rocket backed into the hub's foot at 18.5 m/s and stayed
+pressed to it). Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -15,8 +20,11 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from ._station import SPIN
-from ._turns import norm, unrotated, unit
+from ._dockingport import NOSE_PORT
+from ._stationmeshes import portTip
+from ._stationsolids import CAPSULE, CYLINDER, TORUS, hullBalls
+from ._stationsolids import stationSolids
+from ._turns import cross, dot, norm, unrotated, unit
 from ._vessel import MASS
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -60,14 +68,79 @@ BRAKE = 0.5
 SETTLE = 2.0
 #  It never hurries time (user, 2026-11-17: "Warp should not be
 #  automatic!").
+#  Going round, it keeps 'ROUND_MARGIN' m clear of all the station sweeps
+#  as it turns (its wheel, spokes and antennas a disc, its hub, port and
+#  the antenna behind it on the axis) and passes each corner of its way
+#  within 'ROUND_NEAR' m.
+ROUND_MARGIN = 50.0
+ROUND_NEAR = 20.0
 #  Its phases.
-PHASES = ('off', 'closing', 'final')
+PHASES = ('off', 'round', 'closing', 'final')
+
+
+def _reaches() -> tuple:
+  """Returns how far the station's solids reach from its axis, how far
+  up it (its own z), how far the disc its wheel, spokes and antennas
+  sweep reaches either side of its middle; how far the rocket's hull
+  reaches from its axis, and up the station's axis from its nose (its
+  nose down the axis: its body above it). All m."""
+  out = top = disc = 0.0
+  hub = 0.0
+  for kind, a, b, radius in stationSolids():
+    if kind == TORUS:
+      reach, high, low = a[0] + radius, radius, radius
+    elif kind == CYLINDER:
+      reach, high, low = radius, max(a[2], b[2]) + radius, min(
+        a[2], b[2]) - radius
+      hub = max(hub, radius)
+    else:
+      reach = max(math.hypot(a[0], a[1]), math.hypot(b[0], b[1])) + radius
+      high, low = max(a[2], b[2]) + radius, min(a[2], b[2]) - radius
+    out, top = max(out, reach), max(top, high)
+    if kind != CYLINDER and reach > radius + 1e-6:
+      disc = max(disc, high, -low)
+  balls = hullBalls()
+  wide = max(math.hypot(x, y) + r for x, y, _, r in balls)
+  up = NOSE_PORT[2] - min(z - r for _, _, z, r in balls)
+  return out, top, disc, wide, up
+
+
+STATION_OUT, STATION_TOP, DISC, ROCKET_WIDE, ROCKET_UP = _reaches()
+#  The way round, its nose from the port's tip ('along' the station's
+#  axis): out to 'ROUND_OUT' m from the axis; the front, where the way in
+#  is clear ('FRONT'); below everything ('BELOW').
+PORT_TOP = portTip()[2]
+ROUND_OUT = STATION_OUT + ROCKET_WIDE + ROUND_MARGIN
+FRONT = STATION_TOP - PORT_TOP + ROUND_MARGIN
+BELOW = -DISC - ROCKET_UP - ROUND_MARGIN - PORT_TOP
+
+
+def routeOf(out: float, along: float) -> tuple:
+  """Returns the way round to the point 'HOLD_OUT' out on the axis for
+  the rocket's nose 'out' m from the station's axis and 'along' m up it
+  from the port's tip (its body above it, matched): the corners on the
+  way, each (out, along), the point itself not among them; none from
+  the front (the way in clear). Out past what the station sweeps, the
+  way goes up the outside; below it, out under it first; overlapping its
+  disc beside it, down out of it first; over the disc, straight up."""
+  if along >= FRONT:
+    return ()
+  if out >= ROUND_OUT:
+    return ((out, HOLD_OUT),)
+  if along > -DISC - PORT_TOP:
+    return ((out, HOLD_OUT),)
+  if along > BELOW:
+    return ((out, BELOW), (ROUND_OUT, BELOW), (ROUND_OUT, HOLD_OUT))
+  return ((ROUND_OUT, BELOW), (ROUND_OUT, HOLD_OUT))
 
 
 class DockingGuidance:
   """
   DockingGuidance flies the rocket into the station's port: its 'phase'
-  ('PHASES'; 'on' while not 'off'); 'started' begins (or says why not:
+  ('PHASES'; 'on' while not 'off'), the corners still to pass going
+  round ('route', 'routeOf') off the axis toward 'outward' (a unit
+  vector square to the station's axis, the ecliptic's axes, where the
+  rocket was as it started); 'started' begins (or says why not:
   too far, too fast, docked), 'acted' flies a frame on (the autopilot
   matching, the thrusters pushing), 'stopped' lets go (the thrusters
   quiet; the autopilot as it was left).
@@ -78,17 +151,19 @@ class DockingGuidance:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  What a saved game keeps of it ('_savegame'): its fields.
-  SAVED = ('phase',)
+  SAVED = ('phase', 'route', 'outward')
 
   #  Public Variables
   phase: str
+  route: tuple
+  outward: tuple
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.phase = 'off'
+    self.phase, self.route, self.outward = 'off', (), (1.0, 0.0, 0.0)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  GETTERS  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -118,7 +193,16 @@ class DockingGuidance:
       return 'drifting %.0f m/s from it (within %.0f)' % (drift,
                                                            DRIFT_MOST)
     port.aligned(vessel, t)
-    self.phase = 'closing'
+    axis, offset, along = reading['axis'], reading['offset'], reading[
+      'along']
+    across = tuple(o - along * a for o, a in zip(offset, axis))
+    if norm(across) < 1.0:
+      across = cross(axis, (1.0, 0.0, 0.0))
+      if norm(across) < 0.1:
+        across = cross(axis, (0.0, 1.0, 0.0))
+    self.outward = unit(across)
+    self.route = routeOf(reading['across'], along)
+    self.phase = 'round' if self.route else 'closing'
     return ''
 
   def acted(self, vessel: Vessel, port: DockingPort, reading: dict,
@@ -129,9 +213,21 @@ class DockingGuidance:
     if not self.on:
       return
     axis = reading['axis']
-    vessel.autopilot.matched(port.turnAt(t), tuple(SPIN * a for a in axis))
+    vessel.autopilot.matched(port.turnAt(t), reading['spin'])
     offset, drift = reading['offset'], reading['drift']
-    if self.phase == 'closing':
+    if self.phase == 'round':
+      out, along = self.route[0]
+      error = tuple(o - out * w - along * a for o, w, a in zip(
+        offset, self.outward, axis))
+      far = norm(error)
+      if far < ROUND_NEAR:
+        self.route = self.route[1:]
+        if not self.route:
+          self.phase = 'closing'
+      fast = min(APPROACH_FAST, math.sqrt(2.0 * BRAKE * far))
+      wanted = tuple(-fast * e for e in unit(error)) if far > 1e-6 else (
+        0.0, 0.0, 0.0)
+    elif self.phase == 'closing':
       error = tuple(o - HOLD_OUT * a for o, a in zip(offset, axis))
       far = norm(error)
       fast = min(APPROACH_FAST, math.sqrt(2.0 * BRAKE * far))
@@ -148,7 +244,7 @@ class DockingGuidance:
         2.0 * FINAL_BRAKE * max(0.0, along - FINAL_NEAR))))
       wanted = tuple(-CENTRING * c - speed * a for c, a in zip(
         across, axis))
-    settle = SETTLE if self.phase == 'closing' else FINAL_SETTLE
+    settle = FINAL_SETTLE if self.phase == 'final' else SETTLE
     push = tuple((w - d) / settle for w, d in zip(wanted, drift))
     size = norm(push)
     if size > GUIDED_ACCEL:
@@ -157,5 +253,5 @@ class DockingGuidance:
 
   def stopped(self, vessel: Vessel) -> None:
     """The 'stopped' method lets the rocket go: its thrusters quiet."""
-    self.phase = 'off'
+    self.phase, self.route = 'off', ()
     vessel.rcs = (0.0, 0.0, 0.0)

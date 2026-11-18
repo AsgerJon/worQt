@@ -38,13 +38,12 @@ WALL_BOLTS = ((0.0, 3.0), (72.0, 3.0), (144.0, 3.0), (-144.0, 3.0),
 PLATE = 0.08
 #  The station's bolts ('stationBolts'): how far up the port's wall from
 #  the rocket's nose, how far out on the hub's end wall from its axis,
-#  how far short of the shafts' mouths along the hub's wall, m; how many
-#  (two, four, four, four); how much bigger than the rocket's they are
-#  drawn (seen across the hub).
+#  m; how many (two, four, the hub's middle's, four at the spokes'
+#  mouths, four on the cages' floors); how much bigger than the
+#  rocket's they are drawn (seen across the hub).
 PORT_ALONG = 4.0
 HUB_END = 20.0
-HUB_SHORT = 30.0
-STATION_BOLTS = 14
+STATION_BOLTS = 15
 STATION_SIZE = 4.0
 HEAD = (0.035, 0.025)
 RING = (0.095, 0.125)
@@ -75,10 +74,15 @@ def stationBolts(ways: tuple, floors: tuple) -> tuple:
   use bolts to enter Terra Prime docking"), in the docked rocket's own
   axes ('ways': its shafts' ways out; 'floors': its elevators' cages'
   floors from the axis): two on the docking port's wall a little past
-  the hatch, four on the hub's end wall round the port's mouth, four on
-  the hub's wall short of the shafts' mouths, one on each cage's floor
-  (the gun pulls him into the cage): each in the gun's reach of one
-  before it; each its place and the way it faces."""
+  the hatch, four on the hub's end wall round the port's mouth; one
+  floating in the hub's very middle, facing the port (user, 2026-11-18:
+  "We need a bolt floating in the very center of the docking chamber on
+  the Terra Prime side so you can pull yourself in": straight up the
+  axis from the hatch), one floating in each spoke's mouth, facing the
+  middle ("each of the four arms to the outer ring has a dedicated bolt
+  that can be reach from the center"), one on each cage's floor (the
+  gun pulls him into the cage); each its place and the way it faces
+  (whence it is seen: magic, it floats)."""
   from ._stationinterior import HUB_INSIDE, HUB_LOW, PLANE, PORT_INSIDE
   from ._stationinterior import PORT_LOW
   out = []
@@ -88,9 +92,10 @@ def stationBolts(ways: tuple, floors: tuple) -> tuple:
   for way in ways:
     out.append(((HUB_END * way[0], HUB_END * way[1], HUB_LOW),
                 (0.0, 0.0, 1.0)))
+  out.append(((0.0, 0.0, PLANE), (0.0, 0.0, -1.0)))
   for way in ways:
-    out.append(((HUB_INSIDE * way[0], HUB_INSIDE * way[1],
-                 PLANE - HUB_SHORT), tuple(-w for w in way)))
+    out.append(((HUB_INSIDE * way[0], HUB_INSIDE * way[1], PLANE),
+                tuple(-w for w in way)))
   for way, floor in zip(ways, floors):
     out.append(((floor * way[0], floor * way[1], PLANE),
                 tuple(-w for w in way)))

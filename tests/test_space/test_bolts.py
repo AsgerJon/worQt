@@ -132,9 +132,10 @@ class TestBolts(SpaceTest):
 
   def test_station(self) -> None:
     """Docked, the station's bolts lie on its rooms' walls (the port's,
-    the hub's end round the port) or on its cages' floors, facing into
-    them: the gun holds him inside a room, or in the cage; from the
-    hatch to a cage each is within the gun's reach of one before it."""
+    the hub's end round the port), float in the hub's middle and in each
+    spoke's mouth (user, 2026-11-18), or lie on its cages' floors, facing
+    whence they are reached: the gun holds him inside a room, or in the
+    cage."""
     ways = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0),
             (0.0, -1.0, 0.0))
     elevators = [Elevator() for _ in ways]
@@ -144,17 +145,60 @@ class TestBolts(SpaceTest):
       place, way = bolt
       self.assertAlmostEqual(math.hypot(*way), 1.0, 9)
       hold = holdOf(bolt)
-      if k < 10:
+      if k < 6:
         self.assertLess(abs(roomsInside(place, True, ways)), 0.01, k)
+      elif k < 11:
+        self.assertGreater(roomsInside(place, True, ways), 3.0, k)
+      if k < 11:
         self.assertGreater(roomsInside(hold, True, ways), 0.9, k)
       else:
-        self.assertTrue(elevators[k - 10].holds(ways[k - 10], hold), k)
-    hops = ((bolts[0], bolts[2]), (bolts[2], bolts[6]),
-            (bolts[6], bolts[10]))
-    for one, two in hops:
-      self.assertLess(math.dist(holdOf(one), two[0]), GUN_REACH)
-    hatch = (0.0, 0.0, PORT_LOW)
-    self.assertLess(math.dist(hatch, bolts[0][0]), GUN_REACH)
+        self.assertTrue(elevators[k - 11].holds(ways[k - 11], hold), k)
+
+  def test_way_in(self) -> None:
+    """Docked, the way in (user, 2026-11-18: "a bolt floating in the very
+    center of the docking chamber on the Terra Prime side so you can
+    pull yourself in. Then each of the four arms to the outer ring has a
+    dedicated bolt that can be reach from the center"): from the
+    cabin's floor under the hatch the hub's middle bolt, from where it
+    holds him each spoke's mouth's, from where that holds him its cage's
+    floor's: each within the gun's reach, facing him and in sight (the
+    rooms walked, the cages' plates met)."""
+    import numpy
+    from worQt.gaming.space._sight import inSight
+    ways = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0),
+            (0.0, -1.0, 0.0))
+    elevators = [Elevator() for _ in ways]
+    bolts = stationBolts(ways, tuple(e.floor for e in elevators))
+    plates = [box for e, way in zip(elevators, ways)
+              for box in e.boxesOf(way)]
+    middles = numpy.array([m for m, _, _, _ in plates], numpy.float64)
+    halves = numpy.array([h for _, h, _, _ in plates], numpy.float64)
+    axes = []
+    for _, _, (w, x, y, z), _ in plates:
+      axes.append(numpy.array([
+        (1 - 2 * (y * y + z * z), 2 * (x * y - w * z),
+         2 * (x * z + w * y)),
+        (2 * (x * y + w * z), 1 - 2 * (x * x + z * z),
+         2 * (y * z - w * x)),
+        (2 * (x * z - w * y), 2 * (y * z + w * x),
+         1 - 2 * (x * x + y * y))]))
+    keep = middles[:, 2] > -1e3
+    boxes = middles[keep], halves[keep], numpy.array(axes)[keep]
+
+    def reached(eye: tuple, bolt: tuple) -> None:
+      place, way = bolt
+      off = tuple(p - e for p, e in zip(place, eye))
+      self.assertLess(math.hypot(*off), GUN_REACH, (eye, place))
+      self.assertLess(sum(w * o for w, o in zip(way, off)), 0.0)
+      self.assertTrue(inSight(eye, place, lambda point: roomsInside(
+        point, True, ways), boxes), (eye, place))
+
+    middle = bolts[6]
+    reached((0.0, 0.0, FLOOR + 1.7), middle)
+    for k in range(4):
+      arm, cage = bolts[7 + k], bolts[11 + k]
+      reached(holdOf(middle), arm)
+      reached(holdOf(arm), cage)
 
   def test_walls(self) -> None:
     """The gun takes no bolt through a wall (user, 2026-11-17: "the

@@ -2,8 +2,9 @@
 The space station's inside as it is drawn (user, 2026-11-17: "all aboard
 Asger's kolonihave i rummet!"), its own axes, every face into the rooms
 (seen from inside; the hull's faces outward, culled from in here): the
-hub's wall with the shafts' mouths cut, its ends (the port's mouth cut
-in one), the port's tube and its docking ring; the four shafts out to
+hub's wall with the shafts' mouths cut, its ends (a port's mouth cut in
+each: user, 2026-11-18, "Terra Prime should have docking ports on both
+sides"), the ports' tubes and their docking rings; the four shafts out to
 the ring; the ring's tube over its deck, the shafts' holes and four
 strips of windows along it cut (the stars and Terra wheel past, once a
 minute); the deck. Rows of eight (place, normal, picture u v; the deck's
@@ -104,7 +105,7 @@ def _offSpoke(angle: float) -> float:
 
 def hubRows() -> tuple:
   """Returns the hub's wall (the shafts' mouths cut) and its two ends
-  (the port's mouth cut in the one by it)."""
+  (a port's mouth cut in each)."""
   def wall(u: float, v: float) -> tuple:
     c, s = math.cos(u), math.sin(u)
     return (HUB_INSIDE * c, HUB_INSIDE * s, v), (-c, -s, 0.0)
@@ -116,7 +117,7 @@ def hubRows() -> tuple:
   parts = [gridRows(wall, (0.0, TAU), (-HUB_END, HUB_END), HUB_CUTS,
                     mouth)]
   for end in (1.0, -1.0):
-    low = PORT_INSIDE if end > 0.0 else 0.0
+    low = PORT_INSIDE
 
     def cap(u: float, v: float, end: float = end) -> tuple:
       return (v * math.cos(u), v * math.sin(u), end * HUB_END), (
@@ -127,20 +128,24 @@ def hubRows() -> tuple:
 
 
 def portRows() -> tuple:
-  """Returns the port's tube from the hub to its mouth and the docking
+  """Returns each port's tube from the hub to its mouth and the docking
   ring round the hatch at its mouth."""
-  mouth = portTip()[2]
+  parts = []
+  for side in (1.0, -1.0):
+    mouth = side * portTip(side)[2]
 
-  def wall(u: float, v: float) -> tuple:
-    c, s = math.cos(u), math.sin(u)
-    return (PORT_INSIDE * c, PORT_INSIDE * s, v), (-c, -s, 0.0)
+    def wall(u: float, v: float, side: float = side) -> tuple:
+      c, s = math.cos(u), math.sin(u)
+      return (PORT_INSIDE * c, PORT_INSIDE * s, side * v), (-c, -s, 0.0)
 
-  def ring(u: float, v: float) -> tuple:
-    return (v * math.cos(u), v * math.sin(u), mouth - 0.05), (0.0, 0.0,
-                                                              -1.0)
+    def ring(u: float, v: float, side: float = side,
+             mouth: float = mouth) -> tuple:
+      return (v * math.cos(u), v * math.sin(u), side * (mouth - 0.05)), (
+        0.0, 0.0, -side)
 
-  return joined([gridRows(wall, (0.0, TAU), (HUB_END, mouth), (32, 4)),
-                 gridRows(ring, (0.0, TAU), (HATCH, PORT_INSIDE), (32, 2))])
+    parts += [gridRows(wall, (0.0, TAU), (HUB_END, mouth), (32, 4)),
+              gridRows(ring, (0.0, TAU), (HATCH, PORT_INSIDE), (32, 2))]
+  return joined(parts)
 
 
 def shaftRows() -> tuple:

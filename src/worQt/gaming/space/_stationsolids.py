@@ -2,8 +2,8 @@
 The station's solids and the rocket's hull as the flight kernel meets
 them (user, 2026-11-17: the station, "Get the docking!"; a bad approach
 passed straight through it): the station as simple solids in its own
-axes (the ring a torus, the hub and the port cylinders on its axis, the
-spokes, antennas and beacons capsules and balls; the port's collar, the
+axes (the ring a torus, the hub and its two ports cylinders on its axis,
+the spokes, antennas and beacons capsules and balls; the port's collar, the
 windows and the elevators' shafts left out: thin, or inside), the
 rocket as a chain of balls along its hull (the plug, the tank, the
 capsule's cone and nose) and its feet. How far a point is from a solid
@@ -49,6 +49,8 @@ def stationSolids() -> tuple:
   solids = [(TORUS, (TUBE_MIDDLE, 0.0, 0.0), (0.0, 0.0, 0.0), TUBE),
             (CYLINDER, (0.0, 0.0, -half), (0.0, 0.0, half), HUB[0]),
             (CYLINDER, (0.0, 0.0, half), (0.0, 0.0, half + PORT[1]),
+             PORT[0]),
+            (CYLINDER, (0.0, 0.0, -half - PORT[1]), (0.0, 0.0, -half),
              PORT[0])]
   count, thick = SPOKES
   for k in range(count):
@@ -57,8 +59,6 @@ def stationSolids() -> tuple:
     solids.append((CAPSULE, tuple(0.5 * HUB[0] * w for w in way), tuple(
       (TUBE_MIDDLE - 0.5 * TUBE) * w for w in way), thick))
   long, radius = ANTENNA
-  solids.append((CAPSULE, (0.0, 0.0, -half), (0.0, 0.0, -half - long),
-                 radius))
   out = FLOOR_RADIUS + HULL
   for k in range(count):
     a = 2.0 * math.pi * (k + 0.5) / count

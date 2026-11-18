@@ -82,7 +82,8 @@ class TestAboard(SpaceTest):
 
   def test_rooms(self) -> None:
     """Undocked the cabin's ceiling is closed; docked the hatch opens it
-    into the port, the hub, the shafts and the ring; on the deck the
+    into the port, the hub (the other port past it, shut), the shafts
+    and the ring; on the deck the
     station's turn alone pulls one g, outward; in the hub next to
     nothing."""
     ways = shaftWays(RELATIVE)
@@ -95,7 +96,8 @@ class TestAboard(SpaceTest):
                         ((400.0, 0.0, PLANE), 'shaft'),
                         ((DECK - 3.0, 50.0, PLANE + 5.0), 'ring')):
       self.assertEqual(roomOf(point, ways), room, point)
-    self.assertLess(roomsInside((0.0, 0.0, PLANE + 70.0), True, ways), 0.0)
+    self.assertEqual(roomOf((0.0, 0.0, PLANE + 70.0), ways), 'far port')
+    self.assertLess(roomsInside((0.0, 0.0, PLANE + 85.0), True, ways), 0.0)
     self.assertLess(roomsInside((DECK + 0.5, 0.0, PLANE), True, ways), 0.0)
     meter = Accelerometer()
     meter.felt, meter.turning = (0.0, 0.0, 0.0), (0.0, 0.0, -SPIN)
@@ -104,6 +106,22 @@ class TestAboard(SpaceTest):
     self.assertAlmostEqual(pull[0], G0, 6)
     hub = meter.pullAt((5.0, 0.0, 100.0), (0.0, 0.0, 0.0))
     self.assertLess(math.hypot(*hub), 0.01 * G0)
+
+  def test_way_up(self) -> None:
+    """Docked, the way up the axis from the cabin's floor through the
+    hatch and the port into the hub is a room all along, never shallower
+    than his box's half width near the axis (rooms meeting at a plane are
+    nought deep there: his box stopped dead under the hub's mouth, the
+    user's let's play, 2026-11-18)."""
+    from worQt.gaming.space._crewman import WIDE
+    from worQt.gaming.space._stationinterior import HUB_LOW
+    ways = shaftWays(RELATIVE)
+    z = 24.5
+    while z < HUB_LOW + 10.0:
+      for x, y in ((0.0, 0.0), (0.25, 0.0), (0.0, -0.25)):
+        self.assertGreater(roomsInside((x, y, z), True, ways), 0.5 * WIDE,
+                           (x, y, z))
+      z += 0.05
 
   def test_hatch(self) -> None:
     """Floating up at 1 m/s under the hatch, docked he goes through it

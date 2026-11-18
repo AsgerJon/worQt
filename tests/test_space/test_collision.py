@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 
-from worQt.gaming.space._station import Station
+from worQt.gaming.space._station import SPIN, Station
 from worQt.gaming.space._stationsolids import CAPSULE, CYLINDER, TORUS
 from worQt.gaming.space._stationsolids import hullBalls, hullReach
 from worQt.gaming.space._stationsolids import solidDistance
@@ -95,17 +95,17 @@ class TestCollision(SpaceTest):
     return deepest, bump, (out, moving[2])
 
   def test_shapes(self) -> None:
-    """The station: the ring a torus round its axis, the hub and the
-    port cylinders on it, the rest capsules and balls; the hull's balls
+    """The station: the ring a torus round its axis, the hub and its
+    two ports cylinders on it, the rest capsules and balls; the hull's balls
     within the rocket's radius, each two along it overlapping (their
     waist most of the smaller one: a thin antenna finds no gap),
     reaching near its nose's tip, not past it; a solid's
     swept distance never more than its distance."""
     solids = stationSolids()
     self.assertLessEqual(len(solids), 32)
-    self.assertEqual([s[0] for s in solids[:3]], [TORUS, CYLINDER,
-                                                  CYLINDER])
-    self.assertTrue(all(s[0] == CAPSULE for s in solids[3:]))
+    self.assertEqual([s[0] for s in solids[:4]], [TORUS, CYLINDER,
+                                                  CYLINDER, CYLINDER])
+    self.assertTrue(all(s[0] == CAPSULE for s in solids[4:]))
     balls = hullBalls()
     self.assertTrue(all(r <= RADIUS + 1e-9 for _, _, _, r in balls))
     self.assertAlmostEqual(hullReach(), 36.0, 0)
@@ -153,16 +153,25 @@ class TestCollision(SpaceTest):
     self.assertGreater(norm(vessel.spin), 0.01)
 
   def test_antenna(self) -> None:
-    """Broadside into the thin antenna behind the hub at 3 m/s, between
-    two of the hull's balls, it bounces off, never through."""
-    solid = stationSolids()[7]
+    """Broadside down onto a thin antenna out of the ring at 3 m/s,
+    between two of the hull's balls, carried round with it (its speed
+    round the axis there matched; the one along the axis is gone: user,
+    2026-11-18, the second port), it bounces off, never through."""
+    solid = stationSolids()[8]
+    _, a, b, radius = solid
+    mid = tuple(0.5 * (p + q) for p, q in zip(a, b))
+    far = math.hypot(mid[0], mid[1])
+    out = (mid[0] / far, mid[1] / far, 0.0)
+    across = (-out[1], out[0], 0.0)
+    own = tuple(m + (radius + RADIUS + 1.0) * z + 1.0 * c for m, z, c in
+                zip(mid, (0.0, 0.0, 1.0), across))
+    moving = (-SPIN * own[1], SPIN * own[0], -3.0)
     system, station, vessel = self._drifting(
-      (20.0, 1.0, -200.0), ((1.0, 0.0, 0.0), (0.0, 0.0, -1.0),
-                            (0.0, 1.0, 0.0)), (-3.0, 0.0, 0.0))
-    deepest, _, moving = self._flown(station, system, vessel, solid, 20.0)
+      own, (out, (0.0, 0.0, -1.0), across), moving)
+    deepest, _, moving = self._flown(station, system, vessel, solid, 3.0)
     self.assertGreater(deepest, 0.0)
     self.assertLess(deepest, 1.0)
-    self.assertGreater(moving[0], 0.5)
+    self.assertGreater(moving[1], 0.5)
 
   def test_far(self) -> None:
     """Far from the station the flight is as it was without it, to the

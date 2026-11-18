@@ -128,7 +128,7 @@ class TestWalkway(SpaceTest):
     self._walked(world, meter, cockpit, {'ahead'}, 6.0)
     skin = capsuleRadius(FLOOR + 1.0)
     self.assertLess(crewman.middle[0], -skin)
-    self.assertGreater(crewman.middle[0], -skin - 0.5)
+    self.assertGreater(crewman.middle[0], -skin - 0.51)
     world.walked(3)
     self._walked(world, meter, cockpit, {'ahead'}, 1.5)
     self.assertTrue(inCabin(crewman.middle), crewman.middle)

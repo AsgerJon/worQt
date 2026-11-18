@@ -6,7 +6,10 @@ rest of. Same with docking"): the reading of the nose to the port, the
 latch (catching only slow, straight, turning with the station), riding
 docked with the station, undocking pushed off; the automatic docking
 flown by the flight (the CPU here) from 1.5 km off to the latch,
-meeting the station's solids (never bumping them).
+meeting the station's solids (never bumping them); from behind the
+station (the user's let's play, 2026-11-18: straight in, it backed into
+the hub's foot at 18.5 m/s) it goes round, every corner of its way
+clear of all the station sweeps, and latches never bumping.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -14,8 +17,10 @@ from __future__ import annotations
 
 import math
 
-from worQt.gaming.space._dockingguidance import REACH
-from worQt.gaming.space._dockingguidance import DockingGuidance
+from worQt.gaming.space._dockingguidance import HOLD_OUT, PORT_TOP, REACH
+from worQt.gaming.space._dockingguidance import ROCKET_UP, ROCKET_WIDE
+from worQt.gaming.space._dockingguidance import DockingGuidance, routeOf
+from worQt.gaming.space._stationsolids import stationSolids, sweptDistance
 from worQt.gaming.space._dockingport import NOSE_PORT, PUSH_OFF
 from worQt.gaming.space._dockingport import DockingPort
 from worQt.gaming.space._station import SPIN, Station
@@ -116,3 +121,64 @@ class TestDocking(SpaceTest):
       k: v for k, v in reading.items() if isinstance(v, float)})
     self.assertLess(fastest, 1.0)
     self.assertEqual(guidance.phase, 'final')
+
+  def _docked(self, out: float, aside: float) -> tuple:
+    """Flies the automatic docking from 'out' m along the station's axis
+    from its port and 'aside' m off it; returns the time it latched (or
+    'LONGEST'), the phases it went through, the hardest bump."""
+    system, station, port, vessel = self._near(out, aside)
+    flight, guidance = self.flightOf(), DockingGuidance()
+    self.assertEqual(guidance.started(vessel, port, port.readingOf(
+      vessel, system, 0.0), 0.0), '')
+    t, phases, bump = 0.0, [guidance.phase], 0.0
+    while t < LONGEST:
+      reading = port.readingOf(vessel, system, t)
+      if port.caught(reading):
+        return t, phases, bump
+      guidance.acted(vessel, port, reading, t)
+      if guidance.phase != phases[-1]:
+        phases.append(guidance.phase)
+      flight.flown((vessel,), system, t, STEP, math.inf, station)
+      bump = max(bump, vessel.bumped)
+      t += STEP
+    return t, phases, bump
+
+  def test_behind(self) -> None:
+    """From 2 km behind the station (the side of its other port: user,
+    2026-11-18, "Terra Prime should have docking ports on both sides"),
+    110 m off its axis, the automatic docking takes that port, straight
+    in, and latches, never bumping; from beside it, out past its wheel,
+    it goes round to the nearer port's front first."""
+    t, phases, bump = self._docked(-2160.0, 110.0)
+    self.assertLess(t, LONGEST)
+    self.assertEqual(phases, ['closing', 'final'])
+    self.assertEqual(bump, 0.0)
+    t, phases, bump = self._docked(-80.0, 1500.0)
+    self.assertLess(t, LONGEST)
+    self.assertEqual(phases, ['round', 'closing', 'final'])
+    self.assertEqual(bump, 0.0)
+
+  def test_route(self) -> None:
+    """Every way round, from in front, beside and behind the station (and
+    under and over its wheel), keeps the rocket (its nose down the axis,
+    its body above it) clear of all the station sweeps as it turns, the
+    last leg in to the point out on the axis too; from the front there is
+    no way round."""
+    solids = stationSolids()
+
+    def clear(out: float, along: float) -> float:
+      least = math.inf
+      for k in range(0, int(ROCKET_UP) + 1, 4):
+        point = (out, 0.0, PORT_TOP + along + k)
+        least = min(least, min(sweptDistance(s, point) for s in solids))
+      return least - ROCKET_WIDE
+
+    self.assertEqual(routeOf(300.0, 300.0), ())
+    for start in ((115.0, -1976.0), (2000.0, -80.0), (1500.0, -600.0),
+                  (300.0, -400.0), (800.0, -2500.0), (600.0, 30.0)):
+      corners = (start,) + routeOf(*start) + ((0.0, HOLD_OUT),)
+      for (a, b), (c, d) in zip(corners, corners[1:]):
+        for k in range(41):
+          s = k / 40.0
+          self.assertGreater(clear(a + s * (c - a), b + s * (d - b)), 10.0,
+                             'from %r by %r' % (start, corners))

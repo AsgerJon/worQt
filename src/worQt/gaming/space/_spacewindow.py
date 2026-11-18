@@ -28,6 +28,7 @@ from ._aerospike import G0
 from ._ascentguidance import AscentGuidance
 from ._autoflight import SAID, Autoflight
 from ._bolts import holdOf, rocketBolts, stationBolts
+from ._cabinworld import STILL
 from ._cabinmixer import CRASH, CRASHES, DOCKS, EATS, HURTS, THRUSTING
 from ._cabinmixer import THUD, THUDS
 from ._cabinmixer import FOOD_NEAR, LAUGHS, SNACKS, TOLD, TOWING, TOWS
@@ -61,7 +62,7 @@ from ._planets import PAD, julianOf, solarSystemOn
 from ._scenery import Scenery
 from ._sleep import Sleep
 from ._spaceviewport import SpaceViewport
-from ._station import SPIN, Station
+from ._station import Station
 from ._teleprinter import ICONS
 from ._timekeeper import Timekeeper
 from ._turns import cross, dot, norm, quaternionOf, rotated, unit
@@ -1190,7 +1191,7 @@ class SpaceWindow(QMainWindow):
     pulling him) and the loose things."""
     cockpit, accelerometer = self.cockpit, self.accelerometer
     crewman = cockpit.crewman
-    want = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0), 0)
+    want = STILL
     if not crewman.buckled and self.vitals.cause is None:
       pull = accelerometer.pullAt(crewman.middle, crewman.velocity)
       crewman.righted(pull, real)
@@ -1776,8 +1777,7 @@ class SpaceWindow(QMainWindow):
                              MATCH_REACH / 1e3))
     else:
       self.docking.aligned(vessel, now)
-      pilot.matched(self.docking.turnAt(now), tuple(
-        SPIN * a for a in reading['axis']))
+      pilot.matched(self.docking.turnAt(now), reading['spin'])
 
   def _inOrbit(self, ) -> bool:
     """Returns whether the rocket is in orbit round Terra Prime's planet
@@ -1799,8 +1799,7 @@ class SpaceWindow(QMainWindow):
       return
     if not self.autodock.on and vessel.autopilot.mode == 'match':
       reading = self.docking.readingOf(vessel, self.system, now)
-      vessel.autopilot.matched(self.docking.turnAt(now), tuple(
-        SPIN * a for a in reading['axis']))
+      vessel.autopilot.matched(self.docking.turnAt(now), reading['spin'])
 
   def _approachKept(self, now: float) -> None:
     """Works out the closest approach to the station anew every

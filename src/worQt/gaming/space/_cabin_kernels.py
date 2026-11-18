@@ -71,6 +71,8 @@ HATCH_HIGH = _single(rooms.HATCH_HIGH)
 PORT_INSIDE = _single(rooms.PORT_INSIDE)
 PORT_LOW = _single(rooms.PORT_LOW)
 PORT_HIGH = _single(rooms.PORT_HIGH)
+FAR_LOW = _single(rooms.FAR_LOW)
+FAR_HIGH = _single(rooms.FAR_HIGH)
 HUB_INSIDE = _single(rooms.HUB_INSIDE)
 HUB_LOW = _single(rooms.HUB_LOW)
 HUB_HIGH = _single(rooms.HUB_HIGH)
@@ -277,7 +279,7 @@ def outsideRooms(point: wp.vec3, best: wp.vec4, outside: int) -> wp.vec4:
 def roomGap(point: wp.vec3, docked: int, outside: int,
             ways: wp.array(dtype=wp.vec3)) -> wp.vec4:
   """Returns how far 'point' is inside the rooms (the cabin; docked
-  also the hatch, the port, the hub, the shafts out along 'ways', the
+  also the hatch, the ports, the hub, the shafts out along 'ways', the
   ring; on the pad the walkway's and the doorway as 'outside' says
   ('outsideRooms'): as deep as the room it is deepest in; less than
   nought: in a wall) and the way into them from the nearest face (x y
@@ -301,6 +303,8 @@ def roomGap(point: wp.vec3, docked: int, outside: int,
   room = roundRoom(point, HATCH, HATCH_LOW, HATCH_HIGH)
   best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
   room = roundRoom(point, PORT_INSIDE, PORT_LOW, PORT_HIGH)
+  best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
+  room = roundRoom(point, PORT_INSIDE, FAR_LOW, FAR_HIGH)
   best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
   room = roundRoom(point, HUB_INSIDE, HUB_LOW, HUB_HIGH)
   best = deeper(best, room[3], wp.vec3(room[0], room[1], room[2]))
@@ -575,6 +579,10 @@ LEVELS = 9
 FLOORED = _single(0.6)
 #  How far up is no way out ('upOnto').
 BLOCKED = _single(1.0e9)
+#  Shoved out of what he met, he moves on as fast as it moved him, no
+#  faster than the fastest solid near him by this, m/s ('shovedBy': a
+#  solid put where he stood throws him no faster).
+SHOVE_MORE = _single(1.0)
 #  The most solids near him a frame ('nearby': his box looks at those
 #  alone; a GPU thread reading all four hundred each time it looked took
 #  18 ms a frame walking).
@@ -826,6 +834,26 @@ def pushedOut(soles: wp.vec3, axes: wp.mat33, high: float, t: float,
 
 
 @wp.func
+def shovedBy(v: wp.vec3, shove: wp.vec3, dt: float,
+             fastest: float) -> wp.vec3:
+  """Returns his velocity 'v' after what he met shoved his box 'shove'
+  (m) out of it in a part of 'dt' s (how hard they met is had from his
+  velocity before the part's meetings, 'walked'): along the shove he
+  moves as much faster as it moved him (a still wall stops him going
+  into it; a moving one, an elevator's cage, carries him at its speed:
+  the user's let's play, 2026-11-18, the cage moved him and kept its
+  speed, its roof and floor met him at 25 m/s), at most 'fastest' and
+  'SHOVE_MORE' that way."""
+  size = wp.length(shove)
+  if size < 1.0e-6 or dt <= 0.0:
+    return v
+  way = shove / size
+  along = wp.dot(v, way)
+  after = wp.min(along + size / dt, wp.max(along, fastest + SHOVE_MORE))
+  return v + (after - along) * way
+
+
+@wp.func
 def upOnto(soles: wp.vec3, axes: wp.mat33, high: float, t: float, own: int,
            docked: int, outside: int, ways: wp.array(dtype=wp.vec3),
            solidMiddles: wp.array(dtype=wp.vec3),
@@ -895,6 +923,7 @@ def nearby(solidMiddles: wp.array(dtype=wp.vec3),
 @wp.kernel
 def walked(place: wp.array(dtype=wp.vec3),
            velocity: wp.array(dtype=wp.vec3),
+           ground: wp.array(dtype=wp.vec3),
            contact: wp.array(dtype=wp.vec3),
            met: wp.array(dtype=wp.vec3),
            thuds: wp.array(dtype=wp.float32),
@@ -912,7 +941,11 @@ def walked(place: wp.array(dtype=wp.vec3),
   """Moves Asger's box a frame ('seconds' s) on, one thread: what is
   felt there moves it (as a loose thing: 'felt', 'turning', 'speeding'),
   his legs while he touches something ('wanted', 'walking', 'wanting',
-  a 'leap' once), the Grav-Gun's field or pulse ('gun': its force on him
+  a 'leap' once: as against what he stands on, 'ground' its velocity,
+  kept from frame to frame: the user's let's play, 2026-11-18, standing
+  on the side of an elevator's cage running 30 m/s out his legs held him
+  still to the station, the cage's roof and floor beat him to death),
+  the Grav-Gun's field or pulse ('gun': its force on him
   over his mass, m/s², '_gravgun'); in parts of the frame no longer than
   'MOVE_MOST',
   first along his up, then across, each pushed out of what it meets
@@ -929,6 +962,7 @@ def walked(place: wp.array(dtype=wp.vec3),
   box into the solids' slot 'own' (moving as it does through the frame)
   for the loose things."""
   v = velocity[0]
+  under = ground[0]
   up = wp.normalize(up)
   axes = boxAxes(up)
   soles = place[0]
@@ -962,6 +996,10 @@ def walked(place: wp.array(dtype=wp.vec3),
   solidMiddles[own] = start
   solidTurns[own] = wp.quat_from_matrix(axes)
   solidHalves[own] = half
+  fastest = float(0.0)
+  for m in range(known):
+    if near[m] != own:
+      fastest = wp.max(fastest, wp.length(solidVelocities[near[m]]))
   count = int(wp.ceil(seconds * (wp.length(v) + 2.0) / MOVE_MOST))
   count = wp.clamp(count, 1, 24)
   dt = seconds / float(count)
@@ -980,9 +1018,10 @@ def walked(place: wp.array(dtype=wp.vec3),
       v = v + leap
     feel = feel + gun
     if touching == 1:
-      legs = (wanted - v) / LEGS_TIME
+      rel = v - under
+      legs = (wanted - rel) / LEGS_TIME
       if walking == 1:
-        along = v - wp.dot(v, up) * up
+        along = rel - wp.dot(rel, up) * up
         legs = (wanted - along) / LEGS_TIME
       size = wp.length(legs)
       if size > LEGS_MOST:
@@ -990,6 +1029,7 @@ def walked(place: wp.array(dtype=wp.vec3),
       if walking == 1 or wanting == 1:
         feel = feel + legs
     v = v + (feel - AIR_ASGER * v) * dt
+    meeting = v
     move = v * dt
     rise = wp.dot(move, up) * up
     across = move - rise
@@ -1003,14 +1043,19 @@ def walked(place: wp.array(dtype=wp.vec3),
         settled = int(1)
         if onto > 0.0:
           p = p + (onto + GAP) * up
+          v = shovedBy(v, (onto + GAP) * up, dt, fastest)
     if settled == 0:
+      aimed = p
       p = pushedOut(p, axes, high, t, own, docked, outside, ways,
                     solidMiddles, solidTurns, solidHalves, solidVelocities,
                     near, known)
+      v = shovedBy(v, p - aimed, dt, fastest)
     before = p
     p = pushedOut(before + across, axes, high, t, own, docked, outside,
                   ways, solidMiddles, solidTurns, solidHalves,
                   solidVelocities, near, known)
+    shoved = p - (before + across)
+    climbedNow = int(0)
     wide = wp.length(across)
     onFoot = int(0)
     if grounded == 1 and walking == 1 and wp.dot(v, up) < 0.5:
@@ -1036,6 +1081,9 @@ def walked(place: wp.array(dtype=wp.vec3),
           if wp.dot(down - before, way) > gone + 0.002 and climbed > 0.002:
             p = down
             rose = rose + climbed
+            climbedNow = int(1)
+    if climbedNow == 0:
+      v = shovedBy(v, shoved, dt, fastest)
     if onFoot == 1:
       dropped = p - STEP_UP * up
       onto = upOnto(dropped, axes, high, t, own, docked, outside, ways,
@@ -1052,6 +1100,8 @@ def walked(place: wp.array(dtype=wp.vec3),
     pressing = int(0)
     grounded = int(0)
     closing = float(0.0)
+    floorMost = float(-2.0)
+    beneath = wp.vec3(0.0, 0.0, 0.0)
     for level in range(LEVELS):
       for i in range(-1, 2):
         for j in range(-1, 2):
@@ -1063,14 +1113,17 @@ def walked(place: wp.array(dtype=wp.vec3),
               touching = int(1)
               meetings = meetings + 1
               normals = normals + normal
+              if wp.dot(normal, up) > floorMost:
+                floorMost = wp.dot(normal, up)
+                beneath = wp.vec3(0.0, 0.0, 0.0)
               if wp.dot(normal, up) > FLOORED:
                 grounded = int(1)
                 floors = floors + normal
               into = wp.dot(v, normal)
               if room[3] < 0.004:
                 pressing = int(1)
+                closing = wp.max(closing, -wp.dot(meeting, normal))
                 if into < 0.0:
-                  closing = wp.max(closing, -into)
                   v = v - into * normal
     middle = soles + 0.5 * high * up
     for m in range(known):
@@ -1086,6 +1139,9 @@ def walked(place: wp.array(dtype=wp.vec3),
             touching = int(1)
             meetings = meetings + 1
             normals = normals + normal
+            if wp.dot(normal, up) > floorMost:
+              floorMost = wp.dot(normal, up)
+              beneath = solidVelocities[n]
             if wp.dot(normal, up) > FLOORED:
               grounded = int(1)
               floors = floors + normal
@@ -1107,9 +1163,12 @@ def walked(place: wp.array(dtype=wp.vec3),
               step = int(1)
             if box[3] > -0.004 and step == 0:
               pressing = int(1)
+              closing = wp.max(closing, -wp.dot(
+                meeting - solidVelocities[n], normal))
               if into < 0.0:
-                closing = wp.max(closing, -into)
                 v = v - into * normal
+    if touching == 1:
+      under = beneath
     if was == 0:
       hardest = wp.max(hardest, closing)
       landing = wp.max(landing, closing)
@@ -1118,6 +1177,7 @@ def walked(place: wp.array(dtype=wp.vec3),
     wp.atomic_max(thuds, 1, hardest)
   place[0] = soles
   velocity[0] = v
+  ground[0] = under
   solidVelocities[own] = (soles + 0.5 * high * up - start) / seconds
   stood = float(0.0)
   if grounded == 1:

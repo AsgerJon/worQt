@@ -72,10 +72,15 @@ LIMBS = {'right arm': -1.05, 'left arm': -1.05, 'right leg': -0.5 * math.pi,
          'left leg': -0.5 * math.pi}
 #  His eyes: on his face (its front, 28 of 32 pixels up), a hair ahead.
 EYE = (FIGURE[0] + 4 * SCALE + 0.02, FIGURE[1], FIGURE[2] + 28 * SCALE)
-#  How far he may turn his head (rad): round, and up or down; how fast
-#  the mouse turns it (rad a pixel); a key pressed, he glances at its
-#  control, his head eased there (most of the way in 'GLANCE' s).
+#  How far he may turn his head (rad): round, and up or down in his
+#  chair; up, straight up or down all but a hair (as Minecraft's player:
+#  the user's let's play, 2026-11-18, weightless under the hatch he could
+#  look no higher than 80 degrees, and pushed off that way he missed
+#  it); how fast the mouse turns it (rad a pixel); a key pressed, he
+#  glances at its control, his head eased there (most of the way in
+#  'GLANCE' s).
 YAW_MOST, PITCH_MOST = 2.4, 1.4
+UP_PITCH_MOST = 0.5 * math.pi - 0.01
 TURN = 0.0035
 GLANCE = 0.1
 #  The thrust presses him into his seat: his eyes sink this far a g,
@@ -381,11 +386,13 @@ TAPE_SCALE = 0.6
 TAPE_ORIGIN = (SIDEBOARD[0][0] - 0.05, SIDEBOARD[0][1], TOP + 0.014)
 TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
 #  A ray from his eyes looks this far at most, m. The Grav-Gun reaches
-#  a magic bolt this far, m (the space station's hub is 120 m long: its
-#  bolts are some 30 m apart), pointed at within 'AIM' rad (or its ring
-#  seen from there, 'BOLT_SEEN' m round).
+#  a magic bolt this far, m (the bolt floating in the space station's
+#  hub's middle, straight up the axis through the hatch from the cabin's
+#  floor, 90 m: user, 2026-11-18, "so you can pull yourself in"),
+#  pointed at within 'AIM' rad (or its ring seen from there, 'BOLT_SEEN'
+#  m round).
 REACH = 1.6
-GUN_REACH = 40.0
+GUN_REACH = 92.0
 AIM = math.radians(3.0)
 BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -638,8 +645,8 @@ class Cockpit:
       self.yaw = max(-YAW_MOST, min(YAW_MOST, self.yaw))
     else:
       self.yaw = math.remainder(self.yaw, 2.0 * math.pi)
-    self.pitch = max(-PITCH_MOST, min(PITCH_MOST, self.pitch
-                                      - TURN * down))
+    most = PITCH_MOST if self.crewman.buckled else UP_PITCH_MOST
+    self.pitch = max(-most, min(most, self.pitch - TURN * down))
 
   def gotUp(self, ) -> None:
     """The 'gotUp' method gets him out of his chair, still looking where

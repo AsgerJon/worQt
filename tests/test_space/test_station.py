@@ -22,7 +22,8 @@ from worQt.gaming.space._planets import PAD
 from worQt.gaming.space._scenery import Scenery
 from worQt.gaming.space._station import FLOOR_RADIUS, HIGH, SPIN, Station
 from worQt.gaming.space._stationmeshes import ANTENNA, HULL, TUBE
-from worQt.gaming.space._stationmeshes import TUBE_MIDDLE, portTip
+from worQt.gaming.space._stationmeshes import TUBE_MIDDLE, beaconTips
+from worQt.gaming.space._stationmeshes import portTip
 from worQt.gaming.space._stationmeshes import stationMeshes
 from worQt.gaming.space._turns import norm
 from worQt.gaming.space._vessel import Vessel
@@ -67,8 +68,11 @@ class TestStation(SpaceTest):
     self.assertClose(station.stateAt(0.0)[0], before, 1e-3)
 
   def test_shape(self) -> None:
-    """1.8 km across; its antennas 300 m out of the ring; its port on its
-    axis; every face outward (but a ball's poles)."""
+    """1.8 km across; its antennas 300 m out of the ring, in its plane,
+    none along its axis (user, 2026-11-18: "remove the antennas that are
+    perpendicular to the plane of Terra Prime"), a beacon on each; a
+    port on its axis at either end ("docking ports on both sides"); every
+    face outward (but a ball's poles)."""
     meshes = stationMeshes()
     hull = meshes['hull'][0]
     across = numpy.hypot(hull[:, 0], hull[:, 1]).max()
@@ -78,6 +82,12 @@ class TestStation(SpaceTest):
     self.assertAlmostEqual(reach, FLOOR_RADIUS + HULL + ANTENNA[0], 0)
     self.assertEqual(portTip()[:2], (0.0, 0.0))
     self.assertGreater(portTip()[2], 0.0)
+    self.assertEqual(portTip(-1.0), (0.0, 0.0, -portTip()[2]))
+    self.assertAlmostEqual(hull[:, 2].max(), portTip()[2], 6)
+    self.assertAlmostEqual(hull[:, 2].min(), -portTip()[2], 6)
+    self.assertLess(numpy.abs(meshes['antennas'][0][:, 2]).max(),
+                    ANTENNA[1] + 1e-6)
+    self.assertEqual(len(beaconTips()), 4)
     for name, (rows, faces) in meshes.items():
       a, b, c = (rows[faces[k::3], :3] for k in range(3))
       normal = numpy.cross(b - a, c - a)
@@ -96,7 +106,7 @@ class TestStation(SpaceTest):
     vessel.stood(system, terra, PAD[0], PAD[1], 60.0)
     frame = Scenery().flightOf(system, vessel, SEEN, 60.0)
     self.assertEqual(len(frame['satellites']), 1)
-    self.assertEqual(len(frame['lights']), 6)
+    self.assertEqual(len(frame['lights']), 1 + len(beaconTips()))
     vessel.stood(system, terra, PAD[0], PAD[1], 1500.0)
     frame = Scenery().flightOf(system, vessel, SEEN, 1500.0)
     self.assertEqual(frame['lights'], [])

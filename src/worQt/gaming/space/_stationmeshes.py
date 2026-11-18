@@ -7,12 +7,15 @@ fucking visible from the gorund"), Qt-free, in its own axes (z its
 axis, the docking port's way; m), each mesh by its look: the ring (a
 round tube, its deck inside 'FLOOR_RADIUS' from the axis: round, some
 of it is always lit), its hub on
-the axis with the docking port at its +z end, four spokes from the hub
-to the ring (the elevators' shafts), lit windows along the ring's sides,
-the port's collar, five 300 m antennas (one along the axis behind the
-hub, four out of the ring between the spokes) and a beacon on each
-tip. The antennas and beacons wear a rainbow sliding along them (their
-picture's u: three rainbows down an antenna, one colour a beacon).
+the axis with a docking port at either end (user, 2026-11-18: "Terra
+Prime should have docking ports on both sides"), four spokes from the
+hub to the ring (the elevators' shafts), lit windows along the ring's
+sides, the ports' collars, four 300 m antennas out of the ring between
+the spokes ("remove the antennas that are perpendicular to the plane of
+Terra Prime": the one along the axis, where the second port is) and a
+beacon on each tip. The antennas and beacons wear a rainbow sliding
+along them (their picture's u: three rainbows down an antenna, one
+colour a beacon).
 Rows of eight (place, normal, where on a picture).
 """
 #  Apache-2.0 license
@@ -37,13 +40,14 @@ TUBE_MIDDLE = FLOOR_RADIUS - 14.0
 HULL = TUBE_MIDDLE + TUBE - FLOOR_RADIUS
 SEGMENTS = 256
 TUBE_SIDES = 24
-#  The hub (radius, length along the axis), the docking port standing
-#  out of its +z end (radius, length), its collar (inner, outer radius,
-#  m); the spokes (count, radius).
+#  The hub (radius, length along the axis), the docking ports standing
+#  out of its ends (radius, length), their collars (inner, outer radius,
+#  m); the spokes (count, radius); the ports' sides (+z, -z).
 HUB = (40.0, 120.0)
 PORT = (8.0, 20.0)
 COLLAR = (8.0, 11.5)
 SPOKES = (4, 8.0)
+SIDES = (1.0, -1.0)
 #  The windows along the ring's sides: their rows round the tube (rad from
 #  the station's axis' way), how far apart round the station (deg), half
 #  their size (along, across), m.
@@ -57,9 +61,10 @@ RAINBOWS = 3.0
 BEACON = 6.0
 
 
-def portTip() -> tuple:
-  """Returns the docking port's mouth: its middle (its own axes)."""
-  return 0.0, 0.0, 0.5 * HUB[1] + PORT[1]
+def portTip(side: float = 1.0) -> tuple:
+  """Returns a docking port's mouth: its middle (its own axes), the
+  port at +z ('side' one) or -z (minus one)."""
+  return 0.0, 0.0, side * (0.5 * HUB[1] + PORT[1])
 
 
 def ringRowsOf() -> tuple:
@@ -86,13 +91,14 @@ def ringRowsOf() -> tuple:
 
 
 def hubRows() -> tuple:
-  """Returns the hub on the axis and the docking port standing out of
-  its +z end, and the four spokes out to the ring's ceiling."""
+  """Returns the hub on the axis and the docking ports standing out of
+  its ends, and the four spokes out to the ring's ceiling."""
   radius, long = HUB
   parts = [cylinderRows((0.0, 0.0, -0.5 * long), (0.0, 0.0, 1.0), radius,
-                        long, 64),
-           cylinderRows((0.0, 0.0, 0.5 * long), (0.0, 0.0, 1.0), PORT[0],
-                        PORT[1], 32)]
+                        long, 64)]
+  for side in SIDES:
+    parts.append(cylinderRows((0.0, 0.0, side * 0.5 * long), (
+      0.0, 0.0, side), PORT[0], PORT[1], 32))
   count, thick = SPOKES
   reach = TUBE_MIDDLE - TUBE - radius
   for k in range(count):
@@ -125,19 +131,23 @@ def windowRows() -> tuple:
 
 
 def collarRows() -> tuple:
-  """Returns the docking port's collar: a ring round its mouth (it
-  glows: where to dock)."""
-  x, y, z = portTip()
-  return ringRows((x, y, z + 0.1), UNTURNED, COLLAR[0], COLLAR[1], 0.5)
+  """Returns the docking ports' collars: a ring round each mouth (they
+  glow: where to dock)."""
+  parts = []
+  for side in SIDES:
+    x, y, z = portTip(side)
+    right, up, out = UNTURNED
+    axes = (right, tuple(side * u for u in up), tuple(side * o for o in out))
+    parts.append(ringRows((x, y, z + 0.1 * side), axes, COLLAR[0],
+                          COLLAR[1], 0.5))
+  return joined(parts)
 
 
 def antennaRows() -> tuple:
-  """Returns the antennas: one along the axis behind the hub, four out
-  of the ring between the spokes; their picture's u runs 'RAINBOWS'
-  times down each."""
+  """Returns the antennas: four out of the ring between the spokes;
+  their picture's u runs 'RAINBOWS' times down each."""
   long, radius = ANTENNA
-  parts = [_mastRows((0.0, 0.0, -0.5 * HUB[1]), (0.0, 0.0, -1.0), long,
-                     radius)]
+  parts = []
   out = FLOOR_RADIUS + HULL
   for k in range(SPOKES[0]):
     a = TAU * (k + 0.5) / SPOKES[0]
@@ -149,7 +159,7 @@ def antennaRows() -> tuple:
 def beaconTips() -> tuple:
   """Returns where the beacons are: on each antenna's tip (its own
   axes)."""
-  tips = [(0.0, 0.0, -0.5 * HUB[1] - ANTENNA[0])]
+  tips = []
   out = FLOOR_RADIUS + HULL + ANTENNA[0]
   for k in range(SPOKES[0]):
     a = TAU * (k + 0.5) / SPOKES[0]

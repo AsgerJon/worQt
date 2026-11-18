@@ -25,8 +25,9 @@ from ._conic import Conic
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._solarsystem import SolarSystem
 
-#  A save says which way it was written; another way is not read.
-SAVE_VERSION = 1
+#  A save says which way it was written; another way is not read (2:
+#  Terra Prime's two ports, the docking port's 'side').
+SAVE_VERSION = 2
 #  The quick save's file in the saves' folder (F5 writes it, F9 reads
 #  it).
 QUICK = 'quicksave.json'

@@ -10,11 +10,12 @@ click sends a pulse of a greater force opposite of the right click";
 picked up or the gun is near the bolt. Then the connection stays and
 another rightclick releases it"): the field's pull on its holder toward
 its target, 'PULL' a metre apart; the button let go, the field ends;
-within 'NEAR' of the muzzle it holds, the button let go or not; held, a
-loose thing is kept before the muzzle and a bolt keeps him at the length
-he came to, each by a damped spring that never rings up however long a
-frame; off, nothing; the pulse 'PUNT' times as hard the other way for
-'PULSE' s, ending field and hold; it takes bolts and loose things alone.
+within 'NEAR' of the muzzle it holds, the button let go or not, and
+reels in at 'REEL': a loose thing to 'CARRY' before the muzzle, a bolt
+keeps him 'GRIP' from it, each by a damped spring that never rings up
+however long a frame; off, nothing; the pulse 'PUNT' times as hard the
+other way for 'PULSE' s, ending field and hold; it takes bolts and loose
+things alone.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -22,7 +23,8 @@ from __future__ import annotations
 
 import math
 
-from worQt.gaming.space._gravgun import HOLD, NEAR, PULL, PULSE, PUNT
+from worQt.gaming.space._gravgun import CARRY, GRIP, HOLD, NEAR, PULL
+from worQt.gaming.space._gravgun import PULSE, PUNT, REEL
 from worQt.gaming.space._gravgun import GravGun
 from worQt.gaming.space._inventory import ITEMS
 
@@ -54,10 +56,10 @@ class TestGravGun(SpaceTest):
     gun = GravGun()
     self.assertEqual(self._pull(gun, (3.0, 0.0, 0.0)), STILL)
     gun.gripped(('bolt', 2))
-    near = self._pull(gun, (2.0, 0.0, 0.0))
+    near = self._pull(gun, (3.0, 0.0, 0.0))
     far = gun.pushOf((1.0, 1.0, 1.0), AHEAD, (1.0, 1.0, 1.0),
                      (1.0, 5.0, 1.0), STILL, HEFT, 0.1)
-    self.assertClose(near, (2.0 * PULL, 0.0, 0.0), 1e-12)
+    self.assertClose(near, (3.0 * PULL, 0.0, 0.0), 1e-12)
     self.assertClose(far, (0.0, 4.0 * PULL, 0.0), 1e-12)
     self.assertEqual(gun.acting, ('bolt', 2))
     self.assertFalse(gun.holding)
@@ -101,6 +103,25 @@ class TestGravGun(SpaceTest):
     self.assertGreater(pulled[2], 0.0)
     self.assertLess(pushed[2], 0.0)
     self.assertClose(pulled[:2], (0.0, 0.0), 1e-9)
+
+  def test_reels(self) -> None:
+    """Held from further off, it reels in at 'REEL' m/s: a loose thing
+    to 'CARRY' before the muzzle, a bolt to 'GRIP' from his middle; held
+    nearer, it stays."""
+    for kind, there, reeled in (('loose', 1.8, CARRY), ('bolt', 1.9, GRIP)):
+      gun = GravGun()
+      gun.gripped((kind, 0))
+      self._pull(gun, (there, 0.0, 0.0), 0.0)
+      self.assertAlmostEqual(gun.hold, there, 12)
+      self._pull(gun, (there, 0.0, 0.0), 0.1)
+      self.assertAlmostEqual(gun.hold, there - 0.1 * REEL, 12)
+      for _ in range(20):
+        self._pull(gun, (there, 0.0, 0.0), 0.1)
+      self.assertEqual(gun.hold, reeled)
+    gun = GravGun()
+    gun.gripped(('loose', 0))
+    self._pull(gun, (0.5, 0.0, 0.0), 0.1)
+    self.assertEqual(gun.hold, 0.5)
 
   def test_settles(self) -> None:
     """Held, what it holds settles at its place and stays, however long

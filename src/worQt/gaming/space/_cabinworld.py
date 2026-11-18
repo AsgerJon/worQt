@@ -36,6 +36,10 @@ MOST_STEPS = 120
 STATION_SLOTS = 320
 #  Where a solid not there is kept (far from everything), m.
 AWAY = (0.0, 0.0, -1e4)
+#  His legs wanting nothing ('stepped''s 'want': no velocity, not
+#  walking, not wanting, no leap; the window's for Asger dead, the
+#  user's let's play, 2026-11-18: its own, of five, raised every frame).
+STILL = ((0.0, 0.0, 0.0), 0, 0, (0.0, 0.0, 0.0))
 
 
 def preloadedCabin(device: str) -> float:
@@ -149,6 +153,7 @@ class CabinWorld:
     self.landing = self._sent([0.0], wp.float32)
     self.body = self._sent(numpy.zeros((1, 3)), vec3)
     self.bodyVelocity = self._sent(numpy.zeros((1, 3)), vec3)
+    self.ground = self._sent(numpy.zeros((1, 3)), vec3)
     self.contact = self._sent([(1.0, 1.0, 0.0)], vec3)
     self.bodyMet = self._sent(numpy.zeros((3, 3)), vec3)
     self.near = self._sent([0] * _cabin_kernels.NEAR_MOST, wp.int32)
@@ -339,7 +344,8 @@ class CabinWorld:
       self.near, self.nearCount, wp.vec3(0.0, 0.0, 1.0), 0.0, self.own,
       1.0 / 60.0], [], [], [], device, None, False, False, True)
     walked = wp.launch(kernels.walked, 1, [
-      self.body, self.bodyVelocity, self.contact, self.bodyMet,
+      self.body, self.bodyVelocity, self.ground, self.contact,
+      self.bodyMet,
       self.thudding, self.solidMiddles, self.solidTurns, self.solidHalves,
       self.solidVelocities, self.ways, self.near, self.nearCount, zero,
       zero, zero, zero, zero,
@@ -364,6 +370,7 @@ class CabinWorld:
     standing on the floor, not crouched."""
     wp = self.wp
     self.body.assign(numpy.asarray([crewman.soles()], numpy.float32))
+    self.ground.zero_()
     self.bodyVelocity.assign(numpy.asarray([crewman.velocity],
                                            numpy.float32))
     self.contact.assign(numpy.asarray([(1.0, 1.0, 0.0)], numpy.float32))
