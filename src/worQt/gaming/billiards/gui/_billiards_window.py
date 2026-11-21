@@ -12,8 +12,8 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy
-from PySide6.QtCore import QDir, QPoint, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QDir, QLocale, QPoint, QSettings, Qt, QTimer
+from PySide6.QtGui import QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import QMenu
 from worktoy.core.sentinels import THIS
 from worktoy.desc import AttriBox
@@ -24,10 +24,12 @@ from .. import KegleCall, KegleGame, KegleMatch, KegleMotion
 from .. import KegleRecorder, KegleReferee
 from .. import KegleShot, KegleTable, PinField, Rules, Shot, ShotWorker
 from .._kegle_motion import flingOf
+from .._phrasebook import ENGLISH, Phrasebook
 from .. import Room, Streak, Trails, Trenches, Unfolded
 from .._carom_table import isParked
 from . import BilliardsSounds, BilliardsToolBar, ShotPanel, TableView
 from . import FOLLOW_SECONDS, STROKE_MOST, UnfoldedMap, cueBackAt
+from ._dot_line import DOT_ROWS, dotsOf
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from typing import Callable
@@ -38,6 +40,8 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 #  How near, in mm, a ball's middle stays to where it comes to rest for it
 #  to lie still, if spinning in place.
 _STILL_WITHIN = 0.01
+#  Where the language chosen is kept between runs ('savedLanguage').
+_SETTINGS = ('worQt', 'billiards')
 
 
 class BilliardsWindow(MainWindow):
@@ -124,7 +128,8 @@ class BilliardsWindow(MainWindow):
   there into the ways the two may go, crowded where likely; 'Field of
   view' sets how much the camera takes in. The keys A and D turn the aim
   left and right, W and S tilt the camera up over the ball and down to
-  the cloth, 'Aim step' degrees a press, held to keep on; the arrow keys
+  the cloth (Q, D, Z and S in French and Flemish, AZERTY's places:
+  'aimKeys'), 'Aim step' degrees a press, held to keep on; the arrow keys
   move the point struck, up and down for follow and draw, left and
   right for English, '__spin_step__' of the radius a press, held to keep
   on; End takes the middle again.
@@ -223,6 +228,11 @@ class BilliardsWindow(MainWindow):
   __held_item__: str = 'cue'
   __inventory_open__: bool = False
   __board_tone__: str = 'neutral'
+  __language_book__: Phrasebook = ENGLISH
+  __language_actions__: dict | None = None
+  __language_menu__: QMenu | None = None
+  __debug_menu__: QMenu | None = None
+  __menu_english__: dict | None = None
 
   #  Public Variables
   toolBar = AttriBox[BilliardsToolBar](THIS)
@@ -319,14 +329,12 @@ class BilliardsWindow(MainWindow):
     panel.markAsked.connect(self.markAlongCamera)
     panel.cueChanged.connect(lambda *_: self.refresh())
     panel.lookChanged.connect(self._lookChanged)
-    keys = ((self.turnLeftKey, Qt.Key.Key_A, 1.0, 0.0),
-            (self.turnRightKey, Qt.Key.Key_D, -1.0, 0.0),
-            (self.tiltUpKey, Qt.Key.Key_W, 0.0, -1.0),
-            (self.tiltDownKey, Qt.Key.Key_S, 0.0, 1.0))
-    for shortcut, key, yaw, pitch in keys:
-      shortcut.setKey(QKeySequence(key))
+    keys = ((self.turnLeftKey, 1.0, 0.0), (self.turnRightKey, -1.0, 0.0),
+            (self.tiltUpKey, 0.0, -1.0), (self.tiltDownKey, 0.0, 1.0))
+    for shortcut, yaw, pitch in keys:
       shortcut.setAutoRepeat(True)
       shortcut.activated.connect(self._stepper(yaw, pitch))
+    self._bindAimKeys()
     spins = ((self.spinUpKey, Qt.Key.Key_Up, 1.0, 0.0),
              (self.spinDownKey, Qt.Key.Key_Down, -1.0, 0.0),
              (self.spinLeftKey, Qt.Key.Key_Left, 0.0, -1.0),
@@ -367,13 +375,81 @@ class BilliardsWindow(MainWindow):
     view.minimapMenuAsked.connect(self._minimapMenuAt)
     self.frameTimer.timeout.connect(self.tick)
     self.mainMenuBar.fileMenu.exitAction.triggered.connect(self.close)
-    debug = self.mainMenuBar.addMenu('Debug')
+    debug = self.__debug_menu__ = self.mainMenuBar.addMenu('Debug')
     fling = debug.addAction('Fling pins')
     fling.setCheckable(True)
     fling.setShortcut(QKeySequence(Qt.Key.Key_F8))
     fling.toggled.connect(self.setFlinging)
     self.__fling_action__ = fling
+    self._buildLanguageMenu()
+    self._wordMenus()
     self._layoutViews()
+
+  def aimKeys(self, ) -> tuple[str, str, str, str]:
+    """The 'aimKeys' method returns the keys that tilt the camera up,
+    turn the aim left, tilt it down and turn it right, and during a
+    stroke move the point struck: the language's ('Phrasebook.controls'),
+    W A S D, or Z Q S D in French and Flemish, where an AZERTY keyboard
+    has W A S D's places (the user)."""
+    shortcuts = (self.tiltUpKey, self.turnLeftKey, self.tiltDownKey,
+                 self.turnRightKey)
+    forward, left, back, right = (shortcut.key().toString()
+                                  for shortcut in shortcuts)
+    return forward, left, back, right
+
+  def _bindAimKeys(self, ) -> None:
+    """Binds the aim's keys to the language's: forward tilts up, left
+    turns left, back tilts down, right turns right."""
+    forward, left, back, right = self.__language_book__.controls()
+    for shortcut, letter in ((self.tiltUpKey, forward),
+                             (self.turnLeftKey, left),
+                             (self.tiltDownKey, back),
+                             (self.turnRightKey, right)):
+      shortcut.setKey(QKeySequence(letter))
+
+  def _buildLanguageMenu(self, ) -> None:
+    """Builds the menu 'Language': each language by its own name, the
+    one spoken ticked; choosing one speaks it and keeps it."""
+    menu = self.__language_menu__ = self.mainMenuBar.addMenu('Language')
+    group = QActionGroup(menu)
+    group.setExclusive(True)
+    self.__language_actions__ = {}
+    for language in Phrasebook.languages():
+      action = menu.addAction(Phrasebook(language).name())
+      action.setCheckable(True)
+      group.addAction(action)
+      action.triggered.connect(
+        lambda *_, language=language: self.chooseLanguage(language))
+      self.__language_actions__[language] = action
+
+  def _wordMenus(self, ) -> None:
+    """Words the menu bar in the language spoken: worQt's own menus and
+    their actions, as first titled in English ('menu.' and the title),
+    'Debug' and its 'Fling pins', and 'Language', the language spoken
+    ticked; the languages keep their own names."""
+    book = self.__language_book__
+    if self.__menu_english__ is None:
+      self.__menu_english__ = {}
+    english = self.__menu_english__
+    languages = set((self.__language_actions__ or {}).values())
+    for top in self.mainMenuBar.actions():
+      menu = top.menu()
+      if menu is None or menu in (self.__debug_menu__,
+                                  self.__language_menu__):
+        continue
+      for action in [top] + list(menu.actions()):
+        if action.isSeparator() or action in languages:
+          continue
+        key = english.setdefault(id(action), action.text())
+        action.setText(book.said('menu.%s' % key))
+    if self.__debug_menu__ is not None:
+      self.__debug_menu__.setTitle(book.said('menu.debug'))
+    if self.__fling_action__ is not None:
+      self.__fling_action__.setText(book.said('menu.fling'))
+    if self.__language_menu__ is not None:
+      self.__language_menu__.setTitle(book.said('menu.language'))
+    for language, action in (self.__language_actions__ or {}).items():
+      action.setChecked(language == book.language())
 
   def closeEvent(self, event: QCloseEvent) -> None:
     """Closing the window stops the frames and the worker."""
@@ -402,7 +478,9 @@ class BilliardsWindow(MainWindow):
     """The 'kegleGame' method returns keglebillard's game kept, its
     game loop, a new one lagging if none."""
     if self.__kegle_game__ is None:
-      self.__kegle_game__ = KegleGame(KegleTable(self.view.table)).begun()
+      players = self.__language_book__.players()
+      self.__kegle_game__ = KegleGame(KegleTable(self.view.table),
+                                      KegleMatch(players)).begun()
     return self.__kegle_game__
 
   def match(self, ) -> Match | KegleMatch:
@@ -412,16 +490,66 @@ class BilliardsWindow(MainWindow):
     if self.isKegler():
       return self.kegleGame().match
     if self.__window_match__ is None:
-      self.__window_match__ = Match(Rules()).begun()
+      players = self.__language_book__.players()
+      self.__window_match__ = Match(Rules(), players).begun()
     return self.__window_match__
 
   def referee(self, ) -> Referee:
     """The 'referee' method returns three-cushion's referee, judging by
-    the match's rules on the table of the motion; keglebillard lags as
-    three-cushion does, by the default rules."""
+    the match's rules on the table of the motion, calling in the language
+    chosen; keglebillard lags as three-cushion does, by the default
+    rules, its yellow the marked white."""
     if self.isKegler():
-      return Referee(Rules(), self.motion)
-    return Referee(self.match().rules, self.motion)
+      return Referee(Rules(), self.motion, self.phrasebook())
+    return Referee(self.match().rules, self.motion, self.phrasebook())
+
+  def phrasebook(self, ) -> Phrasebook:
+    """The 'phrasebook' method returns the words of the language chosen
+    ('setLanguage'), for the game played: in keglebillard the yellow is
+    the marked white."""
+    book = self.__language_book__
+    return book.kegler() if self.isKegler() else book
+
+  def language(self, ) -> str:
+    """The 'language' method returns the language the window speaks,
+    as 'Phrasebook.languages' has it."""
+    return self.__language_book__.language()
+
+  def setLanguage(self, language: str) -> None:
+    """The 'setLanguage' method has the window speak 'language' (the
+    user: English, Danish, French, Korean, Flemish): the menus, the
+    toolbar, the panel, the maps, the scene's own words, the club
+    boards, the referee from the next call on; players still called as
+    the old language calls them are called as the new one does. It does
+    not keep the choice ('chooseLanguage' does)."""
+    old, book = self.__language_book__, Phrasebook(language)
+    self.__language_book__ = book
+    if self.__window_match__ is not None:
+      if self.__window_match__.names == old.players():
+        self.__window_match__ = self.__window_match__.named(
+          book.players())
+    if self.__kegle_game__ is not None:
+      if self.__kegle_game__.match.names == old.players():
+        self.__kegle_game__ = self.__kegle_game__.named(book.players())
+    self.setWindowTitle(book.said('app.title'))
+    self._bindAimKeys()
+    self.toolBar.setWords(book)
+    self.panel.setWords(book)
+    self.unfoldedMap.setWords(book)
+    self.fullMap.setWords(book)
+    self.view.setWords(book)
+    self._wordMenus()
+    self.refresh()
+    self._pushBoards()
+
+  def chooseLanguage(self, language: str) -> None:
+    """The 'chooseLanguage' method has the window speak 'language', as
+    the menu 'Language' chooses, and keeps the choice for the next run
+    ('savedLanguage')."""
+    settings = QSettings(*_SETTINGS)
+    settings.setValue('language', language)
+    settings.sync()
+    self.setLanguage(language)
 
   def cueBall(self, ) -> Ball:
     """The 'cueBall' method returns the ball the panel strikes."""
@@ -561,7 +689,8 @@ class BilliardsWindow(MainWindow):
       self._raisePins(self.view.balls)
       self._faceTheFoot()
     elif self.__window_mode__ == 'game':
-      self.__window_match__ = Match(Rules()).begun()
+      players = self.__language_book__.players()
+      self.__window_match__ = Match(Rules(), players).begun()
       match = self.match()
       if match.phase == 'lag':
         self.view.balls = table.lagPosition()
@@ -585,11 +714,11 @@ class BilliardsWindow(MainWindow):
     elif self.__window_mode__ == 'game':
       self._showGame()
     else:
-      panel.heading = 'Sandbox'
+      book = self.__language_book__
+      panel.heading = book.said('tool.sandbox')
       panel.setSkipAvailable(False)
       panel.scoreRows = ()
-      panel.status = ('Any ball, from anywhere; the referee calls each '
-                      'shot.')
+      panel.status = book.said('sandbox.status')
       panel.setCueFree(True)
       choices = []
       if self.resting() and self.openingSpot():
@@ -1058,9 +1187,8 @@ class BilliardsWindow(MainWindow):
       self.view.balls = game.layoutBalls()
       self._raisePins(self.view.balls)
       self._faceTheFoot()
-      self.panel.callWords = ('Lag skipped: %s lays out, a coin '
-                              'decided.' % game.match.names[
-                                game.match.starter])
+      self.panel.callWords = self.__language_book__.said(
+        'skip.kegler', game.match.names[game.match.starter])
       self.refresh()
       return
     match = match.lagged(winner).chosen(True)
@@ -1072,8 +1200,8 @@ class BilliardsWindow(MainWindow):
     self.view.balls = self.view.table.openingFor(match.cueBall(),
                                                  self.__opening_spot__)
     self._faceTheFoot()
-    self.panel.callWords = 'Lag skipped: %s breaks, a coin decided.' % (
-      match.names[match.starter])
+    self.panel.callWords = self.__language_book__.said(
+      'skip.carom', match.names[match.starter])
     self.refresh()
 
   def chooseSpot(self, number: int) -> None:
@@ -1202,12 +1330,13 @@ class BilliardsWindow(MainWindow):
   def _showGame(self, ) -> None:
     """Shows the game: the score, how the match stands, the choices,
     the cue ball it gives, and whether it may be struck."""
-    panel, match = self.panel, self.match()
+    panel, match, book = self.panel, self.match(), self.phrasebook()
     rules = match.rules
-    heading = 'Game to %d' % rules.distance
     if rules.sets:
-      heading += ', set %d' % match.setNumber
-    panel.heading = heading
+      panel.heading = book.said('heading.sets', rules.distance,
+                                match.setNumber)
+    else:
+      panel.heading = book.said('heading.carom', rules.distance)
     rows = []
     for k in (0, 1):
       playing = k == match.current and match.phase not in ('lag', 'over')
@@ -1217,14 +1346,15 @@ class BilliardsWindow(MainWindow):
                    '%.3f' % match.average(k), '%d' % match.best[k],
                    match.balls[k], '%d' % run))
     panel.scoreRows = tuple(rows)
-    status = match.said()
+    status = match.said(book)
     if match.phase == 'lag':
-      lagger = 'Yellow' if self.__lag_first__ is not None else 'White'
-      status += ': %s sets the shot.' % lagger
+      lagger = 'yellow' if self.__lag_first__ is not None else 'white'
+      status = book.said('status.lag', status, book.ball(lagger))
     panel.status = status
     panel.setCueFree(False)
     panel.setSkipAvailable(match.phase == 'lag' and not self.playing)
-    panel.setChooseWords('Break', 'Let the other break')
+    panel.setChooseWords(book.said('choose.break'),
+                         book.said('choose.pass'))
     choices = []
     if match.phase == 'choose':
       choices.append('choose')
@@ -1246,8 +1376,8 @@ class BilliardsWindow(MainWindow):
     """Shows keglebillard's game: the score, how the match stands, the
     choices (the distance before the lag, who lays out, red put down in
     hand), red the cue ball, and whether it may be struck."""
-    panel, match = self.panel, self.match()
-    panel.heading = 'Kegler to %d' % match.distance
+    panel, match, book = self.panel, self.match(), self.phrasebook()
+    panel.heading = book.said('heading.kegler', match.distance)
     rows = []
     for k in (0, 1):
       playing = k == match.current and match.phase not in ('lag', 'over')
@@ -1257,20 +1387,19 @@ class BilliardsWindow(MainWindow):
                    '%d' % match.best[k], ('white', 'yellow')[k],
                    '%d' % run))
     panel.scoreRows = tuple(rows)
-    status = match.said()
+    status = match.said(book)
     lag = match.phase == 'lag'
     if lag:
-      lagger = 'The marked white' if self.__lag_first__ is not None else (
-        'White')
-      status += ': %s sets the shot.' % lagger
+      lagger = 'yellow' if self.__lag_first__ is not None else 'white'
+      status = book.said('status.lag', status, book.ball(lagger))
     inHand = match.phase == 'play' and match.inHand and not self.playing
     if inHand:
-      status += (' Red in hand: Place red, then drag it within a quarter '
-                 'of either short cushion.')
+      status = book.said('status.hand', status)
     panel.status = status
     panel.setCueFree(False)
     panel.setSkipAvailable(lag and not self.playing)
-    panel.setChooseWords('Lay out', 'Let the other lay out')
+    panel.setChooseWords(book.said('choose.layout'),
+                         book.said('choose.give'))
     panel.setDistance(match.distance)
     panel.showPlacing(self.__placing_red__)
     choices = []
@@ -1669,23 +1798,19 @@ class BilliardsWindow(MainWindow):
     if recording is None or not recording.over or record is None:
       return None
     touches, after = recording.touchesOf(), recording.last()
-    referee = self.referee()
+    referee, book = self.referee(), self.phrasebook()
     if record['kind'] == 'fling':
       gone = any(int(row[0]) == record['pin'] and row[8] > 1.5
                  for row in recording.lastPins())
-      verdict = (None, 'Debug: pin %d flung, %s.' % (
-        record['pin'], 'evaporated over the cushion' if gone
-        else 'still on the table'), recording.known())
+      verdict = (None, book.said('fling.gone' if gone else 'fling.stayed',
+                                 record['pin']), recording.known())
     elif record['kind'] == 'lag':
       winner, words = referee.lagCall(touches, after)
-      if self.isKegler():
-        words = words.replace('Yellow', 'The marked white')
-        words = words.replace('yellow', 'the marked white')
       verdict = (winner, words, recording.known())
     elif self.isKegler():
       if self.__window_mode__ == 'game':
         recorder = self.recorderFor(recording.ballsAt(0.0))
-        call = self.kegleGame().called(recording, recorder)
+        call = self.kegleGame().called(recording, recorder, book)
       else:
         call = self._kegleCall(recording)
       verdict = (call, call.words, recording.known())
@@ -1948,15 +2073,17 @@ class BilliardsWindow(MainWindow):
     """Shows over the view the cushions the cue ball has met so far in
     the shot shown, counted up to the second ball it meets, and which
     balls it has met; the point, once called. Nothing for a lag."""
+    book = self.phrasebook()
     if self.isKegler():
       field = self.recorderFor(recording.ballsAt(0.0)).fieldOf()
-      words = _kegleCounterWords(recording, self.__play_time__, field)
+      words = _kegleCounterWords(recording, self.__play_time__, field,
+                                 book)
     else:
-      words = _counterWords(recording, self.__play_time__)
+      words = _counterWords(recording, self.__play_time__, book)
     verdict = self.__shot_verdict__
     if words and self.callShown and verdict is not None and (
         verdict[0] is not None):
-      words += '   —   ' + _calledWords(verdict[0])
+      words += '   —   ' + _calledWords(verdict[0], book)
     self.view.setCounter(words)
 
   def _kegleCall(self, recording: Recording) -> KegleCall:
@@ -1965,7 +2092,8 @@ class BilliardsWindow(MainWindow):
     fouls called, red played from where it lay, the series begun."""
     recorder = self.recorderFor(recording.ballsAt(0.0))
     shot = KegleShot(recording.touchesOf(), recorder.fallenOf(recording))
-    return KegleReferee(recorder.motion.table).call(shot, Streak())
+    return KegleReferee(recorder.motion.table, self.phrasebook()).call(
+      shot, Streak())
 
   def _faceTheFoot(self, ) -> None:
     """Turns the camera to face the foot, as the players stand at the
@@ -2095,7 +2223,8 @@ class BilliardsWindow(MainWindow):
       if not game:
         return self._kegleCall(recording).words
       recorder = self.recorderFor(self.view.balls, recording.rate)
-      return self.kegleGame().called(recording, recorder).words
+      return self.kegleGame().called(recording, recorder,
+                                     self.phrasebook()).words
     shot = Shot(self.panel.cueName, match.cueBall() if game else '',
                 self.view.balls, recording.touchesOf(), recording.last(),
                 match.needsOpening() if game else False, aim[0], aim[1],
@@ -2170,7 +2299,8 @@ class BilliardsWindow(MainWindow):
     """The 'inventoryItems' method returns what the walker carries, each
     its 'name' and 'label': the cue, for now (the user: other stuff
     later)."""
-    return [{'name': 'cue', 'label': 'Cue'}]
+    return [{'name': 'cue', 'label': self.__language_book__.said(
+      'item.cue')}]
 
   def heldItem(self, ) -> str:
     """The 'heldItem' method returns the name of the item in hand, empty
@@ -2225,26 +2355,26 @@ class BilliardsWindow(MainWindow):
   def startMenu(self, kind: str) -> QMenu:
     """The 'startMenu' method returns the menu E opens by 'kind's table:
     its name, 'Play a game', 'Sandbox', and 'Walk on'."""
-    menu = self._useMenu()
-    title = menu.addAction('Kegler table' if kind == 'kegler'
-                           else 'Three-cushion table')
+    menu, book = self._useMenu(), self.__language_book__
+    title = menu.addAction(book.said('table.kegler' if kind == 'kegler'
+                                     else 'table.carom'))
     title.setEnabled(False)
     menu.addSeparator()
-    play = menu.addAction('Play a game')
+    play = menu.addAction(book.said('use.play'))
     play.triggered.connect(lambda *_: self.sitDown(kind, 'game'))
-    sandbox = menu.addAction('Sandbox')
+    sandbox = menu.addAction(book.said('use.sandbox'))
     sandbox.triggered.connect(lambda *_: self.sitDown(kind, 'sandbox'))
-    menu.addAction('Walk on')
+    menu.addAction(book.said('use.walk'))
     return menu
 
   def tableMenu(self, ) -> QMenu:
     """The 'tableMenu' method returns the menu E opens at the table played
     at: 'Back to the table', 'New game', and 'Leave the table'."""
-    menu = self._useMenu()
-    menu.addAction('Back to the table')
-    again = menu.addAction('New game')
+    menu, book = self._useMenu(), self.__language_book__
+    menu.addAction(book.said('use.back'))
+    again = menu.addAction(book.said('use.new'))
     again.triggered.connect(lambda *_: self.newGame())
-    leave = menu.addAction('Leave the table')
+    leave = menu.addAction(book.said('use.leave'))
     leave.triggered.connect(lambda *_: self.standUp())
     return menu
 
@@ -2268,16 +2398,17 @@ class BilliardsWindow(MainWindow):
     diegetic scoreboard): over the table played at, the game as it
     stands, the line saying what just happened; over the other, a free
     table."""
-    kegler = self.isKegler()
-    idle = _idleBoard(not kegler)
+    kegler, book = self.isKegler(), self.__language_book__
+    idle = _idleBoard(not kegler, book)
     if self.walking and self.__shot_history__ is None:
-      return _idleBoard(kegler), idle
+      return _idleBoard(kegler, book), idle
     if self.__window_mode__ != 'game':
-      live = _idleBoard(kegler)
-      live['title'] = 'SANDBOX'
+      live = _idleBoard(kegler, book)
+      live['title'] = book.said('board.sandbox')
       live['line'] = (self.__board_line__
-                      or 'SANDBOX: ANY BALL, FROM ANYWHERE')
+                      or book.said('board.sandboxline'))
       live['tone'] = self.__board_tone__
+      _dotted(live, book)
       return live, idle
     return self._gameBoard(), idle
 
@@ -2285,7 +2416,7 @@ class BilliardsWindow(MainWindow):
     """Returns the club board of the game played: the players, their
     points, figures, run and way to the distance, the centre, and the
     line."""
-    match, kegler = self.match(), self.isKegler()
+    match, kegler, book = self.match(), self.isKegler(), self.phrasebook()
     distance = match.distance if kegler else match.rules.distance
     playing = match.phase in ('play', 'break')
     at = match.current if playing else -1
@@ -2293,26 +2424,30 @@ class BilliardsWindow(MainWindow):
     if kegler:
       figures = [('%d' % match.series[k], '%.2f' % match.average(k),
                   '%d' % match.best[k]) for k in (0, 1)]
-      labels, roundLabel = ['SER', 'AVG', 'BEST'], 'SERIES'
+      labels = [book.said(key) for key in ('board.ser', 'board.avg',
+                                           'board.best')]
+      roundLabel = book.said('board.series')
       rounds = max(match.series) + (1 if playing else 0)
       beads, tier = math.ceil(run / 4), _tierOf(run, 12, 20)
       due = min(match.streak.reds, 2) if playing else 0
-      lamp, lampOn = 'FINAL SERIES', bool(match.final)
+      lamp, lampOn = book.said('board.final'), bool(match.final)
     else:
       figures = [('%d' % match.innings[k], '%.3f' % match.average(k),
                   '%d' % match.best[k]) for k in (0, 1)]
-      labels, roundLabel = ['INN', 'AVG', 'HR'], 'INNING'
+      labels = [book.said(key) for key in ('board.inn', 'board.avg',
+                                           'board.hr')]
+      roundLabel = book.said('board.inning')
       rounds = max(match.innings) + (1 if playing else 0)
       beads, tier = run, _tierOf(run, 3, 5)
       due = -1
-      lamp = 'MATCH BALL'
+      lamp = book.said('board.matchball')
       lampOn = playing and match.scores[at] == distance - 1
-    line = self.__board_line__ or match.said()
+    line = self.__board_line__ or match.said(book)
     if match.phase == 'lag':
       line = self.panel.status or line
-    return {
+    return _dotted({
       'wood': 'oak' if kegler else 'ebony',
-      'title': 'TO %d' % distance,
+      'title': book.said('board.to', distance),
       'names': list(match.names),
       'balls': ['#f2ecd9', '#e9e6df' if kegler else '#f5b21b'],
       'leds': ['#f6f0e4', '#ffad2a'],
@@ -2335,7 +2470,10 @@ class BilliardsWindow(MainWindow):
       'lampOn': bool(lampOn),
       'line': line,
       'tone': self.__board_tone__,
-    }
+      'runLabel': book.said('board.run'),
+      'clockLabel': book.said('board.clock'),
+      'dueLabel': book.said('board.due'),
+    }, book)
 
   def _pushBoards(self, ) -> None:
     """Shows the club boards as 'boards' has them."""
@@ -2350,20 +2488,20 @@ class BilliardsWindow(MainWindow):
     if self.__minimap_menu__ is not None:
       self.__minimap_menu__.deleteLater()
     menu = self.__minimap_menu__ = QMenu(self)
-    history = self.__shot_history__ or []
-    previous = menu.addAction('Previous')
+    history, book = self.__shot_history__ or [], self.__language_book__
+    previous = menu.addAction(book.said('mini.previous'))
     previous.setEnabled(bool(history) and not self.playing)
     previous.triggered.connect(
       lambda *_: self.showShotOf(len(self.__shot_history__ or []) - 1))
-    clear = menu.addAction('Clear')
+    clear = menu.addAction(book.said('mini.clear'))
     clear.setEnabled(not self.playing)
     clear.triggered.connect(lambda *_: self.clearMinimap())
-    options = menu.addMenu('Options')
-    none = options.addAction('None yet')
+    options = menu.addMenu(book.said('mini.options'))
+    none = options.addAction(book.said('mini.none'))
     none.setEnabled(False)
-    past = menu.addMenu('History')
+    past = menu.addMenu(book.said('mini.history'))
     if not history:
-      empty = past.addAction('No shots yet')
+      empty = past.addAction(book.said('mini.empty'))
       empty.setEnabled(False)
     for index in reversed(range(len(history))):
       action = past.addAction(history[index][0])
@@ -2414,9 +2552,9 @@ class BilliardsWindow(MainWindow):
     verdict = self.__shot_verdict__ or self._verdict()
     record = self.__shot_record__ or {}
     words = verdict[1] if verdict is not None else ''
-    number = len(self.__shot_history__) + 1
-    lag = 'Lag: ' if record.get('kind') == 'lag' else ''
-    label = '%d. %s%s' % (number, lag, words or 'Played')
+    number, book = len(self.__shot_history__) + 1, self.__language_book__
+    key = 'mini.lag' if record.get('kind') == 'lag' else 'mini.shot'
+    label = book.said(key, number, words or book.said('mini.played'))
     paths, bold, hands = self._trailsOf(recording, recording.known())
     self.__shot_history__.append((label, paths, bold, hands,
                                   self.__mulligan_balls__))
@@ -2432,18 +2570,34 @@ class BilliardsWindow(MainWindow):
       self.__rest_clock__ = time.monotonic()
 
 
-def _idleBoard(kegler: bool) -> dict:
-  """Returns the club board of a table no one plays at: its wood, no
-  players, the line asking for a player."""
-  return {'wood': 'oak' if kegler else 'ebony', 'title': 'FREE TABLE',
-          'names': ['', ''], 'points': [0, 0],
-          'stats': [['', '', ''], ['', '', '']], 'at': -1, 'won': -1,
-          'run': 0, 'beads': 0, 'shares': [0, 0], 'roundLabel': '',
-          'clock': '', 'due': -1, 'lamp': '', 'lampOn': False,
-          'labels': (['SER', 'AVG', 'BEST'] if kegler
-                     else ['INN', 'AVG', 'HR']),
-          'line': 'FREE TABLE · WALK UP AND PRESS E TO PLAY',
-          'tone': 'neutral'}
+def _idleBoard(kegler: bool, book: Phrasebook) -> dict:
+  """Returns the club board of a table no one plays at, in 'book's
+  language: its wood, no players, the line asking for a player."""
+  keys = (('board.ser', 'board.avg', 'board.best') if kegler
+          else ('board.inn', 'board.avg', 'board.hr'))
+  return _dotted({'wood': 'oak' if kegler else 'ebony',
+                  'title': book.said('board.free'),
+                  'names': ['', ''], 'points': [0, 0],
+                  'stats': [['', '', ''], ['', '', '']], 'at': -1,
+                  'won': -1, 'run': 0, 'beads': 0, 'shares': [0, 0],
+                  'roundLabel': '', 'clock': '', 'due': -1, 'lamp': '',
+                  'lampOn': False,
+                  'labels': [book.said(key) for key in keys],
+                  'runLabel': book.said('board.run'),
+                  'clockLabel': book.said('board.clock'),
+                  'dueLabel': book.said('board.due'),
+                  'line': book.said('board.freeline'),
+                  'tone': 'neutral'}, book)
+
+
+def _dotted(board: dict, book: Phrasebook) -> dict:
+  """Returns 'board' with its line's dots, sampled from a font, in a
+  language whose letters the board's 5 by 7 glyphs cannot draw
+  ('Phrasebook.dotted'), 'DOT_ROWS' rows high; else as it is."""
+  if book.dotted():
+    board['dots'] = dotsOf(board.get('line', ''), DOT_ROWS)
+    board['dotRows'] = DOT_ROWS
+  return board
 
 
 def _tierOf(run: int, warm: int, hot: int) -> str:
@@ -2467,10 +2621,11 @@ def _stillFrom(recording: Recording, name: str) -> float:
   return float(moved[-1] + 1) / recording.rate
 
 
-def _counterWords(recording: Recording, upto: float) -> str:
+def _counterWords(recording: Recording, upto: float,
+                  book: Phrasebook) -> str:
   """Returns the cushions the cue ball met in 'recording' by 'upto' s,
   counted up to the second ball it meets, and the balls, each ticked
-  once met; empty unless one ball was struck."""
+  once met, in 'book's language; empty unless one ball was struck."""
   struck = recording.struck()
   if len(struck) != 1:
     return ''
@@ -2487,16 +2642,16 @@ def _counterWords(recording: Recording, upto: float) -> str:
       other = touch.second if touch.first == cue else touch.first
       if other not in met:
         met.append(other)
-  noun = 'cushion' if cushions == 1 else 'cushions'
-  return '%d %s   %s' % (cushions, noun, _metMarks(recording, cue, met))
+  return '%s   %s' % (book.counted('count.cushion', cushions),
+                      _metMarks(recording, cue, met, book))
 
 
 def _kegleCounterWords(recording: Recording, upto: float,
-                       field: PinField) -> str:
+                       field: PinField, book: Phrasebook) -> str:
   """Returns how many pins are down in keglebillard's 'recording' at
   'upto' s, as the rules count them, set in 'field', and the balls the
-  cue ball has met by then, each ticked once met; empty unless one ball
-  was struck."""
+  cue ball has met by then, each ticked once met, in 'book's language;
+  empty unless one ball was struck."""
   struck = recording.struck()
   if len(struck) != 1:
     return ''
@@ -2509,16 +2664,21 @@ def _kegleCounterWords(recording: Recording, upto: float,
       if other not in met:
         met.append(other)
   field.setRows(recording.pinsAt(upto), recording.names)
-  return 'Pins down %d   %s' % (len(field.fallen()),
-                                _metMarks(recording, cue, met))
+  return '%s   %s' % (book.said('counter.pins', len(field.fallen())),
+                      _metMarks(recording, cue, met, book))
 
 
-def _metMarks(recording: Recording, cue: str, met: list) -> str:
-  """Returns the balls of 'recording' but 'cue', each ticked if among
-  'met'."""
-  return '   '.join('%s %s' % (name.capitalize(),
-                               '✓' if name in met else '·')
-                    for name in recording.names if name != cue)
+def _metMarks(recording: Recording, cue: str, met: list,
+              book: Phrasebook) -> str:
+  """Returns the balls of 'recording' but 'cue', each by its button's
+  name in 'book's language, ticked if among 'met'."""
+  out = []
+  for name in recording.names:
+    if name != cue:
+      button = 'marked' if book.isMarked() and name == 'yellow' else name
+      out.append('%s %s' % (book.said('button.%s' % button),
+                            '✓' if name in met else '·'))
+  return '   '.join(out)
 
 
 def _scored(call: object) -> bool:
@@ -2529,11 +2689,25 @@ def _scored(call: object) -> bool:
   return True if getattr(call, 'point', False) else False
 
 
-def _calledWords(call: object) -> str:
-  """Returns the call shown after the counter: the point or none, or
-  keglebillard's points, a foul or no score."""
+def _calledWords(call: object, book: Phrasebook) -> str:
+  """Returns the call shown after the counter, in 'book's language:
+  the point or none, or keglebillard's points, a foul or no score."""
   if isinstance(call, KegleCall):
     if call.foul:
-      return 'Foul'
-    return '%d points' % call.points if call.points else 'No score'
-  return 'Point!' if getattr(call, 'point', False) else 'No point'
+      return book.said('counter.foul')
+    if call.points:
+      return book.said('counter.points', call.points)
+    return book.said('counter.none')
+  if getattr(call, 'point', False):
+    return book.said('counter.point')
+  return book.said('counter.miss')
+
+
+def savedLanguage() -> str:
+  """Returns the language the billiards were last told to speak, kept
+  by 'BilliardsWindow.chooseLanguage'; never told, the system's own if
+  they speak it ('Phrasebook.languageOf'), else English."""
+  saved = QSettings(*_SETTINGS).value('language', '')
+  if saved in Phrasebook.languages():
+    return str(saved)
+  return Phrasebook.languageOf(QLocale.system().name())

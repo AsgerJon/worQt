@@ -26,7 +26,7 @@ The 'worQt.gaming.billiards.gui' package shows a three-cushion table in
 - BilliardsToolBar: the buttons above the table, the field of view,
   the aim step and the hand's box.
 - BilliardsWindow: the window round it, the balls moving on the
-  cloth.
+  cloth; 'savedLanguage', the language it was last told to speak.
 - BilliardsApp: the application, run with 'python -m
   worQt.gaming.billiards'.
 """
@@ -45,7 +45,7 @@ from ._hit_picker import HitPicker, PaintHitPicker
 from ._shot_panel import ShotPanel, PaintShotPanel
 from ._unfolded_map import UnfoldedMap, PaintUnfoldedMap
 from ._billiards_sounds import BilliardsSounds
-from ._billiards_window import BilliardsWindow
+from ._billiards_window import BilliardsWindow, savedLanguage
 from ._billiards_app import BilliardsApp
 
 __all__ = (
@@ -70,5 +70,6 @@ __all__ = (
   'PaintUnfoldedMap',
   'BilliardsSounds',
   'BilliardsWindow',
+  'savedLanguage',
   'BilliardsApp',
 )

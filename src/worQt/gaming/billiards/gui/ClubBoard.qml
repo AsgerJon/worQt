@@ -11,7 +11,9 @@
 //  centre the distance, the inning or series, the shot clock or the pins
 //  due, a lamp for match ball or the final series; under it all a
 //  dot-matrix line saying what just happened. 'info' holds it all, as
-//  'TableView.setBoards' sends it.
+//  'TableView.setBoards' sends it, its words in the language chosen; a
+//  line in letters the 5 by 7 glyphs cannot draw (Korean) comes as its
+//  dots, 'dots' and 'dotRows', sampled from a font.
 
 import QtQuick
 
@@ -208,7 +210,7 @@ Rectangle {
       anchors.left: side.mirrored ? undefined : parent.left
       anchors.right: side.mirrored ? parent.right : undefined
       Text {
-        text: "RUN"
+        text: board.info.runLabel || "RUN"
         color: "#8e8576"
         font.pixelSize: 17
         font.letterSpacing: 3
@@ -250,15 +252,19 @@ Rectangle {
   }
 
   //  The line saying what just happened: a dot-matrix strip, typed on,
-  //  scrolled when too long, its colour the call's.
+  //  scrolled when too long, its colour the call's. Its 'text' drawn in
+  //  the 5 by 7 glyphs, or, given, its 'dots', a column each, 'rows'
+  //  high, as a font draws letters the glyphs have not.
   component DotMatrix: Canvas {
     id: matrix
     property string text: ""
+    property var dots: []
+    property int rows: 7
     property string tone: "neutral"
     property int reveal: 0
     property int offset: 0
     property int hue: 0
-    readonly property int visibleColumns: 132
+    readonly property int visibleColumns: Math.round(132 * (rows + 2) / 9)
     property var columns: []
     readonly property var glyphs: ({
       "A": ["01110","10001","10001","11111","10001","10001","10001"],
@@ -290,6 +296,22 @@ Rectangle {
       "Ø": ["01111","10011","10101","10101","10101","11001","11110"],
       "Æ": ["01111","10100","10100","11110","10100","10100","10111"],
       "Å": ["00100","00000","01110","10001","11111","10001","10001"],
+      "É": ["00010","11111","10000","11110","10000","10000","11111"],
+      "È": ["01000","11111","10000","11110","10000","10000","11111"],
+      "Ê": ["00100","01010","11111","10000","11110","10000","11111"],
+      "Ë": ["01010","11111","10000","11110","10000","10000","11111"],
+      "À": ["01000","01110","10001","10001","11111","10001","10001"],
+      "Â": ["00100","01010","01110","10001","11111","10001","10001"],
+      "Ä": ["01010","01110","10001","10001","11111","10001","10001"],
+      "Ç": ["01110","10001","10000","10000","10001","01110","00100"],
+      "Î": ["00100","01010","01110","00100","00100","00100","01110"],
+      "Ï": ["01010","01110","00100","00100","00100","00100","01110"],
+      "Ô": ["00100","01010","01110","10001","10001","10001","01110"],
+      "Ö": ["01010","01110","10001","10001","10001","10001","01110"],
+      "Û": ["00100","01010","10001","10001","10001","10001","01110"],
+      "Ù": ["01000","10001","10001","10001","10001","10001","01110"],
+      "Ü": ["01010","10001","10001","10001","10001","10001","01110"],
+      "Œ": ["01111","10100","10100","10111","10100","10100","01111"],
       "0": ["01110","10001","10011","10101","11001","10001","01110"],
       "1": ["00100","01100","00100","00100","00100","00100","01110"],
       "2": ["01110","10001","00001","00010","00100","01000","11111"],
@@ -304,6 +326,7 @@ Rectangle {
       ".": ["00000","00000","00000","00000","00000","01100","01100"],
       ",": ["00000","00000","00000","00000","01100","00100","01000"],
       ":": ["00000","01100","01100","00000","01100","01100","00000"],
+      ";": ["00000","01100","01100","00000","01100","00100","01000"],
       "!": ["00100","00100","00100","00100","00100","00000","00100"],
       "?": ["01110","10001","00001","00010","00100","00000","00100"],
       "+": ["00000","00100","00100","11111","00100","00100","00000"],
@@ -330,12 +353,14 @@ Rectangle {
       }
       return out
     }
-    onTextChanged: {
-      columns = columnsOf(text.toUpperCase())
+    function restart() {
+      columns = dots.length ? dots : columnsOf(text.toUpperCase())
       reveal = 0
       offset = 0
       requestPaint()
     }
+    onTextChanged: restart()
+    onDotsChanged: restart()
     Timer {
       interval: 45
       running: true
@@ -352,8 +377,8 @@ Rectangle {
     onPaint: {
       const ctx = getContext("2d")
       ctx.reset()
-      const pitch = Math.min(width / visibleColumns, height / 9)
-      const top = (height - pitch * 9) / 2
+      const pitch = Math.min(width / visibleColumns, height / (rows + 2))
+      const top = (height - pitch * (rows + 2)) / 2
       const r = pitch * 0.36
       const long = columns.length > visibleColumns
       const colors = { neutral: "#f6f0e4", point: "#ffad2a",
@@ -368,7 +393,7 @@ Rectangle {
         } else if (c < Math.min(reveal, columns.length)) {
           source = columns[c]
         }
-        for (let row = 0; row < 7; ++row) {
+        for (let row = 0; row < rows; ++row) {
           const lit = (source >> row) & 1
           ctx.fillStyle = lit
             ? (base || Qt.hsla(((hue + c * 4) % 360) / 360, 0.95, 0.62, 1))
@@ -430,7 +455,8 @@ Rectangle {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         text: board.info.due === undefined || board.info.due < 0
-          ? "SHOT CLOCK" : "PINS DUE"
+          ? (board.info.clockLabel || "SHOT CLOCK")
+          : (board.info.dueLabel || "PINS DUE")
         color: "#8e8576"
         font.pixelSize: 17
         font.letterSpacing: 3
@@ -484,6 +510,8 @@ Rectangle {
     DotMatrix {
       x: 24; y: 414; width: 1096; height: 58
       text: board.info.line || ""
+      dots: board.info.dots || []
+      rows: board.info.dotRows || 7
       tone: board.info.tone || "neutral"
     }
   }

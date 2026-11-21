@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from ._motion import CUSHIONS, Motion, Touch
+from ._phrasebook import ENGLISH, Phrasebook
 
 FROZEN = 0.1  # mm: balls this near, or a ball this near a cushion, touch
 
@@ -74,7 +75,9 @@ class Call(NamedTuple):
 class Referee(NamedTuple):
   """
   Referee judges shots on the table of 'motion' by the 'rules', as the
-  FFB's Code sportif carambole has them.
+  FFB's Code sportif carambole has them, calling them in the language
+  of its 'book' (the user: the game in several languages), the
+  articles the same in every one.
 
   'call' judges a shot. First the fouls, any of which voids the point
   (2.2.08): struck before every ball was still (2.1.17-1); over the shot
@@ -90,6 +93,7 @@ class Referee(NamedTuple):
 
   rules: Rules = Rules()
   motion: Motion = Motion()
+  book: Phrasebook = ENGLISH
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -157,7 +161,7 @@ class Referee(NamedTuple):
     or the far one more than once, loses; of the others, the one nearest
     the near cushion wins. Returns the winning ball's name, empty if the
     lag is to be played again, and the call in words."""
-    faults = {}
+    book, faults = self.book, {}
     for name in ('white', 'yellow'):
       mine = [touch for touch in touches if name in (touch.first,
                                                      touch.second)]
@@ -167,28 +171,28 @@ class Referee(NamedTuple):
                or touch.second not in ('foot', 'head')]
       cushions = [touch.second for touch in mine if touch.kind == 'cushion']
       if other:
-        faults[name] = 'touched %s' % _what(other[0], name)
+        faults[name] = book.said('lag.touched', _what(other[0], name,
+                                                      book))
       elif cushions and cushions[0] != 'foot':
-        faults[name] = 'went to the near cushion before the far one'
+        faults[name] = book.said('lag.near')
       elif len(feet) != 1:
-        faults[name] = 'touched the far cushion %d times' % len(feet)
+        faults[name] = book.said('lag.far', len(feet))
     if len(faults) == 2:
-      return '', 'Both lags are faults: lag again (2.1.02)'
+      return '', book.said('lag.both', '2.1.02')
     if len(faults) == 1:
       loser = next(iter(faults))
       winner = 'yellow' if loser == 'white' else 'white'
-      words = '%s wins the lag: %s %s (2.1.02)' % (
-        winner.capitalize(), loser, faults[loser])
+      words = book.said('lag.fault', book.ball(winner),
+                        book.theBall(loser), faults[loser], '2.1.02')
       return winner, words
     named = {ball.name: ball for ball in after}
     length = self.motion.table.length
     gaps = {name: length - named[name].y for name in ('white', 'yellow')}
     if abs(gaps['white'] - gaps['yellow']) < 0.5:
-      return '', 'The lag is a tie: lag again (2.1.02)'
+      return '', book.said('lag.tie', '2.1.02')
     winner = min(gaps, key=gaps.get)
-    return winner, ('%s wins the lag, %.0f mm from the near cushion '
-                    '(2.1.02)' % (winner.capitalize(),
-                                  gaps[winner] - self.motion.reach()))
+    return winner, book.said('lag.won', book.ball(winner), '%.0f' % (
+      gaps[winner] - self.motion.reach()), '2.1.02')
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PRIVATE METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -196,28 +200,29 @@ class Referee(NamedTuple):
 
   def _foul(self, shot: Shot) -> Call | None:
     """Returns the foul 'shot' is, if it is one."""
+    book = self.book
     if shot.early:
-      return _fouled('2.1.17-1', 'struck before every ball was still')
+      return _fouled('2.1.17-1', book.said('foul.early'), book)
     if shot.late:
-      return _fouled('2.1.17-6', 'over the shot clock')
+      return _fouled('2.1.17-6', book.said('foul.late'), book)
     if shot.owner and shot.cue != shot.owner:
-      return _fouled('2.1.17-5', "played the opponent's ball")
+      return _fouled('2.1.17-5', book.said('foul.owner'), book)
     frozen = self._frozenInto(shot)
     if frozen:
-      return _fouled('2.1.12', 'played into %s, frozen to the cue ball'
-                     % frozen)
+      return _fouled('2.1.12', book.said('foul.frozen', frozen), book)
     off = tuple(touch.first for touch in shot.touches
                 if touch.kind == 'off')
     if off:
+      gone = tuple(dict.fromkeys(off))
+      words = book.joined([book.theBall(name) for name in gone])
       return Call(False, True, '2.1.14',
-                  'Foul: %s left the table (2.1.14)' % ', '.join(off),
-                  tuple(dict.fromkeys(off)))
+                  book.said('call.off', words, '2.1.14'), gone)
     if shot.opening:
       first = next((touch for touch in shot.touches
                     if shot.cue in (touch.first, touch.second)), None)
       if first is None or first.kind != 'ball' or 'red' not in (
           first.first, first.second):
-        return _fouled('2.2.03', 'the break must hit the red first')
+        return _fouled('2.2.03', book.said('foul.break'), book)
     return None
 
   def _frozenInto(self, shot: Shot) -> str:
@@ -229,18 +234,18 @@ class Referee(NamedTuple):
     for name in balls:
       other = named[name]
       if (other.x - cue.x) * shot.aimX + (other.y - cue.y) * shot.aimY > 0:
-        return 'the %s' % name
+        return self.book.theBall(name)
     sides = dict(zip(CUSHIONS, self.motion.sidesOf(cue.x, cue.y)))
     for name in walls:
       _, ix, iy = sides[name]
       if ix * shot.aimX + iy * shot.aimY < 0.0:
-        return 'the %s cushion' % name
+        return self.book.cushion(name)
     return ''
 
   def _carom(self, shot: Shot) -> Call:
     """Returns the point, or the miss, 'shot' makes: both object balls,
     the cushions before the second."""
-    cue, needed = shot.cue, self.rules.cushions
+    cue, needed, book = shot.cue, self.rules.cushions, self.book
     objects = [ball.name for ball in shot.before if ball.name != cue]
     met, cushions, before = [], 0, None
     for touch in shot.touches:
@@ -255,34 +260,41 @@ class Referee(NamedTuple):
             break
     if before is None:
       missed = [name for name in objects if name not in met]
-      return Call(False, False, '2.2.01', 'No point: missed %s (2.2.01)'
-                  % ' and '.join('the %s' % name for name in missed), ())
-    last = met[1]
+      words = book.joined([book.theBall(name) for name in missed])
+      return Call(False, False, '2.2.01',
+                  book.said('call.missed', words, '2.2.01'), ())
+    last = book.theBall(met[1])
     if before < needed:
       return Call(False, False, '2.2.05',
-                  'No point: %s before the %s (2.2.05)'
-                  % (_cushions(before), last), ())
-    return Call(True, False, '2.2.05', 'Point: %s before the %s (2.2.05)'
-                % (_cushions(before), last), ())
+                  book.said('call.short', _cushions(before, book), last,
+                            '2.2.05'), ())
+    return Call(True, False, '2.2.05',
+                book.said('call.point', _cushions(before, book), last,
+                          '2.2.05'), ())
 
 
-def _fouled(article: str, why: str) -> Call:
-  """Returns the foul at 'article' for 'why'."""
-  return Call(False, True, article, 'Foul: %s (%s)' % (why, article), ())
+def _fouled(article: str, why: str, book: Phrasebook) -> Call:
+  """Returns the foul at 'article' for 'why', called in 'book's
+  language."""
+  return Call(False, True, article, book.said('call.foul', why, article),
+              ())
 
 
-def _cushions(count: int) -> str:
-  """Says 'count' cushions in words."""
-  words = ('no cushion', 'one cushion', 'two cushions', 'three cushions',
-           'four cushions', 'five cushions')
-  return words[count] if count < len(words) else '%d cushions' % count
+def _cushions(count: int, book: Phrasebook) -> str:
+  """Says 'count' cushions in words, in 'book's language."""
+  if count <= 5:
+    return book.said('cushions.%d' % count)
+  return book.said('cushions.n', count)
 
 
-def _what(touch: Touch, name: str) -> str:
-  """Says what the ball 'name' touched in 'touch'."""
+def _what(touch: Touch, name: str, book: Phrasebook) -> str:
+  """Says what the ball 'name' touched in 'touch', in 'book's
+  language."""
   if touch.kind == 'cushion':
-    return 'the %s cushion' % touch.second
+    return book.cushion(touch.second)
   if touch.kind == 'ball':
     other = touch.second if touch.first == name else touch.first
-    return 'the %s' % other
-  return 'the floor'
+    return book.theBall(other)
+  if touch.kind in ('pin', 'pocket'):
+    return book.said('the.%s' % touch.kind)
+  return book.said('the.floor')

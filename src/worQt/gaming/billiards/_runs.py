@@ -36,6 +36,7 @@ BILLIARDS_TESTS = ('tests.test_gaming.test_billiards.test_carom_table',
                    'tests.test_gaming.test_billiards.test_kegle_referee',
                    'tests.test_gaming.test_billiards.test_kegle_match',
                    'tests.test_gaming.test_billiards.test_kegle_game',
+                   'tests.test_gaming.test_billiards.test_phrasebook',
                    'tests.test_gaming.test_billiards.run_billiards_window')
 
 
@@ -51,10 +52,12 @@ def billiardsShow() -> int:
   """The 'billiardsShow' function opens the billiard room, walked first
   person (W A S D, the mouse looking), both tables in it: near one, E
   opens its menu, a game or the sandbox; at the table a right-button
-  drag back strikes. Returns the window's exit code once it closes."""
-  from worQt.gaming.billiards.gui import BilliardsApp
+  drag back strikes; in the language last chosen ('Language' in the
+  menu bar). Returns the window's exit code once it closes."""
+  from worQt.gaming.billiards.gui import BilliardsApp, savedLanguage
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
+    app.window.setLanguage(savedLanguage())
     app.window.enterRoom()
   return app.returnCode
 

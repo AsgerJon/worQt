@@ -15,6 +15,7 @@ from worktoy.desc import AttriBox, Field
 from worktoy.dispatch import overload
 
 from ....engineering.gui import CheckBox, QuantitySlider, ToolButton
+from .._phrasebook import ENGLISH, Phrasebook
 from ....engineering.gui._paint_panel import PaintPanel
 from ....paint_ops import PaintBoxModel
 from ....utils import Color
@@ -48,7 +49,8 @@ class BilliardsToolBar(PaintedWidget):
   the shots are heard; and 'Shadow', 'shadowBox', ticked while the
   shadow both eyes see of the cue ball shows along the aim, as trenches
   to where ball 1 and ball 2 touch or stop. Shots are
-  set up and taken in the 'ShotPanel' beside the table.
+  set up and taken in the 'ShotPanel' beside the table. 'setWords'
+  words it all in a phrasebook's language.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -66,6 +68,8 @@ class BilliardsToolBar(PaintedWidget):
   __fallback_view__ = 36.0  # degrees the camera takes in at first
   __fallback_step__ = 0.1  # degrees a key turns the aim at first
   __slider_width__ = 260  # pixels the field of view's slider takes
+  __tool_book__: Phrasebook = ENGLISH
+  __tool_mode__: str = 'game'
 
   #  Public Variables
   boxModelOp = PaintBoxModel()
@@ -136,36 +140,44 @@ class BilliardsToolBar(PaintedWidget):
 
   @overload.finalize
   def __init__(self, *args) -> None:
-    self.caromButton.text = 'Three-cushion'
-    self.kegleButton.text = 'Kegler'
     self.caromButton.checked = True
-    self.gameButton.text = 'Game'
-    self.sandboxButton.text = 'Sandbox'
-    self.resetButton.text = 'New game'
-    self.replayButton.text = 'Replay'
     self.replayButton.setEnabled(False)
-    self.topButton.text = 'Top view'
-    self.mapButton.text = 'Unfolded'
-    self.fullButton.text = 'Full map'
-    self.mulliganButton.text = 'Mulligan'
-    self.moveButton.text = 'Move balls'
-    self.viewSlider.text = 'Field of view'
     self.viewSlider.setScale(20.0, 90.0, '°', 0)
     self.viewSlider.quantity = self.__fallback_view__
-    self.stepSlider.text = 'Aim step'
     self.stepSlider.setLogScale(0.01, 1.0, '°', 3)
     self.stepSlider.quantity = self.__fallback_step__
-    self.handBox.text = 'Hand'
     self.handBox.checked = True
-    self.soundBox.text = 'Sound'
     self.soundBox.checked = True
-    self.shadowBox.text = 'Shadow'
     self.shadowBox.checked = True
-    self._place()
+    self.setWords(ENGLISH)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+  def setWords(self, book: Phrasebook) -> None:
+    """The 'setWords' method words the buttons, the sliders and the
+    boxes in 'book's language."""
+    self.__tool_book__ = book
+    texts = ((self.caromButton, 'tool.carom'),
+             (self.kegleButton, 'tool.kegler'),
+             (self.gameButton, 'tool.game'),
+             (self.sandboxButton, 'tool.sandbox'),
+             (self.replayButton, 'tool.replay'),
+             (self.topButton, 'tool.top'),
+             (self.mapButton, 'tool.unfolded'),
+             (self.fullButton, 'tool.full'),
+             (self.mulliganButton, 'tool.mulligan'),
+             (self.moveButton, 'tool.move'),
+             (self.viewSlider, 'tool.view'),
+             (self.stepSlider, 'tool.step'),
+             (self.handBox, 'tool.hand'),
+             (self.soundBox, 'tool.sound'),
+             (self.shadowBox, 'tool.shadow'))
+    for widget, key in texts:
+      widget.text = book.said(key)
+      widget.update()
+    self.showMode(self.__tool_mode__)
 
   def buttons(self, ) -> tuple[ToolButton, ...]:
     """The 'buttons' method returns the buttons, left to right."""
@@ -187,9 +199,11 @@ class BilliardsToolBar(PaintedWidget):
     button lit, 'New game' or 'Reset', and 'Mulligan' and 'Move balls' only
     in the sandbox."""
     sandbox = mode == 'sandbox'
+    self.__tool_mode__ = 'sandbox' if sandbox else 'game'
     self.gameButton.checked = not sandbox
     self.sandboxButton.checked = sandbox
-    self.resetButton.text = 'Reset' if sandbox else 'New game'
+    self.resetButton.text = self.__tool_book__.said(
+      'tool.reset' if sandbox else 'tool.new')
     self.mulliganButton.setEnabled(sandbox)
     self.moveButton.setEnabled(sandbox)
     if not sandbox:

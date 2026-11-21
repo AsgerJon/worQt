@@ -62,10 +62,11 @@ def main() -> int:
     print('[smoke] kernels ready in %.1f s' % kernelsReady(), flush=True)
   from PySide6.QtCore import QTimer
 
-  from worQt.gaming.billiards.gui import BilliardsApp
+  from worQt.gaming.billiards.gui import BilliardsApp, savedLanguage
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
     app.window.showMaximized()
+    app.window.setLanguage(savedLanguage())
     app.window.enterRoom()
     if smoke:
       QTimer.singleShot(int(1000.0 * smoke), lambda: shut(app))

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from ._phrasebook import ENGLISH, Phrasebook
 from ._referee import Call, Rules
 
 #  What a match is waiting for: the 'lag' for the break; the lag's winner
@@ -124,24 +125,31 @@ class Match(NamedTuple):
       return match._inningEnded(True)
     return match
 
-  def said(self, ) -> str:
-    """The 'said' method says how the match stands, in words."""
+  def said(self, book: Phrasebook = ENGLISH) -> str:
+    """The 'said' method says how the match stands, in words, in
+    'book's language."""
     if self.phase == 'over':
       if self.winner == 2:
-        return 'Match over: a draw'
-      return 'Match over: %s wins' % self.names[self.winner]
-    name, ball = self.names[self.current], self.balls[self.current]
+        return book.said('match.draw')
+      return book.said('match.won', self.names[self.winner])
+    name = self.names[self.current]
+    ball = book.theBall(self.balls[self.current])
     if self.phase == 'lag':
-      return 'Lag for the break: both players shoot at once'
+      return book.said('match.lag')
     if self.phase == 'choose':
-      return '%s won the lag: break, or let the other break?' % name
+      return book.said('match.choose', name)
     if self.phase == 'break':
-      return '%s breaks with %s' % (name, ball)
+      return book.said('match.break', name, ball)
     if self.phase == 'equalizing':
-      return '%s plays the equalizing inning, from the start' % name
+      return book.said('match.equalizing', name)
     if self.final:
-      return '%s to play, %s, the last inning' % (name, ball)
-    return '%s to play, %s' % (name, ball)
+      return book.said('match.last', name, ball)
+    return book.said('match.play', name, ball)
+
+  def named(self, names: tuple) -> Match:
+    """The 'named' method returns the match, the players called
+    'names'."""
+    return self._with(('names', tuple(names)))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PRIVATE METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -368,6 +368,21 @@ Item {
     walker.eulerRotation = Qt.vector3d(r.x - dy * lookSpeed,
                                        r.y - dx * lookSpeed, 0)
   }
+  //  A key the walker walks by pressed, 'down', or let go: forward, left,
+  //  back or right as 'walkKeys' has them, or the arrows; Shift hurries.
+  function walkKey(key, down) {
+    const keys = walkKeys
+    if (key === keys[0] || key === Qt.Key_Up)
+      down ? wasd.forwardPressed() : wasd.forwardReleased()
+    else if (key === keys[1] || key === Qt.Key_Left)
+      down ? wasd.leftPressed() : wasd.leftReleased()
+    else if (key === keys[2] || key === Qt.Key_Down)
+      down ? wasd.backPressed() : wasd.backReleased()
+    else if (key === keys[3] || key === Qt.Key_Right)
+      down ? wasd.rightPressed() : wasd.rightReleased()
+    else if (key === Qt.Key_Shift)
+      down ? wasd.shiftPressed() : wasd.shiftReleased()
+  }
   //  Walks the room, or plays at the table: the keys go to the walker.
   function setWalking(on) {
     walking = on
@@ -399,6 +414,11 @@ Item {
   //  'flinging', a tap on a pin of the table played asks for it to be
   //  sent flying, by its number.
   property bool flinging: false
+  //  The words the scene says itself, as 'TableView.setWords' sends them,
+  //  and the keys the walker walks by, the language's: forward, left,
+  //  back, right (W A S D, or Z Q S D on AZERTY keyboards).
+  property var words: ({})
+  property var walkKeys: [Qt.Key_W, Qt.Key_A, Qt.Key_S, Qt.Key_D]
   signal pinTapped(int number)
   //  The stroke (the user): the right button pressed, the mouse pulled
   //  back and pushed through, where on the view, in pixels.
@@ -1494,14 +1514,24 @@ Item {
     mouseEnabled: !root.moving && !root.walking
   }
 
-  //  Walking: W A S D, Shift to hurry (Qt's own controller); the mouse
-  //  looks round, 'lookBy', the pointer hidden.
+  //  Walking: the language's keys, 'walkKeys', or the arrows, Shift to
+  //  hurry (Qt's own controller, its own keys, fixed on W A S D, off:
+  //  'walkKey' drives it); the mouse looks round, 'lookBy', the pointer
+  //  hidden.
   WasdController {
     id: wasd
     anchors.fill: view
     controlledObject: walker
     enabled: root.walking
-    keysEnabled: root.walking && !root.inventoryOpen
+    keysEnabled: false
+    Keys.onPressed: (event) => {
+      if (root.walking && !root.inventoryOpen && !event.isAutoRepeat)
+        root.walkKey(event.key, true)
+    }
+    Keys.onReleased: (event) => {
+      if (!event.isAutoRepeat)
+        root.walkKey(event.key, false)
+    }
     mouseEnabled: false
     forwardSpeed: 15
     backSpeed: 12
@@ -1839,10 +1869,8 @@ Item {
     anchors.left: view.left
     anchors.top: view.top
     anchors.margins: 16
-    text: root.looking
-      ? "W A S D to walk  ·  Shift to hurry  ·  E inventory  ·  "
-        + "Esc frees the mouse"
-      : "Click to look round with the mouse"
+    text: (root.looking ? root.words["room.look"]
+                        : root.words["room.click"]) || ""
     color: "#d8cfbf"
     font.pixelSize: 15
     style: Text.Outline
@@ -1855,7 +1883,7 @@ Item {
     anchors.left: view.left
     anchors.bottom: view.bottom
     anchors.margins: 14
-    text: "DEBUG  ·  Fling pins: on  ·  click a pin  ·  F8 turns it off"
+    text: root.words["room.fling"] || ""
     color: "#ffd27a"
     font.pixelSize: 16
     font.bold: true
@@ -1867,8 +1895,8 @@ Item {
     anchors.horizontalCenter: view.horizontalCenter
     anchors.bottom: view.bottom
     anchors.bottomMargin: 64
-    text: "E  ·  play " + (root.nearTable === "kegler" ? "kegler"
-                                                      : "three-cushion")
+    text: (root.nearTable === "kegler" ? root.words["room.kegler"]
+                                       : root.words["room.carom"]) || ""
     color: "#f6f0e4"
     font.pixelSize: 24
     font.bold: true
@@ -1955,7 +1983,7 @@ Item {
         anchors.centerIn: parent
         spacing: 10
         Text {
-          text: "Inventory"
+          text: root.words["room.inventory"] || ""
           color: "#f2ecd9"
           font.pixelSize: 22
           font.bold: true
@@ -1969,7 +1997,7 @@ Item {
           }
         }
         Text {
-          text: "Hotbar"
+          text: root.words["room.hotbar"] || ""
           color: "#a39886"
           font.pixelSize: 15
         }
@@ -1981,9 +2009,8 @@ Item {
           }
         }
         Text {
-          text: root.held === "cue"
-            ? "In hand: the cue. Click it to put it away."
-            : "Nothing in hand. Click the cue to take it."
+          text: (root.held === "cue" ? root.words["room.held"]
+                                     : root.words["room.empty"]) || ""
           color: "#a39886"
           font.pixelSize: 15
         }

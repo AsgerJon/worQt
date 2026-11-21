@@ -23,6 +23,7 @@ from ....utils.font_nums import FontWeightNum, GenericFamilyNum
 from ....utils.geom import InSets, Size
 from ....widgets import PaintedWidget
 from .. import Ball, Hit, Run, Unfolded
+from .._phrasebook import ENGLISH, Phrasebook
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QMouseEvent, QPaintEvent
@@ -371,6 +372,7 @@ class UnfoldedMap(PaintedWidget):
   __map_unfolded__: Unfolded = Unfolded()
   __map_balls__: tuple = ()
   __map_kegler__: bool = False
+  __map_book__: Phrasebook = ENGLISH
   __map_cue__: str = 'white'
   __map_aim__: tuple | None = None
   __map_top__: float = 0.0
@@ -673,32 +675,39 @@ class UnfoldedMap(PaintedWidget):
     line, in order, inside the map."""
     return self.figure()[3]
 
+  def setWords(self, book: Phrasebook) -> None:
+    """The 'setWords' method has the caption speak 'book's
+    language."""
+    self.__map_book__ = book
+    self.update()
+
   def caption(self, ) -> str:
     """The 'caption' method returns the words under the map."""
+    book = self.__map_book__
+    if self.__map_kegler__:
+      book = book.kegler()
     if self.aim is None or self.cueBall() is None:
-      return 'Every line is a cushion. Aim from the cue ball to see the arc.'
+      return book.said('map.empty')
     count = len(self.crossings())
     if self.engineWay() is None:
       if self.working():
-        return 'Working the shot out on the table...'
-      return 'An estimate, till the shot is played on the table.'
+        return book.said('map.working')
+      return book.said('map.estimate')
     words = self.__map_runs__[2]
     if words:
       return words
+    cushions = book.counted('count.cushion', count)
     hit = self.hit()
     if hit is not None:
-      cushions = '1 cushion' if count == 1 else '%d cushions' % count
-      return ('Meets the %s after %s. The fans: the aim off by %.2f° as '
-              'one standard deviation.' % (hit.name, cushions,
-                                           self.unfolded.spread))
+      return book.said('map.meets', book.theBall(hit.name), cushions,
+                       '%.2f' % self.unfolded.spread)
     side = self.side
     if abs(side) < 1e-9:
-      english = 'No English: straight'
+      english = book.said('map.straight')
     else:
-      way = 'right' if side > 0.0 else 'left'
-      english = '%.2f R %s English' % (abs(side), way)
-    cushions = '1 cushion' if count == 1 else '%d cushions' % count
-    return '%s, %s in view. A guide, not the shot.' % (english, cushions)
+      way = 'map.right' if side > 0.0 else 'map.left'
+      english = book.said(way, '%.2f' % abs(side))
+    return book.said('map.guide', english, cushions)
 
   def colorOf(self, name: str) -> Color:
     """The 'colorOf' method returns the colour of the ball 'name': in

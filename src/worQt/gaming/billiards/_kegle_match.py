@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from ._kegle_referee import KegleCall, Streak
+from ._phrasebook import ENGLISH, Phrasebook
 
 #  The distances a match may be played to (the user: 200 to 800 in 100s).
 DISTANCES = (200, 300, 400, 500, 600, 700, 800)
@@ -122,23 +123,27 @@ class KegleMatch(NamedTuple):
       return match
     return match._seriesEnded(call, reached)
 
-  def said(self, ) -> str:
-    """The 'said' method returns how the match stands, in words."""
+  def said(self, book: Phrasebook = ENGLISH) -> str:
+    """The 'said' method returns how the match stands, in words, in
+    'book's language."""
     first, second = self.names
-    score = '%s %d, %s %d of %d' % (first, self.scores[0], second,
-                                    self.scores[1], self.distance)
+    score = book.said('kmatch.score', first, self.scores[0], second,
+                      self.scores[1], self.distance)
     if self.phase == 'lag':
-      return 'Lag for the layout. ' + score
+      return book.said('kmatch.lag', score)
     if self.phase == 'choose':
-      return '%s won the lag: lay out, or let the other. %s' % (
-        self.names[self.lagWinner], score)
+      return book.said('kmatch.choose', self.names[self.lagWinner], score)
     if self.phase == 'over':
       if self.winner == 2:
-        return 'A draw. ' + score
-      return '%s wins. %s' % (self.names[self.winner], score)
-    last = ', the last series' if self.final else ''
-    return '%s to play, %d this series%s. %s' % (
-      self.names[self.current], self.run, last, score)
+        return book.said('kmatch.draw', score)
+      return book.said('kmatch.won', self.names[self.winner], score)
+    key = 'kmatch.last' if self.final else 'kmatch.play'
+    return book.said(key, self.names[self.current], self.run, score)
+
+  def named(self, names: tuple) -> KegleMatch:
+    """The 'named' method returns the match, the players called
+    'names'."""
+    return self._with(('names', tuple(names)))
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PRIVATE METHODS  # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -21,6 +21,7 @@ from ....utils import WFont, Color
 from ....utils.font_nums import GenericFamilyNum, FontWeightNum
 from ....utils.geom import InSets, Size
 from ....widgets import PaintedWidget
+from .._phrasebook import ENGLISH, Phrasebook
 from . import HitPicker
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -58,21 +59,24 @@ class PaintShotPanel(AbstractPaintOp):
     places = widget.places()
     painter.setFont(widget.font)
     painter.setPen(widget.font.color.Q)
-    painter.drawText(QRectF(_MARGIN, places['status'], width, 2 * _ROW),
+    painter.drawText(QRectF(_MARGIN, places['status'], width,
+                            places['choices'] - places['status'] - _GAP),
                      _WRAP, widget.status)
     painter.setPen(widget.dimColor.Q)
-    labels = [('cueLabel', 'Cue ball'), ('lookLabel', 'Look from')]
+    book = widget.phrasebook()
+    labels = [('cueLabel', 'panel.cue'), ('lookLabel', 'panel.look')]
     if widget.controlsLive():
-      labels.append(('hitLabel', 'Point struck'))
-    for name, text in labels:
+      labels.append(('hitLabel', 'panel.hit'))
+    for name, key in labels:
       painter.drawText(QRectF(_MARGIN, places[name], width, _ROW), _LEFT,
-                       text)
+                       book.said(key))
     if widget.controlsLive():
       painter.setPen(widget.font.color.Q)
       painter.drawText(QRectF(_MARGIN, places['hitWords'], width, _ROW),
                        _LEFT, widget.hitWords())
     painter.setPen(widget.dimColor.Q)
-    painter.drawText(QRectF(_MARGIN, places['aimWords'], width, 3 * _ROW),
+    painter.drawText(QRectF(_MARGIN, places['aimWords'], width,
+                            places['shoot'] - places['aimWords'] - _GAP),
                      _WRAP, widget.aimWords())
     return rect
 
@@ -146,6 +150,8 @@ class ShotPanel(PaintedWidget):
   __panel_rows__: tuple = ()
   __panel_choices__: tuple = ()
   __panel_kegler__: bool = False
+  __panel_book__: Phrasebook = ENGLISH
+  __panel_distance__: int = 400
 
   #  Public Variables
   boxModelOp = PaintBoxModel()
@@ -340,7 +346,10 @@ class ShotPanel(PaintedWidget):
 
   @status.SET
   def _setStatus(self, text: str) -> None:
+    if text == self.__panel_status__:
+      return
     self.__panel_status__ = text
+    self._place()
     self.update()
 
   @callWords.SET
@@ -384,22 +393,7 @@ class ShotPanel(PaintedWidget):
 
   @overload.finalize
   def __init__(self, *args) -> None:
-    texts = ((self.breakButton, 'Break'),
-             (self.passButton, 'Let the other break'),
-             (self.spotFourButton, 'Left spot'),
-             (self.spotFiveButton, 'Right spot'),
-             (self.respotButton, 'Respot'), (self.whiteButton, 'White'),
-             (self.yellowButton, 'Yellow'), (self.lookWhiteButton, 'White'),
-             (self.lookYellowButton, 'Yellow'),
-             (self.lookRedButton, 'Red'), (self.lookGhostButton, 'Ghost'),
-             (self.centreButton, 'Centre'),
-             (self.markButton, 'Mark'), (self.fastButton, '▸▸ Fast'),
-             (self.skipButton, 'Skip lag'),
-             (self.distanceButton, 'To 400'),
-             (self.redButton, 'Place red'))
-    for button, text in texts:
-      button.text = text
-    self.powerSlider.text = 'Power'
+    self.setWords(ENGLISH)
     self.powerSlider.setScale(0.2, 10.0, 'm/s', 1)
     self.powerSlider.quantity = self.__fallback_power__
     self.whiteButton.clicked.connect(lambda: self.chooseCue('white'))
@@ -491,7 +485,8 @@ class ShotPanel(PaintedWidget):
     balls, two whites, one marked, or of three-cushion's, white and
     yellow."""
     self.__panel_kegler__ = True if kegler else False
-    words = 'Marked' if kegler else 'Yellow'
+    words = self.__panel_book__.said(
+      'button.marked' if kegler else 'button.yellow')
     self.yellowButton.text = words
     self.lookYellowButton.text = words
     self.picker.ballColor = self.colourOf(self.__cue_name__)
@@ -511,7 +506,8 @@ class ShotPanel(PaintedWidget):
   def setDistance(self, distance: int) -> None:
     """The 'setDistance' method has the distance's button say the
     points a keglebillard match is played to."""
-    words = 'To %d' % distance
+    self.__panel_distance__ = distance
+    words = self.__panel_book__.said('panel.to', distance)
     if self.distanceButton.text != words:
       self.distanceButton.text = words
       self._place()
@@ -538,18 +534,18 @@ class ShotPanel(PaintedWidget):
     out = {}
     top = 16
     out['status'] = float(top)
-    top += 2 * _ROW + _GAP
+    top += self._wordsHeight(self.__panel_status__, 2) + _GAP
     out['choices'] = float(top)
     if self.__panel_choices__:
-      top += self.breakButton.sizeHint().height() + _GAP
+      top += self._flowHeight(self._choiceButtons()) + _GAP
     out['cueLabel'] = float(top)
     top += _ROW
     out['cueButtons'] = float(top)
-    top += self.whiteButton.sizeHint().height() + _GAP
+    top += self._flowHeight(self._cueButtons()) + _GAP
     out['lookLabel'] = float(top)
     top += _ROW
     out['lookButtons'] = float(top)
-    top += self.lookWhiteButton.sizeHint().height() + _GAP
+    top += self._flowHeight(self._lookButtons()) + _GAP
     out['hitLabel'] = float(top)
     if self.__controls_live__:
       top += _ROW
@@ -563,9 +559,56 @@ class ShotPanel(PaintedWidget):
     if self.__controls_live__:
       top += self.powerSlider.sizeHint().height() + _GAP
     out['aimWords'] = float(top)
-    top += 3 * _ROW + _GAP
+    top += self._wordsHeight(self.aimWords(), 3) + _GAP
     out['shoot'] = float(top)
     return out
+
+  def _choiceButtons(self, ) -> tuple:
+    """Returns the choices' buttons shown now, left to right."""
+    return tuple(button for button in (
+      self.breakButton, self.passButton, self.spotFourButton,
+      self.spotFiveButton, self.respotButton, self.distanceButton,
+      self.redButton) if self._shownChoice(button))
+
+  def _cueButtons(self, ) -> tuple:
+    """Returns the cue ball's buttons, left to right."""
+    return self.whiteButton, self.yellowButton
+
+  def _lookButtons(self, ) -> tuple:
+    """Returns the buttons of the ball looked from, left to right."""
+    return (self.lookWhiteButton, self.lookYellowButton,
+            self.lookRedButton, self.lookGhostButton)
+
+  def _flow(self, buttons: tuple) -> list[tuple[int, int]]:
+    """Returns where each of 'buttons' goes from the start of its row,
+    ('left', 'down'), left to right, a new line begun where the next
+    would pass the panel's edge (the longer languages' words)."""
+    width = max(self.width() - 2 * _MARGIN, 120)
+    out, left, down, tall = [], 0, 0, 0
+    for button in buttons:
+      size = button.sizeHint()
+      if left and left + size.width() > width:
+        left, down, tall = 0, down + tall + 6, 0
+      out.append((left, down))
+      left += size.width() + 8
+      tall = max(tall, size.height())
+    return out
+
+  def _flowHeight(self, buttons: tuple) -> int:
+    """Returns how many pixels down 'buttons' take, as '_flow' lays
+    them."""
+    if not buttons:
+      return 0
+    return max(down + button.sizeHint().height()
+               for button, (_, down) in zip(buttons, self._flow(buttons)))
+
+  def _wordsHeight(self, text: str, rows: int) -> int:
+    """Returns how many pixels down 'text' takes, wrapped across the
+    panel, never fewer than 'rows' lines: the longer languages need
+    more."""
+    width = max(self.width() - 2 * _MARGIN, 1)
+    box = self.font.metrics.boundingRect(0, 0, width, 100000, _WRAP, text)
+    return max(rows * _ROW, box.height() + 4)
 
   def setControlsLive(self, live: bool) -> None:
     """The 'setControlsLive' method shows the point struck, its words
@@ -601,36 +644,70 @@ class ShotPanel(PaintedWidget):
     self.skipButton.setVisible(True if available else False)
     self._place()
 
+  def phrasebook(self, ) -> Phrasebook:
+    """The 'phrasebook' method returns the book the panel speaks
+    from."""
+    return self.__panel_book__
+
+  def setWords(self, book: Phrasebook) -> None:
+    """The 'setWords' method words the panel in 'book's language: its
+    buttons, the power, the labels and the words painted between them;
+    the lag winner's choice is worded by 'setChooseWords'."""
+    self.__panel_book__ = book
+    yellow = 'button.marked' if self.__panel_kegler__ else 'button.yellow'
+    texts = ((self.breakButton, 'choose.break'),
+             (self.passButton, 'choose.pass'),
+             (self.spotFourButton, 'panel.left'),
+             (self.spotFiveButton, 'panel.right'),
+             (self.respotButton, 'panel.respot'),
+             (self.whiteButton, 'button.white'),
+             (self.yellowButton, yellow),
+             (self.lookWhiteButton, 'button.white'),
+             (self.lookYellowButton, yellow),
+             (self.lookRedButton, 'button.red'),
+             (self.lookGhostButton, 'button.ghost'),
+             (self.centreButton, 'panel.centre'),
+             (self.markButton, 'panel.mark'),
+             (self.fastButton, 'panel.fast'),
+             (self.skipButton, 'panel.skip'),
+             (self.redButton, 'panel.place'))
+    for button, key in texts:
+      button.text = book.said(key)
+      button.update()
+    self.distanceButton.text = book.said('panel.to',
+                                         self.__panel_distance__)
+    self.distanceButton.update()
+    self.powerSlider.text = book.said('panel.power')
+    self.powerSlider.update()
+    self._place()
+    self.update()
+
   def hitWords(self, ) -> str:
     """The 'hitWords' method says the point struck: how far up or down
     and right or left of the middle, a share of the radius."""
-    top, side = self.top, self.side
+    top, side, book = self.top, self.side, self.__panel_book__
     if abs(top) < 0.005 and abs(side) < 0.005:
-      return 'The middle: it slides off without spin'
+      return book.said('hit.middle')
     parts = []
     if abs(top) >= 0.005:
-      way = 'up' if top > 0.0 else 'down'
-      parts.append('%.2f R %s' % (abs(top), way))
+      way = 'hit.up' if top > 0.0 else 'hit.down'
+      parts.append(book.said(way, '%.2f' % abs(top)))
     if abs(side) >= 0.005:
-      way = 'right' if side > 0.0 else 'left'
-      parts.append('%.2f R %s' % (abs(side), way))
-    return ', '.join(parts)
+      way = 'hit.right' if side > 0.0 else 'hit.left'
+      parts.append(book.said(way, '%.2f' % abs(side)))
+    return book.said('join.comma').join(parts)
 
   def aimWords(self, ) -> str:
     """The 'aimWords' method says how the shot is aimed, or what a mark
     shows."""
+    book = self.__panel_book__
     if self.__look_name__ == 'ghost':
-      return ('Facing the way the cue ball leaves the ball after the hit: '
-              'turn the view to choose it, and the ghost moves to the hit.')
+      return book.said('aim.ghost')
     if self.marking():
-      return ('Turn round this ball the way it should go: Mark leaves a '
-              'ghost where the cue ball must meet it.')
+      return book.said('aim.mark')
     if self.__controls_live__:
-      return ('Set the point struck and the power here to see the shot '
-              'on the map; strike it from the table.')
-    return ('Hold the right button and pull back, the way the camera '
-            'faces: the further, the harder; let go to strike. W A S D '
-            'move the point struck meanwhile, the arrows any time.')
+      return book.said('aim.map')
+    return book.said('aim.stroke', *book.controls())
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  DOMAIN SPECIFIC  # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -640,28 +717,14 @@ class ShotPanel(PaintedWidget):
     """Places the parts top to bottom, as 'places' says."""
     places = self.places()
     width = max(self.width() - 2 * _MARGIN, 120)
-    row = int(places['choices'])
-    left = _MARGIN
-    for button in (self.breakButton, self.passButton, self.spotFourButton,
-                   self.spotFiveButton, self.respotButton,
-                   self.distanceButton, self.redButton):
-      if not self._shownChoice(button):
-        continue
-      size = button.sizeHint()
-      button.setGeometry(left, row, size.width(), size.height())
-      left += size.width() + 8
-    row = int(places['cueButtons'])
-    size = self.whiteButton.sizeHint()
-    self.whiteButton.setGeometry(_MARGIN, row, size.width(), size.height())
-    other = self.yellowButton.sizeHint()
-    self.yellowButton.setGeometry(_MARGIN + size.width() + 8, row,
-                                  other.width(), other.height())
-    row, left = int(places['lookButtons']), _MARGIN
-    for button in (self.lookWhiteButton, self.lookYellowButton,
-                   self.lookRedButton, self.lookGhostButton):
-      size = button.sizeHint()
-      button.setGeometry(left, row, size.width(), size.height())
-      left += size.width() + 6
+    for name, buttons in (('choices', self._choiceButtons()),
+                          ('cueButtons', self._cueButtons()),
+                          ('lookButtons', self._lookButtons())):
+      row = int(places[name])
+      for button, (left, down) in zip(buttons, self._flow(buttons)):
+        size = button.sizeHint()
+        button.setGeometry(_MARGIN + left, row + down, size.width(),
+                           size.height())
     face = self.picker.sizeHint()
     row = int(places['picker'])
     self.picker.setGeometry(_MARGIN, row, face.width(), face.height())

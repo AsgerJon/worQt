@@ -58,11 +58,15 @@ carambole first: the table and its balls, needing no Qt;
   the equalizing inning, sets.
 - prismMesh, tableMeshes, diamondMesh: the table's cushions, woodwork
   and diamonds as triangles, after the tables of Søren Søgaard.
+- Phrasebook, ENGLISH: the words the billiards speak, in English,
+  Danish, French, Korean or Flemish; the referees and matches word
+  their calls in the language of the book they are given.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
 from __future__ import annotations
 
+from ._phrasebook import ENGLISH, Phrasebook
 from ._carom_table import STILL, Turn, turnOf, Ball, CaromTable
 from ._cloth import Cloth
 from ._cushion import Cushion
@@ -153,4 +157,6 @@ __all__ = (
   'tableMeshes',
   'diamondMesh',
   'latheMesh',
+  'ENGLISH',
+  'Phrasebook',
 )

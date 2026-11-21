@@ -13,6 +13,7 @@ from ._carom_table import Ball
 from ._kegle_match import DISTANCES, KegleMatch
 from ._kegle_referee import KegleCall, KegleReferee, KegleShot
 from ._kegle_table import KegleTable
+from ._phrasebook import ENGLISH, Phrasebook
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._kegle_motion import KegleRecorder
@@ -115,12 +116,18 @@ class KegleGame(NamedTuple):
     return KegleShot(recording.touchesOf(), recorder.fallenOf(recording),
                      inHand, redFrom, self._firstWhite(recording))
 
-  def called(self, recording: Recording,
-             recorder: KegleRecorder) -> KegleCall:
+  def called(self, recording: Recording, recorder: KegleRecorder,
+             book: Phrasebook = ENGLISH) -> KegleCall:
     """The 'called' method returns the referee's call on the shot
-    'recording', played by 'recorder', as the series stands."""
+    'recording', played by 'recorder', as the series stands, in
+    'book's language."""
     shot = self.shotOf(recording, recorder, self.match.inHand)
-    return KegleReferee(self.table).call(shot, self.match.streak)
+    return KegleReferee(self.table, book).call(shot, self.match.streak)
+
+  def named(self, names: tuple) -> KegleGame:
+    """The 'named' method returns the game, the players called
+    'names'."""
+    return KegleGame(self.table, self.match.named(names))
 
   def judged(self, call: KegleCall,
              balls: tuple[Ball, ...]) -> tuple[KegleGame, tuple]:

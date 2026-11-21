@@ -9,7 +9,9 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from ._kegle_table import KegleTable
-from ._referee import Referee
+from ._motion import Motion
+from ._phrasebook import ENGLISH, Phrasebook
+from ._referee import Referee, Rules
 
 PIN_POINTS = 2  # each pin a white topples (3.4)
 RED_POINTS = 4  # red meeting both whites, 'rødt' (3.5)
@@ -80,10 +82,12 @@ class KegleReferee(NamedTuple):
   line, the white on red's own half short of the line (3.2, 9.4, the
   user), pins a second time running without a ball in a
   cushion, red alone counting as a cushion (5.11), and red a third time
-  running without pins (5.12).
+  running without pins (5.12). It calls them in the language of its
+  'book', the paragraphs the same in every one.
   """
 
   table: KegleTable = KegleTable()
+  book: Phrasebook = ENGLISH
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -95,28 +99,31 @@ class KegleReferee(NamedTuple):
     red = self.madeRed(shot)
     pins = sum(1 for _, ball in shot.fallen if ball != 'red')
     foul = self._foul(shot, streak, red, pins)
+    book = self.book
     if foul is not None:
       rule, words = foul
-      return KegleCall(0, True, rule, 'Foul: %s (%s).' % (words, rule),
+      return KegleCall(0, True, rule, book.said('kegle.foul', words, rule),
                        red, pins, Streak())
     points = PIN_POINTS * pins + (RED_POINTS if red else 0)
     if not points:
-      return KegleCall(0, False, '7.1', 'No score: no pin, no red.',
-                       False, 0, Streak())
+      return KegleCall(0, False, '7.1', book.said('kegle.none'), False, 0,
+                       Streak())
     if pins:
       after = Streak(not self.cushioned(shot), 0)
     else:
       after = Streak(False, streak.reds + 1)
     return KegleCall(points, False, '3.4' if pins else '3.5',
-                     _scoreWords(red, pins, points), red, pins, after)
+                     _scoreWords(red, pins, points, book), red, pins,
+                     after)
 
   def lagCall(self, touches: tuple, after: tuple) -> tuple[str, str]:
     """The 'lagCall' method judges a lag, exactly as in carom (the
     user), 'Referee.lagCall': white and yellow each to the far cushion
     once and back, nearest the near cushion winning; a ball touching
     anything else, a long cushion, a ball, a pin or a pocket, loses
-    (2.4)."""
-    return Referee().lagCall(touches, after)
+    (2.4); the yellow spoken of as the marked white."""
+    referee = Referee(Rules(), Motion(), self.book.kegler())
+    return referee.lagCall(touches, after)
 
   def madeRed(self, shot: KegleShot) -> bool:
     """The 'madeRed' method tells whether red met both whites in
@@ -140,14 +147,15 @@ class KegleReferee(NamedTuple):
             pins: int) -> tuple[str, str] | None:
     """Returns the rule and the words of the first foul in 'shot',
     'None' if there is none."""
+    book = self.book
     for touch in shot.touches:
       if touch.kind == 'off':
-        return '11', 'a ball left the table'
+        return '11', book.said('kegle.off')
     for touch in shot.touches:
       if touch.kind == 'pocket' and touch.first == 'red':
-        return '5.7', 'red went into a pocket'
+        return '5.7', book.said('kegle.pocket')
     if any(ball == 'red' for _, ball in shot.fallen):
-      return '5.8', 'red toppled a pin'
+      return '5.8', book.said('kegle.pin')
     if shot.inHand and shot.firstWhite is not None:
       crossed, whiteY = shot.firstWhite
       middle = 0.5 * self.table.table.length
@@ -156,20 +164,21 @@ class KegleReferee(NamedTuple):
       else:
         beyond = whiteY >= middle
       if not crossed and not beyond:
-        return '9.4', ('from in hand red struck a white on its own half '
-                       'before crossing the middle line')
+        return '9.4', book.said('kegle.hand')
     if pins and streak.cushionDue and not self.cushioned(shot):
-      return '5.11', 'pins twice running without a ball in a cushion'
+      return '5.11', book.said('kegle.cushion')
     if red and not pins and streak.reds >= 2:
-      return '5.12', 'red three times running without pins'
+      return '5.12', book.said('kegle.reds')
     return None
 
 
-def _scoreWords(red: bool, pins: int, points: int) -> str:
-  """Returns a scoring shot in words."""
-  parts = []
+def _scoreWords(red: bool, pins: int, points: int,
+                book: Phrasebook) -> str:
+  """Returns a scoring shot in words, in 'book's language: red, the
+  pins, or both, and the points."""
+  counted = book.counted('count.pin', pins)
+  if red and pins:
+    return book.said('kegle.both', counted, points)
   if red:
-    parts.append('red')
-  if pins:
-    parts.append('%d pin%s' % (pins, '' if pins == 1 else 's'))
-  return '%s: %d points.' % (' and '.join(parts).capitalize(), points)
+    return book.said('kegle.red', points)
+  return book.said('kegle.pins', counted, points)

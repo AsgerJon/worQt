@@ -41,7 +41,8 @@ way five times as fast, as long as it is held; greyed out between
 shots. The full map draws the cue ball's way as the engine plays the
 shot aimed, once it comes. 'Skip lag' lets a coin decide who breaks.
 The score shows as a scoreboard, a row each player with the ball he
-plays and his run so far.
+plays and his run so far. The window speaks the language set, Danish,
+French, Korean or Flemish as well as English.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -1424,4 +1425,57 @@ class RunBilliardsWindow(BilliardsWidgetTest):
     self.assertLaid(window, table.opening())
     self.wait(600)
     self.assertLaid(window, table.opening())
+    window.close()
+
+  def run_languages(self) -> None:
+    """The window speaks the language set (the user: English, Danish,
+    French, Korean, Flemish): the menus, the toolbar, the panel, the
+    scene's own words, the club board, the players' names; the
+    languages in the menu 'Language' by their own names, the one spoken
+    ticked; a call made in Danish is Danish; in French the walker walks
+    and the aim turns by Z Q S D, AZERTY's places, and the words say so;
+    English again, all as before, W A S D. Setting a language does not
+    keep it."""
+    window = self.openWindow()
+    bar, panel, view = window.toolBar, window.panel, window.view
+    menus = [action.text() for action in window.mainMenuBar.actions()]
+    self.assertEqual(menus[-2:], ['Debug', 'Language'])
+    window.setLanguage('da')
+    self.assertEqual(window.language(), 'da')
+    menus = [action.text() for action in window.mainMenuBar.actions()]
+    self.assertEqual(menus, ['Filer', 'Rediger', 'Vis', 'Hjælp', 'Debug',
+                             'Sprog'])
+    names = [action.text() for action in
+             window.mainMenuBar.actions()[-1].menu().actions()]
+    self.assertEqual(names, ['English', 'Dansk', 'Français', '한국어',
+                             'Vlaams'])
+    self.assertTrue(window.mainMenuBar.actions()[-1].menu().actions()[
+                      1].isChecked())
+    self.assertEqual(bar.resetButton.text, 'Nyt spil')
+    self.assertEqual(panel.heading, 'Kamp til 40')
+    self.assertEqual(window.match().names, ('Spiller 1', 'Spiller 2'))
+    self.assertEqual(view.sceneValue('words')['room.inventory'],
+                     'Inventar')
+    self.assertEqual(window.boards()[0]['title'], 'TIL 40')
+    window.skipLag('white')
+    self.assertIn('Spiller 1', panel.callWords)
+    window.setLanguage('ko')
+    self.assertTrue(window.boards()[0]['dots'])
+    window.setLanguage('fr')
+    self.assertEqual(window.aimKeys(), ('Z', 'Q', 'S', 'D'))
+    self.assertEqual(view.walkKeys(), [Qt.Key.Key_Z.value,
+                                       Qt.Key.Key_Q.value,
+                                       Qt.Key.Key_S.value,
+                                       Qt.Key.Key_D.value])
+    self.assertEqual(view.sceneValue('walkKeys'), view.walkKeys())
+    self.assertTrue(view.sceneValue('words')['room.look'].startswith(
+      'Z Q S D'))
+    self.assertIn('Z Q S D', panel.aimWords())
+    window.setLanguage('en')
+    self.assertEqual(window.aimKeys(), ('W', 'A', 'S', 'D'))
+    self.assertTrue(view.sceneValue('words')['room.look'].startswith(
+      'W A S D'))
+    self.assertEqual(bar.resetButton.text, 'New game')
+    self.assertEqual(window.match().names, ('Player 1', 'Player 2'))
+    self.assertNotIn('dots', window.boards()[0])
     window.close()

@@ -1,0 +1,267 @@
+"""
+The billiards' phrases in French, with the FFB's own words: le tirage
+à la bande, la bille du joueur, la reprise, la reprise égalisatrice,
+la mouche, la bille pointée.
+"""
+#  Apache-2.0 license
+#  Copyright (c) 2026 Asger Jon Vistisen
+from __future__ import annotations
+
+WORDS = {
+  #  The balls named alone, as a sentence begins; in a sentence; on a
+  #  button. In keglebillard the yellow is the marked white, the FFB's
+  #  'bille pointée'.
+  'ball.white': 'La blanche',
+  'ball.yellow': 'La jaune',
+  'ball.red': 'La rouge',
+  'ball.marked': 'La blanche pointée',
+  'the.white': 'la blanche',
+  'the.yellow': 'la jaune',
+  'the.red': 'la rouge',
+  'the.marked': 'la blanche pointée',
+  'button.white': 'Blanche',
+  'button.yellow': 'Jaune',
+  'button.red': 'Rouge',
+  'button.marked': 'Pointée',
+  'button.ghost': 'Fantôme',
+  'join.and': ' et ',
+  'join.comma': ', ',
+  'player': 'Joueur {0}',
+  #  The cushions, the floor, and counting them.
+  'cushion.left': 'la grande bande gauche',
+  'cushion.right': 'la grande bande droite',
+  'cushion.foot': 'la petite bande du haut',
+  'cushion.head': 'la petite bande du bas',
+  'the.floor': 'le sol',
+  'the.pin': 'une quille',
+  'the.pocket': 'une blouse',
+  'cushions.0': 'aucune bande',
+  'cushions.1': 'une bande',
+  'cushions.2': 'deux bandes',
+  'cushions.3': 'trois bandes',
+  'cushions.4': 'quatre bandes',
+  'cushions.5': 'cinq bandes',
+  'cushions.n': '{0} bandes',
+  'count.cushion.one': '{0} bande',
+  'count.cushion.many': '{0} bandes',
+  'count.pin.one': '{0} quille',
+  'count.pin.many': '{0} quilles',
+  #  Three-cushion's referee.
+  'call.foul': 'Faute : {0} ({1})',
+  'foul.early': 'coup joué avant que toutes les billes soient immobiles',
+  'foul.late': 'limitation de temps dépassée',
+  'foul.owner': "bille de l'adversaire jouée",
+  'foul.frozen': 'bille jouée vers {0}, collée à la bille du joueur',
+  'foul.break': 'le coup de départ doit toucher la rouge en premier',
+  'call.off': 'Faute : {0} hors du billard ({1})',
+  'call.missed': 'Pas de point : sans toucher {0} ({1})',
+  'call.short': 'Pas de point : {0} avant {1} ({2})',
+  'call.point': 'Point : {0} avant {1} ({2})',
+  #  The lag.
+  'lag.touched': 'a touché {0}',
+  'lag.near': ('est allée à la petite bande proche avant la plus '
+               'éloignée'),
+  'lag.far': 'a touché {0} fois la petite bande la plus éloignée',
+  'lag.both': 'Les deux tirages sont fautifs : tirage à refaire ({0})',
+  'lag.fault': '{0} gagne le tirage à la bande : {1} {2} ({3})',
+  'lag.tie': 'Tirage à égalité : tirage à refaire ({0})',
+  'lag.won': ('{0} gagne le tirage à la bande, à {1} mm de la petite '
+              'bande proche ({2})'),
+  #  Keglebillard's referee: red meeting both whites is DDBU's
+  #  'carambole'.
+  'kegle.foul': 'Faute : {0} ({1}).',
+  'kegle.off': 'une bille a quitté le billard',
+  'kegle.pocket': 'la rouge est tombée dans une blouse',
+  'kegle.pin': 'la rouge a renversé une quille',
+  'kegle.hand': ('jouée en main, la rouge a touché une blanche dans sa '
+                 'propre moitié avant de franchir la ligne médiane'),
+  'kegle.cushion': 'des quilles deux fois de suite sans bille en bande',
+  'kegle.reds': 'carambole trois fois de suite sans quilles',
+  'kegle.none': 'Aucun point : ni quille, ni carambole.',
+  'kegle.red': 'Carambole : {0} points.',
+  'kegle.pins': '{0} : {1} points.',
+  'kegle.both': 'Carambole et {0} : {1} points.',
+  #  How a three-cushion match stands.
+  'match.draw': 'Fin du match : égalité',
+  'match.won': 'Fin du match : {0} gagne',
+  'match.lag': ('Tirage à la bande : les deux joueurs jouent en même '
+                'temps'),
+  'match.choose': ("{0} a gagné le tirage : commencer, ou laisser "
+                   "commencer l'autre ?"),
+  'match.break': '{0} commence avec {1}',
+  'match.equalizing': ('{0} joue la reprise égalisatrice, en position de '
+                       'départ'),
+  'match.last': '{0} au jeu, {1}, dernière reprise',
+  'match.play': '{0} au jeu, {1}',
+  #  How a keglebillard match stands, the score last.
+  'kmatch.score': '{0} {1}, {2} {3} sur {4}',
+  'kmatch.lag': 'Tirage à la bande pour la mise en place. {0}',
+  'kmatch.choose': ("{0} a gagné le tirage : faire la mise en place, ou "
+                    "la laisser à l'autre. {1}"),
+  'kmatch.draw': 'Égalité. {0}',
+  'kmatch.won': '{0} gagne. {1}',
+  'kmatch.play': '{0} au jeu, {1} dans cette série. {2}',
+  'kmatch.last': '{0} au jeu, {1} dans cette série, la dernière série. {2}',
+  #  The window.
+  'app.title': 'Trois bandes',
+  'sandbox.status': ("N'importe quelle bille, de n'importe où ; l'arbitre "
+                     "juge chaque coup."),
+  'skip.kegler': ('Tirage passé : {0} fait la mise en place, une pièce a '
+                  'décidé.'),
+  'skip.carom': 'Tirage passé : {0} commence, une pièce a décidé.',
+  'heading.carom': 'Partie en {0}',
+  'heading.sets': 'Partie en {0}, set {1}',
+  'heading.kegler': 'Quilles en {0}',
+  'status.lag': '{0} : {1} prépare le coup.',
+  'status.hand': ("{0} Rouge en main : Placer la rouge, puis la glisser à "
+                  "moins d'un quart de l'une des petites bandes."),
+  'choose.break': 'Commencer',
+  'choose.pass': "Laisser l'autre commencer",
+  'choose.layout': 'Mise en place',
+  'choose.give': "Laisser l'autre la faire",
+  'fling.gone': ('Débogage : quille {0} lancée, évaporée au-dessus de la '
+                 'bande.'),
+  'fling.stayed': 'Débogage : quille {0} lancée, toujours sur le billard.',
+  'item.cue': 'Queue',
+  'table.kegler': 'Billard à quilles',
+  'table.carom': 'Billard trois bandes',
+  'use.play': 'Jouer une partie',
+  'use.sandbox': 'Bac à sable',
+  'use.walk': 'Continuer',
+  'use.back': 'Retour au billard',
+  'use.new': 'Nouvelle partie',
+  'use.leave': 'Quitter le billard',
+  'mini.previous': 'Précédent',
+  'mini.clear': 'Effacer',
+  'mini.options': 'Options',
+  'mini.none': 'Aucune pour le moment',
+  'mini.history': 'Historique',
+  'mini.empty': 'Aucun coup pour le moment',
+  'mini.shot': '{0}. {1}',
+  'mini.lag': '{0}. Tirage : {1}',
+  'mini.played': 'Joué',
+  'counter.pins': 'Quilles tombées {0}',
+  'counter.foul': 'Faute',
+  'counter.points': '{0} points',
+  'counter.none': 'Aucun point',
+  'counter.point': 'Point !',
+  'counter.miss': 'Pas de point',
+  #  The club boards, in capitals: reprises, moyenne, meilleure série.
+  'board.inn': 'REP',
+  'board.avg': 'MOY',
+  'board.hr': 'MS',
+  'board.ser': 'SÉR',
+  'board.best': 'MS',
+  'board.inning': 'REPRISE',
+  'board.series': 'SÉRIE',
+  'board.final': 'DERNIÈRE SÉRIE',
+  'board.matchball': 'BALLE DE MATCH',
+  'board.to': 'EN {0}',
+  'board.free': 'BILLARD LIBRE',
+  'board.freeline': 'BILLARD LIBRE · APPROCHEZ ET APPUYEZ SUR E POUR JOUER',
+  'board.sandbox': 'BAC À SABLE',
+  'board.sandboxline': ("BAC À SABLE : N'IMPORTE QUELLE BILLE, DE "
+                        "N'IMPORTE OÙ"),
+  'board.run': 'SÉRIE',
+  'board.clock': 'CHRONO',
+  'board.due': 'QUILLES DUES',
+  #  The room, over the view.
+  'room.look': ('{0} {1} {2} {3} pour marcher  ·  Maj pour se presser  '
+                '·  E inventaire  ·  Échap libère la souris'),
+  'room.click': 'Cliquez pour regarder autour de vous avec la souris',
+  'room.fling': ('DÉBOGAGE  ·  Lancer les quilles : activé  ·  cliquez sur '
+                 'une quille  ·  F8 le désactive'),
+  'room.kegler': 'E  ·  jouer aux quilles',
+  'room.carom': 'E  ·  jouer au trois bandes',
+  'room.inventory': 'Inventaire',
+  'room.hotbar': "Barre d'accès rapide",
+  'room.held': 'En main : la queue. Cliquez dessus pour la ranger.',
+  'room.empty': 'Rien en main. Cliquez sur la queue pour la prendre.',
+  #  The menu bar.
+  'menu.debug': 'Débogage',
+  'menu.fling': 'Lancer les quilles',
+  'menu.language': 'Langue',
+  'menu.File': 'Fichier',
+  'menu.New': 'Nouveau',
+  'menu.Open': 'Ouvrir',
+  'menu.Save': 'Enregistrer',
+  'menu.Rename': 'Renommer',
+  'menu.Exit': 'Quitter',
+  'menu.Edit': 'Édition',
+  'menu.Undo': 'Annuler',
+  'menu.Redo': 'Rétablir',
+  'menu.Cut': 'Couper',
+  'menu.Copy': 'Copier',
+  'menu.Paste': 'Coller',
+  'menu.Delete': 'Supprimer',
+  'menu.Select All': 'Tout sélectionner',
+  'menu.View': 'Affichage',
+  'menu.Full Screen': 'Plein écran',
+  'menu.Zoom In': 'Zoom avant',
+  'menu.Zoom Out': 'Zoom arrière',
+  'menu.Reset Zoom': 'Réinitialiser le zoom',
+  'menu.Help': 'Aide',
+  'menu.About': 'À propos',
+  'menu.About Qt': 'À propos de Qt',
+  #  The toolbar.
+  'tool.carom': 'Trois bandes',
+  'tool.kegler': 'Quilles',
+  'tool.game': 'Partie',
+  'tool.sandbox': 'Bac à sable',
+  'tool.new': 'Nouvelle partie',
+  'tool.reset': 'Réinitialiser',
+  'tool.replay': 'Revoir',
+  'tool.top': 'Vue de dessus',
+  'tool.unfolded': 'Déplié',
+  'tool.full': 'Carte entière',
+  'tool.mulligan': 'Mulligan',
+  'tool.move': 'Déplacer les billes',
+  'tool.view': 'Champ de vision',
+  'tool.step': 'Pas de visée',
+  'tool.hand': 'Main',
+  'tool.sound': 'Son',
+  'tool.shadow': 'Ombre',
+  #  The shot panel.
+  'panel.cue': 'Bille du joueur',
+  'panel.look': 'Vue depuis',
+  'panel.hit': 'Point de frappe',
+  'panel.left': 'Mouche gauche',
+  'panel.right': 'Mouche droite',
+  'panel.respot': 'Replacer',
+  'panel.centre': 'Centre',
+  'panel.mark': 'Marquer',
+  'panel.fast': '▸▸ Rapide',
+  'panel.skip': 'Passer le tirage',
+  'panel.to': 'En {0}',
+  'panel.place': 'Placer la rouge',
+  'panel.power': 'Force',
+  'hit.middle': 'Au centre : elle part en glissant, sans effet',
+  'hit.up': '{0} R en haut',
+  'hit.down': '{0} R en bas',
+  'hit.right': '{0} R à droite',
+  'hit.left': '{0} R à gauche',
+  'aim.ghost': ('Face à la direction où la bille du joueur quitte la bille '
+                'après le choc : tournez la vue pour la choisir, et le '
+                'fantôme se place au choc.'),
+  'aim.mark': ("Tournez autour de cette bille dans la direction qu'elle "
+               "doit prendre : Marquer laisse un fantôme là où la bille du "
+               "joueur doit la toucher."),
+  'aim.map': ('Réglez ici le point de frappe et la force pour voir le coup '
+              'sur la carte ; jouez-le depuis le billard.'),
+  'aim.stroke': ('Maintenez le bouton droit et tirez en arrière, dans la '
+                 'direction de la caméra : plus loin, plus fort ; relâchez '
+                 'pour frapper. {0} {1} {2} {3} déplacent le point de '
+                 'frappe pendant ce temps, les flèches à tout moment.'),
+  #  The unfolded map's caption.
+  'map.empty': ('Chaque ligne est une bande. Visez depuis la bille du '
+                'joueur pour voir la trajectoire.'),
+  'map.working': 'Calcul du coup sur le billard...',
+  'map.estimate': ("Une estimation, jusqu'à ce que le coup soit joué sur "
+                   "le billard."),
+  'map.meets': ('Touche {0} après {1}. Les éventails : la visée décalée de '
+                '{2}° pour un écart type.'),
+  'map.straight': 'Sans effet : tout droit',
+  'map.right': "{0} R d'effet à droite",
+  'map.left': "{0} R d'effet à gauche",
+  'map.guide': '{0}, {1} en vue. Un guide, pas le coup.',
+}

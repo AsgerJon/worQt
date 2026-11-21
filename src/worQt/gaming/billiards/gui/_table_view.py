@@ -25,11 +25,19 @@ from .. import Ball, CaromTable, KeglePin, KegleTable, Turn, latheMesh
 from .. import ribbonMesh, trenchMesh
 from .._table_shapes import APRON_DEPTH, APRON_INSET, RAIL_DEPTH
 from .._table_shapes import CUE_BUTT, CUE_FERRULE, CUE_SHAFT, CUE_TIP
+from .._phrasebook import ENGLISH, Phrasebook
 from .._table_shapes import kegleMeshes, tableMeshes
 from ._hand_picture import HAND_LENGTH, HAND_WIDTH, cuePicture
 from ._hand_picture import handPicture
 from ._prism import Prism
 from ._room_light import radianceBytes, roomLight
+
+#  The phrases the scene says itself, over the view: the walker's keys,
+#  the debug's tag, the table's E, the inventory. The keys a phrase
+#  names are the language's own ('Phrasebook.controls').
+QML_WORDS = ('room.look', 'room.click', 'room.fling', 'room.kegler',
+             'room.carom', 'room.inventory', 'room.hotbar', 'room.held',
+             'room.empty')
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from PySide6.QtGui import QMouseEvent, QShowEvent
@@ -101,6 +109,8 @@ class TableView(QQuickWidget, WidgetMixin):
   __view_trails__: tuple | None = None
   __view_kegler__: bool = False
   __view_flinging__: bool = False
+  __view_words__: dict | None = None
+  __walk_keys__: list | None = None
   __pin_rows__: list | None = None
   __pin_mesh__: numpy.ndarray | None = None
   __pin_shapes__: tuple = ()
@@ -354,6 +364,28 @@ class TableView(QQuickWidget, WidgetMixin):
     root = self.rootObject()
     if root is not None:
       root.setProperty('flinging', self.__view_flinging__)
+
+  def setWords(self, book: Phrasebook) -> None:
+    """The 'setWords' method has the scene say its own words, over the
+    view, in 'book's language ('QML_WORDS'), and the walker walk by its
+    keys ('Phrasebook.controls': W A S D, or Z Q S D for French and
+    Flemish, the AZERTY keyboards' places)."""
+    controls = book.controls()
+    self.__view_words__ = {key: book.said(key, *controls)
+                           for key in QML_WORDS}
+    self.__walk_keys__ = [_keyOf(letter) for letter in controls]
+    root = self.rootObject()
+    if root is not None:
+      root.setProperty('words', self.__view_words__)
+      root.setProperty('walkKeys', self.__walk_keys__)
+
+  def walkKeys(self, ) -> list[int]:
+    """The 'walkKeys' method returns the keys the walker walks by, as
+    Qt's key codes: forward, left, back, right."""
+    if self.__walk_keys__ is None:
+      self.__walk_keys__ = [_keyOf(letter)
+                            for letter in ENGLISH.controls()]
+    return list(self.__walk_keys__)
 
   def setKegler(self, kegler: bool) -> None:
     """The 'setKegler' method lays the table out for keglebillard, the
@@ -893,6 +925,11 @@ class TableView(QQuickWidget, WidgetMixin):
     root = self.rootObject()
     if root is None:
       return
+    if self.__view_words__ is None:
+      self.__view_words__ = {key: ENGLISH.said(key, *ENGLISH.controls())
+                             for key in QML_WORDS}
+    root.setProperty('words', self.__view_words__)
+    root.setProperty('walkKeys', self.walkKeys())
     table = self.table
     root.setProperty('tableLength', table.length)
     root.setProperty('tableWidth', table.width)
@@ -1104,3 +1141,8 @@ class TableView(QQuickWidget, WidgetMixin):
     width, height = self.__room_size__
     path.write_bytes(radianceBytes(roomLight(width, height)))
     return path
+
+
+def _keyOf(letter: str) -> int:
+  """Returns Qt's key code for the key 'letter', a capital."""
+  return int(getattr(Qt.Key, 'Key_%s' % letter).value)
