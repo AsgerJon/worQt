@@ -32,7 +32,7 @@ STEPS = (
   ('orbit', 'Stay seated to avoid damage, into orbit', False),
   ('docked', 'At Terra Prime: the autopilot\'s RNDZ (H), then DOCK (N);'
    ' or dock by hand', False),
-  ('hub', 'Use the bolts to get into Terra Prime', False),
+  ('hub', 'Go through a top floor door into Terra Prime', False),
   ('deck', 'Take the elevator down to the deck', False))
 #  The parts of a step done once all of them are: eating and the sofa.
 PARTS = {'ate': 'rested', 'lounged': 'rested'}

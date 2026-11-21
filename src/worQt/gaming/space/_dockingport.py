@@ -13,11 +13,15 @@ then the pair's: their mass, middle, moments, their momentum and spin
 kept), the rocket where the pair has it; undocking, a spring pushes
 them apart, each as hard. Qt-free.
 
-The station's ports are its hub's mouths on its axis, one at either end
+The station's ports are its drum's hole, entered from either face
 (user, 2026-11-18: "Terra Prime should have docking ports on both
-sides"; its own +z and -z: 'side'); the rocket docks at the one on its
-side, nose first down that axis (its nose its own +z), turning with the
-station.
+sides"; its own +z and -z: 'side'; 2026-11-19: "the head our rocket
+insert itself here, so that the spokes align with the doors to our top
+floor"); the rocket docks from the side its middle is on, nose first
+down that axis (its nose its own +z) through the hole till its top
+floor is in the station's plane, turning with the station, rolled so
+its four doors face the four shafts (the hole's guides catch it within
+'ROLL' of that and turn it the rest of the way in).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -29,7 +33,7 @@ from typing import TYPE_CHECKING
 from ._station import INERTIA, MASS
 from ._stationmeshes import portTip
 from ._turns import cross, dot, matrixBack, matrixTimes, norm, product
-from ._turns import quaternionOf, rotated, unit, unrotated
+from ._turns import quaternionOf, rotated, unrotated
 from ._vessel import CAPSULE, CENTRE
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -39,6 +43,11 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 
 #  The rocket's port: the tip of its nose (its own axes).
 NOSE_PORT = (0.0, 0.0, CAPSULE[1] - CENTRE)
+#  Its doors face its own x, y, -x, -y; the station's shafts its own x,
+#  y, -x, -y: the hole's guides catch the nose rolled within 'ROLL' of a
+#  quarter turn's (rad).
+ROLL = math.radians(10.0)
+QUARTER = 0.5 * math.pi
 #  The latch catches the nose within 'CATCH' m of the station's port,
 #  closing no faster than 'CLOSING' m/s, tilted from the station's axis
 #  no more than 'TILT', turning with the station within 'TURNING' rad/s.
@@ -114,7 +123,8 @@ class DockingPort:
     rad) and how far its spin is off the station's ('turning', rad/s);
     the port's way out ('axis'), the station's spin ('spin', rad/s), the
     port's place ('port') and the station's middle's 'velocity' (from
-    the vessel's anchor)."""
+    the vessel's anchor); how far its roll is from its doors facing the
+    shafts ('roll', rad)."""
     station = self.station
     there, moving = system.relative(station.parent, vessel.anchor, t)
     middle, velocity = station.stateAt(t)
@@ -125,7 +135,7 @@ class DockingPort:
     nose = tuple(p + n for p, n in zip(vessel.place, rotated(
       vessel.turn, NOSE_PORT)))
     if not vessel.docked:
-      side = 1.0 if dot(tuple(n - m for n, m in zip(nose, middle)),
+      side = 1.0 if dot(tuple(p - m for p, m in zip(vessel.place, middle)),
                         own) >= 0.0 else -1.0
       if side != self.side:
         self.side = side
@@ -140,7 +150,10 @@ class DockingPort:
     way = rotated(vessel.turn, (0.0, 0.0, 1.0))
     spin = rotated(vessel.turn, vessel.spin)
     turning = station.spinAt(t)
-    return {'distance': norm(offset), 'along': along,
+    flat = matrixBack(rows, rotated(vessel.turn, (1.0, 0.0, 0.0)))
+    roll = math.atan2(flat[1], flat[0])
+    roll = abs(roll - QUARTER * round(roll / QUARTER))
+    return {'distance': norm(offset), 'along': along, 'roll': roll,
             'across': norm(tuple(o - along * a for o, a in zip(offset,
                                                                axis))),
             'closing': -dot(drift, axis), 'drift': drift, 'offset': offset,
@@ -153,18 +166,22 @@ class DockingPort:
     """The 'caught' method returns whether the latch catches the nose
     standing so ('readingOf')."""
     return (reading['distance'] <= CATCH and reading['closing'] <= CLOSING
-            and reading['tilt'] <= TILT
+            and reading['tilt'] <= TILT and reading['roll'] <= ROLL
             and reading['turning'] <= TURNING)
 
   def aligned(self, vessel: Vessel, t: float) -> None:
     """The 'aligned' method notes the vessel's turn in the station's own
     axes at time 't', put nose first down the station's axis into the
-    port on its 'side', its roll kept ('relative': the vessel's own axes
-    in the station's)."""
+    port on its 'side', rolled to the nearest quarter turn that faces
+    its doors to the shafts ('relative': the vessel's own axes in the
+    station's)."""
     rows = self.station.turnAt(t)
     side = matrixBack(rows, rotated(vessel.turn, (1.0, 0.0, 0.0)))
-    flat = unit((side[0], side[1], 0.0)) if math.hypot(
-      side[0], side[1]) > 1e-6 else (1.0, 0.0, 0.0)
+    roll = math.atan2(side[1], side[0]) if math.hypot(
+      side[0], side[1]) > 1e-6 else 0.0
+    roll = QUARTER * round(roll / QUARTER)
+    flat = (float(round(math.cos(roll))), float(round(math.sin(roll))),
+            0.0)
     down = (0.0, 0.0, -self.side)
     self.relative = (flat, cross(down, flat), down)
 

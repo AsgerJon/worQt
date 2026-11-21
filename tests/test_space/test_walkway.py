@@ -262,3 +262,32 @@ class TestWalkway(SpaceTest):
       walkway.moved(FRAME, 0.0, 0.0)
     self.assertGreater(nearest, 0.0)
     self.assertLess(nearest, 0.2)
+
+  def test_dismissed_furnished(self) -> None:
+    """With Asger in his chair and the door locked, the window sends the
+    walkway away though the deck's furnishings, loose things of the
+    cabin's world, are out on Terra Prime (user, 2026-11-19: "i can't
+    dismiss the walkway": they were counted as out on the walkway); and
+    docked they never keep the rocket at the station."""
+    from types import SimpleNamespace
+
+    from worQt.gaming.space._deckthings import TELEPORTED, DeckThings
+    from worQt.gaming.space._deckthings import deckThings
+    from worQt.gaming.space._deckthings import deckWorldThings
+    from worQt.gaming.space._furnishings import looseThings
+    from worQt.gaming.space._spacewindow import SpaceWindow
+    world = CabinWorld('cpu', looseThings() + deckWorldThings())
+    world.bodiesPlaced(len(looseThings()), DeckThings().laid(TELEPORTED),
+                       (0.0,) * len(deckThings()))
+    told = []
+    window = SimpleNamespace(
+      cockpit=Cockpit(), world=world, door=SimpleNamespace(locked=True),
+      walkway=SimpleNamespace(dismissed=lambda: told.append('away') or ''),
+      _noteOf=told.append, shaftDoors=(),
+      vessel=SimpleNamespace(docked=True))
+    window._cabinLoose = lambda: SpaceWindow._cabinLoose(window)
+    self.assertTrue(world.shown())
+    self.assertTrue(any(not inCabin(place) for place, _ in world.shown()))
+    SpaceWindow._dismissed(window)
+    self.assertEqual(told[0], 'away', told)
+    self.assertEqual(SpaceWindow._aboardWhy(window), '')

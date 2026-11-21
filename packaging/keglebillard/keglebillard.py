@@ -66,7 +66,7 @@ def main() -> int:
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
     app.window.showMaximized()
-    app.window.startWalking()
+    app.window.enterRoom()
     if smoke:
       QTimer.singleShot(int(1000.0 * smoke), lambda: shut(app))
       print('[smoke] the room is open', flush=True)

@@ -27,7 +27,7 @@ from ._cockpit import BAT_LONG, BALL_OUT, BALL_RADIUS, CONSOLE_AXES
 from ._cockpit import CONSOLE_SWITCHES, DIAL_RADIUS
 from ._cockpit import DIALS, EYE, FACE_HIGH, FACE_LOW, GLASS, GLOBE_AT
 from ._cockpit import GLOBE_AXES, HOOD_DEEP, HOOD_HIGH, HOOD_RADIUS
-from ._cockpit import HOOD_SPAN, LEFT_CONSOLE, LIT_KEYS, NOSE, PANEL_AXES
+from ._cockpit import HOOD_SPAN, LEFT_CONSOLE, LIT_KEYS, PANEL_AXES
 from ._cockpit import GUARD_KNOB, GUARD_LAUNCH, GUARD_SWITCH, LAMP_RADIUS
 from ._cockpit import CHECK_AT, CHECK_LINE, CHECK_RADIUS
 from ._cockpit import LAMPS, LEGEND_HALF, MONITOR_OUT, PANEL_DEEP
@@ -39,16 +39,17 @@ from ._cockpit import dialFrame, dialPoint
 from ._cockpit import hoodAxes, hoodPoint, panelAxes, panelPoint
 from ._quest import CHECKLIST
 from ._deckmodel import movingParts
-from ._elevator import PLATE_HALVES
-from ._stationinterior import HATCH
+from ._elevator import PLATE_HALVES, buttonRows, glassRows, guardRows
+from ._elevator import plateRows, seatRows
+from ._deckthings import deckThingRows, deckThings
+from ._shaftdoor import shaftLeafRows
 from ._teleprinter import LINE, PITCH, WIDTH
-from ._gunmodel import gunParts, sideMark
 from ._walkwaymeshes import doorGlassRows, leafRows
-from ._bolts import STATION_BOLTS, boltPieceRows, ringPieceRows
 from ._towerlift import carHalves, carWindow
 from ._shapes import UNTURNED, boxRows, pointAlong, rowsAbout
 from ._shapes import cylinderRows, discRows, frustumRows, joined
 from ._shapes import quadRows, ringRows, roundedPaneRows
+from ._stationlamps import cageLampRows, ringLampRows
 from ._shapes import roundedSlabRows, sheetRows
 from ._egg import marbleRows
 from ._furnishings import bulbsRows, flamesRows, looseParts
@@ -121,15 +122,9 @@ LIGHTS = {'flames': flamesRows, 'flames round': roundFlamesRows,
 #  it a sort of enchantment glint, as it is kinda... magic"), by their
 #  actions.
 ENCHANTED = ('warp', 'action')
-#  The hatch's lid hinges on its rim, just under the ceiling, opening
-#  down 'HATCH_OPEN' rad; the space station's elevators (cages).
-HATCH_HINGE = (HATCH, 0.0, NOSE - 0.035)
-HATCH_OPEN = math.radians(100.0)
-#  The far docking port's closed door (user, 2026-11-18: "Fix the far
-#  port stuff": its docking ring's hatch showed space): how much wider
-#  than the hatch's hole it is, m.
-PORT_DOOR_RIM = 0.15
+#  The space station's elevators (cages); the top floor's doors.
 CARS = 4
+SHAFT_DOORS = 4
 #  The guards' walls' thickness, m.
 GUARD_WALL = 0.0022
 #  The closed circuit monitor's curves (user, 2026-11-17: "it is too
@@ -172,22 +167,23 @@ def pieces(controls: tuple) -> tuple:
   Control: 'ENCHANTED'), the cabin's lights: the candles' flames (and
   weightless, round), the lamp's shade, the fairy lights ('flames',
   'flames round', 'shade', 'bulbs'), each loose thing's mesh of a look
-  ('loose', its index in '_furnishings.looseParts'), each part of the
-  gravity gun in his hands ('gun', its index in '_gunmodel.gunParts':
-  about his eyes, in their frame; 'gun mark': the 3 on its side), the
-  hatch's lid in the ceiling
-  ('hatch': open docked to the space station), the gravity egg's
-  glowing marble ('egg ball', about its middle: '_egg'), the station's
-  elevators'
-  cages' plates ('car', six a cage: '_elevator.PLATE_HALVES'), the
-  door's leaf ('door': it slides round into the wall, '_walkway') and
-  its window's pane ('door glass'), the far docking port's closed door
-  ('port door': docked, the port the rocket is not in), the
-  launch tower's lift's car's floor, roof and two walls ('lift',
-  '_towerlift'; the walls' windows cut) and the walls' panes ('lift
-  glass'), the
-  space station's magic bolts, docked ('sbolt', 'sring': each its steel
-  and its ring, '_bolts.stationBolts')."""
+  ('loose', its index in '_furnishings.looseParts'), the gravity egg's
+  glowing marble ('egg ball', about its middle: '_egg'),
+  the station's elevators' cages' plates ('car', six a cage:
+  '_elevator.PLATE_HALVES', the sides framing their windows), their
+  windows' panes ('car glass', four a cage), seats ('car seat', one a
+  cage, with the button's post and the handrail), buttons ('car
+  button') and their guards ('car guard'), the deck's loose furnishings
+  ('deck thing', '_deckthings'), the
+  door's leaf ('door': it slides round
+  into the wall, '_walkway') and its window's pane ('door glass'), the
+  top floor's four doors' leaves ('shaft door': each slides round into
+  the head's wall, '_shaftdoor'), the launch tower's lift's car's
+  floor, roof and two walls ('lift', '_towerlift'; the walls' windows
+  cut) and the walls' panes ('lift glass'), the head's lamp rings
+  ('level lamp': levels
+  one and two, '_stationlamps') and the cages' lamps docked ('car lamp':
+  a bar in each cage)."""
   out = [('control', control) for control in controls]
   out += [('needle', k) for k in range(len(DIALS))]
   out += [('lamp', k) for k in range(len(LAMPS))]
@@ -201,17 +197,19 @@ def pieces(controls: tuple) -> tuple:
   out += [('check', k) for k in range(len(CHECKLIST))]
   out += [('flames', 0), ('flames round', 0), ('shade', 0), ('bulbs', 0)]
   out += [('loose', k) for k in range(len(looseParts()))]
-  out += [('gun', k) for k in range(len(gunParts()))]
-  out += [('gun mark', 0)]
-  out += [('hatch', 0)]
   out += [('egg ball', 0)]
   out += [('car', k) for k in range(CARS * len(PLATE_HALVES))]
+  out += [('car glass', k) for k in range(CARS * 4)]
+  out += [('car seat', k) for k in range(CARS)]
+  out += [('car button', k) for k in range(CARS)]
+  out += [('car guard', k) for k in range(CARS)]
+  out += [('deck thing', k) for k in range(len(deckThings()))]
   out += [('door', 0), ('door glass', 0)]
-  out += [('port door', 0)]
+  out += [('shaft door', k) for k in range(SHAFT_DOORS)]
   out += [('lift', k) for k in range(4)]
   out += [('lift glass', k) for k in range(2)]
-  out += [(kind, k) for k in range(STATION_BOLTS)
-          for kind in ('sbolt', 'sring')]
+  out += [('level lamp', 1), ('level lamp', 2)]
+  out += [('car lamp', k) for k in range(CARS)]
   return tuple(out)
 
 
@@ -700,33 +698,26 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
   if kind == 'loose':
     part = looseParts()[what]
     return part[2], part[3]
-  if kind == 'gun':
-    part = gunParts()[what]
-    return part[2], part[3]
-  if kind == 'gun mark':
-    middle, half = sideMark()
-    return quadRows(middle, ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0),
-                             (-1.0, 0.0, 0.0)), (half, half))
-  if kind == 'hatch':
-    rows, faces = cylinderRows((0.0, 0.0, NOSE - 0.06), (0.0, 0.0, 1.0),
-                               HATCH - 0.03, 0.05, 32)
-    return rowsAbout(rows, HATCH_HINGE), faces
+  if kind == 'shaft door':
+    return shaftLeafRows(what)
   if kind == 'car':
-    return boxRows((0.0, 0.0, 0.0), PLATE_HALVES[what % len(PLATE_HALVES)],
-                   UNTURNED)
+    return plateRows(what % len(PLATE_HALVES))
+  if kind == 'car glass':
+    return glassRows(2 + what % 4)
+  if kind == 'car seat':
+    return seatRows()
+  if kind == 'car button':
+    return buttonRows()
+  if kind == 'car guard':
+    return guardRows()
+  if kind == 'deck thing':
+    return deckThingRows(what)
   if kind == 'door':
     return leafRows()
   if kind == 'egg ball':
     return marbleRows()
   if kind == 'door glass':
     return doorGlassRows()
-  if kind == 'port door':
-    return joined([cylinderRows((0.0, 0.0, -0.03), (0.0, 0.0, 1.0),
-                                HATCH + PORT_DOOR_RIM, 0.03, 48),
-                   boxRows((0.0, 0.0, -0.05), (0.25, 0.02, 0.02),
-                           UNTURNED)])
-  if kind == 'sbolt':
-    return boltPieceRows()
   if kind == 'lift':
     return _liftRows(what)
   if kind == 'lift glass':
@@ -738,8 +729,10 @@ def pieceRows(piece: tuple, cells: dict) -> tuple:
     middle = [0.0, 0.0, 0.5 * (low + high)]
     middle[1 if what == 0 else 0] = 0.5 * (a + b)
     return boxRows(tuple(middle), tuple(half), UNTURNED)
-  if kind == 'sring':
-    return ringPieceRows()
+  if kind == 'level lamp':
+    return ringLampRows()
+  if kind == 'car lamp':
+    return cageLampRows()
   if kind == 'bug':
     dial = BUGS[what]
     axes = dialAxes(dial)
@@ -777,10 +770,6 @@ def pivotOf(piece: tuple) -> tuple:
     return headPlace(0.0)
   if kind == 'loose':
     return looseThings()[looseParts()[what][0]][1]
-  if kind in ('gun', 'gun mark'):
-    return EYE
-  if kind == 'hatch':
-    return HATCH_HINGE
   return 0.0, 0.0, 0.0
 
 

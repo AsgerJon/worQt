@@ -524,7 +524,12 @@ class Motion(NamedTuple):
     """Moves the ball in 'row', touching a cushion or ball, on for
     'step' on the slate: friction against the slip under it, bearing its
     weight less 'lift'; its side spin dying the faster for the load;
-    turned as it spins."""
+    turned as it spins. Set going faster than the felt's push back sets
+    a ball rolling back, 'settleSpeed', it is hit again, and will be
+    pushed back as its next roll ends; nudged no faster, it is still
+    coming to rest, pushed back once only: else a ball rolled back
+    into a cushion bounced off it, rolled back into it, and so for ever,
+    the felt's push given anew each time out of nothing."""
     radius, inertia, gravity = fixed.radius, fixed.inertia, fixed.gravity
     bearing = max(gravity - lift, 0.0)
     sx, sy = row[4] - radius * row[7], row[5] + radius * row[6]
@@ -541,6 +546,8 @@ class Motion(NamedTuple):
     row[1] += row[4] * step
     row[2] += row[5] * step
     row[3] = turned(row[3], row[6] * step, row[7] * step, row[8] * step)
+    if math.sqrt(row[4] * row[4] + row[5] * row[5]) > fixed.settleSpeed:
+      row[9] = False
 
 
 class Hits:
@@ -640,7 +647,6 @@ class Hits:
         row = state[k]
         if k in pushed:
           motion._slate(row, lifts[k], step, fixed)
-          row[9] = False
           continue
         state[k] = list(cloth.advanced(Ball(*row), step, radius))
         self._doze(k, self.used)
@@ -846,7 +852,8 @@ class _Fixed(NamedTuple):
   angle); the
   carom's spring, 'swingSquared', its damper, 'swingDamping', and its
   friction; the cloth's 'sliding' friction, 'gravity' and 'spinDecay';
-  and the steps.
+  the steps; and how fast the felt sets a ball rolling back as its roll
+  ends, 'settleSpeed' ('Cloth.rolledBack').
   """
 
   radius: float
@@ -876,6 +883,7 @@ class _Fixed(NamedTuple):
   spinDecay: float
   cushionStep: float
   caromStep: float
+  settleSpeed: float
 
 
 @functools.lru_cache(maxsize=32)
@@ -912,7 +920,9 @@ def _fixedOf(motion: Motion) -> _Fixed:
                 2.0 * carom._ratio() * swing, carom.fastFriction,
                 carom.slowFriction - carom.fastFriction, carom.slipScale,
                 cloth.sliding, cloth.gravity, cloth.spinDecay(radius),
-                cushion.step, carom.step)
+                cushion.step, carom.step,
+                math.sqrt(2.0 * max(cloth.rollingDecay(), 0.0)
+                          * max(cloth.rollBack, 0.0)))
 
 
 @functools.lru_cache(maxsize=32)

@@ -70,7 +70,8 @@ class Instruments:
   'switched', what the window keeps that a switch or a lit or latched
   key shows, by the key's action (the autopilot's mode chosen: 'ap
   orbit', 'ap rendezvous', 'ap dock'; 'engage': it has the controls;
-  'action': it waits for a burn, WARP TO ACTION may warp; 'camera': the
+  'action': it waits for a burn, WARP TO ACTION may warp; 'autowarp':
+  AUTO WARP is on; 'camera': the
   monitor shows the nose's docking camera); the limiter's setting
   ('limit', g).
   'pressed' presses an input's key; 'acted' keeps everything to the
@@ -103,7 +104,7 @@ class Instruments:
     self.flicker, self._flame = 1.0, random.Random(1980)
     self.switched = {'ap orbit': True, 'ap rendezvous': False,
                      'ap dock': False, 'engage': False, 'action': False,
-                     'camera': False}
+                     'autowarp': False, 'camera': False}
     self.limit = LIMITS[-1]
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

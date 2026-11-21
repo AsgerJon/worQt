@@ -47,6 +47,9 @@ LEG = 0.18
 STOREY = 4.0
 BRACE = 0.06
 HALL_WALL = 0.2
+#  The stair tower's roof slab, m thick (its walls stop under it: run up
+#  into it, their faces lay in its and fought, '_zfight').
+TOWER_ROOF = 0.2
 #  The walkway: how far it reaches from its pivot to the hull (the skin
 #  at the floor), its windows' sill and head over its floor, m (its
 #  sections: '_walkway', 'sectionParts').
@@ -147,12 +150,17 @@ def _steel(put: object) -> None:
   for k in range(storeys + 1):
     z = min(top - 0.2, STOREY * (k + 1))
     for (ax, ay), (bx, by) in sides:
-      put('tower', _beam((ax, ay, z), (bx, by, z), BRACE + 0.02))
+      ux, uy = (1.0, 0.0) if bx != ax else (0.0, 1.0)
+      put('tower', _beam((ax + LEG * ux, ay + LEG * uy, z),
+                         (bx - LEG * ux, by - LEG * uy, z), BRACE + 0.02))
       if k < storeys:
         low = z - STOREY if k else 0.3
-        a, b = ((ax, ay, low), (bx, by, z)) if k % 2 else (
-          (bx, by, low), (ax, ay, z))
-        put('tower', _beam(a, b, BRACE))
+        ux, uy = (1.0, 0.0) if bx != ax else (0.0, 1.0)
+        near = (ax + LEG * ux, ay + LEG * uy)
+        far = (bx - LEG * ux, by - LEG * uy)
+        a, b = ((near + (low,)), (far + (z,))) if k % 2 else (
+          (far + (low,)), (near + (z,)))
+        put('tower', _beam(*_shortened(a, b, BRACE + 0.04), BRACE))
 
 
 def _wall(put: object, look: str, low: tuple, high: tuple,
@@ -184,10 +192,10 @@ def _hall(put: object) -> None:
   ceiling; its west wall is the stair tower's."""
   (x0, y0, z0), (x1, y1, z1) = HALL
   w = HALL_WALL
-  put('hall floor', boxRows((0.5 * (x0 + x1), 0.0, z_(z0) - 0.15), (
-    0.5 * (x1 - x0) + w, y1 + w, 0.15), UNTURNED))
-  put('hall', boxRows((0.5 * (x0 + x1), 0.0, z_(z1) + 0.1), (
-    0.5 * (x1 - x0) + w, y1 + w, 0.1), UNTURNED))
+  put('hall floor', boxRows((0.5 * (x0 + x1 + w), 0.0, z_(z0) - 0.15), (
+    0.5 * (x1 + w - x0), y1 + w, 0.15), UNTURNED))
+  put('hall', boxRows((0.5 * (x0 + x1 + w), 0.0, z_(z1) + 0.1), (
+    0.5 * (x1 + w - x0), y1 + w, 0.1), UNTURNED))
   sill, head = z_(z0) + 1.0, z_(z0) + 2.2
   for y in (y0 - w, y1):
     _wall(put, 'hall', (x0, y, z_(z0)), (x1 + w, y + w, z_(z1)),
@@ -211,20 +219,20 @@ def _stairTower(put: object) -> None:
   wall; their windows, a pane of glass in each ('towerWindows'); a lamp
   over each door outside."""
   (tx0, ty0), (tx1, ty1) = TOWER
-  ground, top = z_(GROUND), z_(TOWER_TOP)
+  ground, roof = z_(GROUND), z_(TOWER_TOP)
+  top = roof - TOWER_ROOF
   (sx0, sy0, _), (sx1, sy1, _) = STAIRWELL
   put('tower wall', boxRows((0.5 * (tx0 + tx1), 0.5 * (ty0 + ty1),
-                             top - 0.1), (0.5 * (tx1 - tx0),
-                                          0.5 * (ty1 - ty0), 0.1),
-                            UNTURNED))
+                             roof - 0.5 * TOWER_ROOF), (
+    0.5 * (tx1 - tx0), 0.5 * (ty1 - ty0), 0.5 * TOWER_ROOF), UNTURNED))
   windows = towerWindows()
   foot = STAIR_FOOT
   walls = {'west': ((tx0, ty0, ground), (sx0, ty1, top), [
              ((foot[0][1], ground), (foot[1][1], ground + 2.2))]),
-           'south': ((tx0, ty0, ground), (tx1, sy0, top), [])}
+           'south': ((sx0, ty0, ground), (sx1, sy0, top), [])}
   lift = LIFT_FOOT
   (hx0, hy0, _), (hx1, hy1, _) = SHAFT
-  walls['north'] = ((tx0, hy1, ground), (tx1, ty1, top), [
+  walls['north'] = ((sx0, hy1, ground), (sx1, ty1, top), [
     ((lift[0][0], ground), (lift[1][0], ground + 2.2))])
   stair, door = STAIR_TOP, LIFT_TOP
   floor = z_(FLOOR)
@@ -554,6 +562,15 @@ def _beam(a: tuple, b: tuple, half: float, side: tuple = None) -> tuple:
   up = _cross(out, along)
   middle = tuple(0.5 * (p + q) for p, q in zip(a, b))
   return boxRows(middle, (0.5 * long, half, half), (along, up, out))
+
+
+def _shortened(a: tuple, b: tuple, by: float) -> tuple:
+  """Returns the line from 'a' to 'b' shortened by 'by' at either end
+  (two diagonal braces meeting at one point drew their faces in one
+  plane there: they end inside the level brace instead, '_zfight')."""
+  along = _unit(tuple(q - p for p, q in zip(a, b)))
+  return (tuple(p + by * u for p, u in zip(a, along)),
+          tuple(q - by * u for q, u in zip(b, along)))
 
 
 def _unit(v: tuple) -> tuple:

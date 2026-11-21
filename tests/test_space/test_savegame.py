@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import tempfile
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from worQt.gaming.space._cockpit import Cockpit
 from worQt.gaming.space._dockingguidance import DockingGuidance
 from worQt.gaming.space._dockingport import DockingPort
 from worQt.gaming.space._elevator import Elevator
-from worQt.gaming.space._gravgun import GravGun
+from worQt.gaming.space._ladder import Ladder
 from worQt.gaming.space._instruments import Instruments
 from worQt.gaming.space._inventory import Inventory
 from worQt.gaming.space._planets import solarSystemOn
@@ -61,7 +62,7 @@ class TestSaveGame(SpaceTest):
     return [Timekeeper(system), Vessel(), ascent, rendezvous, docking,
             port, Autoflight(ascent, rendezvous, docking, port), cockpit,
             Vitals(), Inventory(), Quest(), Walkway(True), TowerLift(),
-            Elevator(), Instruments(cockpit), GravGun(), Door(False)]
+            Elevator(), Instruments(cockpit), Ladder(), Door(False)]
 
   def test_values(self) -> None:
     """Tuples, lists, sets, dicts (of words), numbers, words, truths,
@@ -159,6 +160,39 @@ class TestSaveGame(SpaceTest):
       path.write_text(json.dumps(data))
       with self.assertRaises(ValueError):
         SaveGame.read(path)
+
+  def test_slots(self) -> None:
+    """The saves (user, 2026-11-19: "we need multiple save files"): the
+    quick save (slot nought) and 'SLOTS' more, each its own file in the
+    saves' folder (no other slot); listed in order, each empty, its save
+    with its summary, or why it cannot be read."""
+    from worQt.gaming.space._savegame import QUICK, SLOTS, savesListed
+    from worQt.gaming.space._savegame import slotPath
+    with tempfile.TemporaryDirectory() as folder:
+      was = os.environ.get('XDG_DATA_HOME')
+      os.environ['XDG_DATA_HOME'] = folder
+      try:
+        self.assertEqual(slotPath(0).name, QUICK)
+        names = {slotPath(k).name for k in range(SLOTS + 1)}
+        self.assertEqual(len(names), SLOTS + 1)
+        for wrong in (-1, SLOTS + 1):
+          with self.assertRaises(ValueError):
+            slotPath(wrong)
+        SaveGame({'a': 1}, None, 'On the pad, game 0:01:00').written(
+          slotPath(2))
+        slotPath(5).write_text('not a save')
+        listed = savesListed()
+        self.assertEqual([slot for slot, _ in listed],
+                         list(range(SLOTS + 1)))
+        self.assertIsNone(listed[0][1])
+        self.assertEqual(listed[2][1].summary, 'On the pad, game 0:01:00')
+        self.assertEqual(listed[2][1].state, {'a': 1})
+        self.assertIsInstance(listed[5][1], str)
+      finally:
+        if was is None:
+          os.environ.pop('XDG_DATA_HOME')
+        else:
+          os.environ['XDG_DATA_HOME'] = was
 
   def test_flown_on(self) -> None:
     """A rocket in orbit saved (through JSON), loaded into another

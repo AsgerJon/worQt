@@ -46,8 +46,12 @@ def aboutAxis(axis: tuple, angle: float) -> tuple:
 
 def quaternionOf(rows: tuple) -> tuple:
   """Returns the quaternion (w x y z) of the turn 'rows' (three rows, a
-  proper rotation)."""
+  proper rotation; a mirror, its determinant not over nought, raises:
+  the cage's plates were turned by one, their sides across the top
+  floor's door, 2026-11-19)."""
   (a, b, c), (d, e, f), (g, h, i) = rows
+  if a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g) <= 0.0:
+    raise ValueError('not a turn (a mirror): %r' % (rows,))
   trace = a + e + i
   if trace > 0.0:
     s = 2.0 * math.sqrt(trace + 1.0)

@@ -5,16 +5,17 @@ loose things too): in the vessel's own axes, which move and turn, so
 each body feels what is felt there (the vessel's push, its turning).
 
 Two launches a small step: 'pressed' (a thread a point) finds where
-each body's points meet the rooms' walls (the cabin's floor, cone of a
-wall and ceiling; docked to the space station also the hatch through
-the nose, the port, the hub, the four shafts and the ring's tube over
-its deck: 'roomGap', each room how far inside it, the rooms joined as
-deep as the deepest: '_stationinterior'), the solids in them (some
-moving: the elevators' cages) and the other bodies' boxes, and pushes
-(a spring and a damper along the meeting's normal, as stiff as its
-body's share of 'OMEGA', rubbing along it no harder than 'GRIP' of the
-push), the push's other half onto the other body; 'moved' (a thread a
-body) moves each body a step on by what pushed it and what is felt
+each body's points meet the rooms' walls (the rocket's three levels: the
+cabin's floor, cone of a wall and ceiling, the head's two levels over
+it, the hatches between them; docked to the space station also the top
+floor's doorways, the four shafts and the ring's tube over its deck:
+'roomGap', each room how far inside it, the rooms joined as deep as the
+deepest: '_stationinterior'), the solids in them (some moving: the
+elevators' cages, the doors' leaves) and the other bodies' boxes, and
+pushes (a spring and a damper along the meeting's normal, as stiff as
+its body's share of 'OMEGA', rubbing along it no harder than 'GRIP' of
+the push), the push's other half onto the other body; 'moved' (a thread
+a body) moves each body a step on by what pushed it and what is felt
 there (semi-implicit Euler; a body's spin by Euler's equations in its
 own axes).
 
@@ -31,7 +32,7 @@ from __future__ import annotations
 
 import warp as wp
 
-from ._cockpit import FLOOR, NOSE, WALL, capsuleRadius
+from ._levels import CEILING, FLOOR, TIP as NOSE_TIP
 from . import _crewman as crew
 from . import _stationinterior as rooms
 from . import _launchtower as tower
@@ -49,31 +50,58 @@ def _single(x: float) -> object:
   return wp.constant(wp.float32(x))
 
 
-#  The cabin: its floor's and ceiling's heights; its wall's inner radius
-#  at the floor and how fast it narrows going up (m a m), and the cosine
-#  of the wall's lean (a distance across it is the radial one times it).
+#  The cabin (level 0): its floor's and ceiling's heights; its wall's
+#  inner radius at the floor and how fast it narrows going up (m a m),
+#  and the cosine of the wall's lean (a distance across it is the radial
+#  one times it); the head's levels (their radius inside, each floor and
+#  ceiling), the hatches through the slabs (radius, from, to up the
+#  axis).
 CABIN_FLOOR = _single(FLOOR)
-CABIN_TOP = _single(NOSE)
-_LOW = capsuleRadius(FLOOR) - WALL
-_SLOPE = (capsuleRadius(NOSE) - capsuleRadius(FLOOR)) / (NOSE - FLOOR)
-CABIN_LOW = _single(_LOW)
+CABIN_TOP = _single(CEILING)
+_SLOPE = rooms.CABIN_SLOPE
+CABIN_LOW = _single(rooms.CABIN_LOW)
 CABIN_SLOPE = _single(_SLOPE)
 CABIN_LEAN = _single(1.0 / (1.0 + _SLOPE * _SLOPE) ** 0.5)
-#  Docked: the hatch, the port, the hub (radius, from, to up the axis),
-#  the shafts (radius, from), the ring (its tube's middle from the axis,
-#  its radius inside), the deck (from the axis), the station's plane up
-#  the axis ('_stationinterior').
+LEVEL_INSIDE = _single(rooms.LEVEL_INSIDE)
+LEVEL1_LOW = _single(rooms.LEVELS[1][0])
+LEVEL1_HIGH = _single(rooms.LEVELS[1][1])
+LEVEL2_LOW = _single(rooms.LEVELS[2][0])
+LEVEL2_HIGH = _single(rooms.LEVELS[2][1])
 HATCH = _single(rooms.HATCH)
-HATCH_LOW = _single(rooms.HATCH_LOW)
-HATCH_HIGH = _single(rooms.HATCH_HIGH)
-PORT_INSIDE = _single(rooms.PORT_INSIDE)
-PORT_LOW = _single(rooms.PORT_LOW)
-PORT_HIGH = _single(rooms.PORT_HIGH)
-FAR_LOW = _single(rooms.FAR_LOW)
-FAR_HIGH = _single(rooms.FAR_HIGH)
-HUB_INSIDE = _single(rooms.HUB_INSIDE)
-HUB_LOW = _single(rooms.HUB_LOW)
-HUB_HIGH = _single(rooms.HUB_HIGH)
+HATCH0_LOW = _single(rooms.HATCHES[0][0])
+HATCH0_HIGH = _single(rooms.HATCHES[0][1])
+HATCH1_LOW = _single(rooms.HATCHES[1][0])
+HATCH1_HIGH = _single(rooms.HATCHES[1][1])
+#  The rocket's nose's tip (its body reaches no higher on the pad).
+TIP = _single(NOSE_TIP)
+#  Docked: the top floor's four doorways (boxes along its own x, y, -x,
+#  -y: each its low and high corners), the shafts (radius, from), the
+#  ring (its tube's middle from the axis, its radius inside), the deck
+#  (from the axis), the station's plane up the axis ('_stationinterior').
+
+
+def _doorwayBox(way: tuple) -> tuple:
+  """Returns the top floor's doorway out along 'way' (one of the
+  rocket's own +-x, +-y) as a box: its low and high corners."""
+  near, far = rooms.DOORWAY
+  half, high = rooms.DOORWAY_HALF
+  middle = rooms.DOORS_HIGH
+  x, y = round(way[0]), round(way[1])
+  if x:
+    a, b = sorted((x * near, x * far))
+    return (a, -half, middle - high), (b, half, middle + high)
+  a, b = sorted((y * near, y * far))
+  return (-half, a, middle - high), (half, b, middle + high)
+
+
+DOORWAY0_LOW, DOORWAY0_HIGH = (wp.constant(wp.vec3(*c)) for c in
+                               _doorwayBox(rooms.DOOR_WAYS[0]))
+DOORWAY1_LOW, DOORWAY1_HIGH = (wp.constant(wp.vec3(*c)) for c in
+                               _doorwayBox(rooms.DOOR_WAYS[1]))
+DOORWAY2_LOW, DOORWAY2_HIGH = (wp.constant(wp.vec3(*c)) for c in
+                               _doorwayBox(rooms.DOOR_WAYS[2]))
+DOORWAY3_LOW, DOORWAY3_HIGH = (wp.constant(wp.vec3(*c)) for c in
+                               _doorwayBox(rooms.DOOR_WAYS[3]))
 SHAFT_INSIDE = _single(rooms.SHAFT_INSIDE)
 SHAFT_FROM = _single(rooms.SHAFT_FROM)
 TUBE_MIDDLE = _single(rooms.TUBE_MIDDLE)
@@ -113,7 +141,7 @@ TOWER_HIGH = wp.constant(wp.vec3(tower.TOWER[1][0], tower.TOWER[1][1],
                                  tower.TOWER_TOP))
 BODY = _single(tower.BODY)
 #  The rocket's base (its own axes: on the ground where it stands), m:
-#  its body is from there up to its nose ('CABIN_TOP'); nowhere else
+#  its body is from there up to its nose's tip ('TIP'); nowhere else
 #  does it cut the pad's rooms.
 BASE = _single(tower.GROUND - 0.5)
 #  A meeting's spring: four of them carry a body at 'OMEGA' rad/s (its
@@ -233,9 +261,13 @@ def boxOutside(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
 #  The rooms' layout ('layout', a row each): the station's shafts' ways
 #  ('SHAFTS' rows, the rocket's own axes: docked), then the rocket's
 #  place and its three axes ('ROCKET', four rows), then the pad's
-#  ('PAD'), each in the world's own axes (the cabin's world is the
-#  rocket's: its place nought, its axes its own, the pad's where the pad
-#  is from it; the pad's world is the pad's, Terra's turning ground,
+#  ('PAD'), then each shaft's cage's inside along it ('CAGES', a row a
+#  shaft: from, to, m out; user, 2026-11-19, "the spokes are not
+#  pressurized. Only the elevators are": the cage is the shaft's only
+#  room, moving with it), each in the world's own axes (the cabin's
+#  world is the rocket's: its place nought, its axes its own, the pad's
+#  where the pad is from it; the pad's world is the pad's, Terra's
+#  turning ground,
 #  the rocket's where it stands: user, 2026-11-18, "the pad needs to be
 #  there"; '_pad'). Each room is had in its own's axes: the cabin, the
 #  doorway and the station's the rocket's, the walkway's tunnel, the
@@ -243,7 +275,8 @@ def boxOutside(point: wp.vec3, low: wp.vec3, high: wp.vec3) -> wp.vec4:
 SHAFTS = 4
 ROCKET = 4
 PAD = 8
-LAYOUT_ROWS = 12
+CAGES = 12
+LAYOUT_ROWS = 16
 
 
 @wp.func
@@ -303,7 +336,7 @@ def towerRooms(p: wp.vec3, q: wp.vec3, best: wp.vec4, outside: int,
   if across > 1.0e-6:
     outward = wp.vec4(q[0] / across, q[1] / across, 0.0, 0.0)
   outward = worldOf(layout, ROCKET, outward)
-  if q[2] > BASE and q[2] < CABIN_TOP:
+  if q[2] > BASE and q[2] < TIP:
     yard = shallower(yard, across - BODY, wp.vec3(outward[0], outward[1],
                                                   outward[2]))
   walls = worldOf(layout, PAD, boxOutside(p, TOWER_LOW, TOWER_HIGH))
@@ -330,9 +363,11 @@ def padRooms(p: wp.vec3, q: wp.vec3, best: wp.vec4, outside: int,
 def rocketRooms(q: wp.vec3, docked: int, outside: int,
                 layout: wp.array(dtype=wp.vec3)) -> wp.vec4:
   """Returns how far 'q' (the rocket's own axes) is inside the rocket's
-  rooms (the cabin; 'outside' two, the doorway through its wall;
-  docked, also the hatch, the ports, the hub, the shafts out along
-  'layout''s first rows, the ring) and the way into them (its axes)."""
+  rooms (the cabin, the head's two levels, the hatches between them;
+  'outside' two, the doorway through the cabin's wall; docked, also the
+  top floor's doorways, the cages' insides along the shafts out along
+  'layout''s first rows, the ring) and the way into them (its
+  axes)."""
   across = wp.sqrt(q[0] * q[0] + q[1] * q[1])
   outward = wp.vec3(1.0, 0.0, 0.0)
   if across > 1.0e-6:
@@ -344,14 +379,20 @@ def rocketRooms(q: wp.vec3, docked: int, outside: int,
   best = wp.vec4(wall[0], wall[1], wall[2], (inner - across) * CABIN_LEAN)
   best = shallower(best, q[2] - CABIN_FLOOR, wp.vec3(0.0, 0.0, 1.0))
   best = shallower(best, CABIN_TOP - q[2], wp.vec3(0.0, 0.0, -1.0))
+  best = deeperRoom(best, roundRoom(q, LEVEL_INSIDE, LEVEL1_LOW,
+                                    LEVEL1_HIGH))
+  best = deeperRoom(best, roundRoom(q, LEVEL_INSIDE, LEVEL2_LOW,
+                                    LEVEL2_HIGH))
+  best = deeperRoom(best, roundRoom(q, HATCH, HATCH0_LOW, HATCH0_HIGH))
+  best = deeperRoom(best, roundRoom(q, HATCH, HATCH1_LOW, HATCH1_HIGH))
   if outside % 4 >= 2:
     best = deeperRoom(best, boxRoom(q, DOORWAY_LOW, DOORWAY_HIGH))
   if docked == 0:
     return best
-  best = deeperRoom(best, roundRoom(q, HATCH, HATCH_LOW, HATCH_HIGH))
-  best = deeperRoom(best, roundRoom(q, PORT_INSIDE, PORT_LOW, PORT_HIGH))
-  best = deeperRoom(best, roundRoom(q, PORT_INSIDE, FAR_LOW, FAR_HIGH))
-  best = deeperRoom(best, roundRoom(q, HUB_INSIDE, HUB_LOW, HUB_HIGH))
+  best = deeperRoom(best, boxRoom(q, DOORWAY0_LOW, DOORWAY0_HIGH))
+  best = deeperRoom(best, boxRoom(q, DOORWAY1_LOW, DOORWAY1_HIGH))
+  best = deeperRoom(best, boxRoom(q, DOORWAY2_LOW, DOORWAY2_HIGH))
+  best = deeperRoom(best, boxRoom(q, DOORWAY3_LOW, DOORWAY3_HIGH))
   floor = -outward
   tube = wp.vec3(outward[0] * (across - TUBE_MIDDLE),
                  outward[1] * (across - TUBE_MIDDLE), q[2] - PLANE)
@@ -364,14 +405,19 @@ def rocketRooms(q: wp.vec3, docked: int, outside: int,
   best = deeperRoom(best, room)
   for k in range(SHAFTS):
     way = layout[k]
-    out = wp.clamp(q[0] * way[0] + q[1] * way[1], SHAFT_FROM, DECK)
-    off = q - wp.vec3(out * way[0], out * way[1], PLANE)
+    span = layout[CAGES + k]
+    low = wp.max(SHAFT_FROM, span[0])
+    high = span[1]
+    out = q[0] * way[0] + q[1] * way[1]
+    along = wp.clamp(out, low, wp.max(low, high))
+    off = q - wp.vec3(along * way[0], along * way[1], PLANE)
     size = wp.length(off)
     inward = floor
     if size > 1.0e-6:
       inward = -off / size
     room = wp.vec4(inward[0], inward[1], inward[2], SHAFT_INSIDE - size)
-    room = shallower(room, DECK - across, floor)
+    room = shallower(room, out - low, way)
+    room = shallower(room, high - out, -way)
     best = deeperRoom(best, room)
   return best
 
@@ -414,7 +460,7 @@ def roomOwner(point: wp.vec3, docked: int, outside: int,
   if inRocket >= pad[3]:
     return ROCKET_FACE
   across = wp.sqrt(q[0] * q[0] + q[1] * q[1])
-  if q[2] > BASE and q[2] < CABIN_TOP and across > 1.0e-6:
+  if q[2] > BASE and q[2] < TIP and across > 1.0e-6:
     if wp.abs(across - BODY - pad[3]) < 1.0e-4:
       out = worldOf(layout, ROCKET, wp.vec4(q[0] / across, q[1] / across,
                                             0.0, 0.0))
@@ -553,12 +599,14 @@ def pressed(places: wp.array(dtype=wp.vec3),
   were at the frame's start, moved on at their velocities 'elapsed' s
   since: an elevator's cage at 30 m/s left still a frame long had him
   0.4 m into its plates), the other bodies' boxes
-  (their share pushed back); counts Asger's meetings ('asger' 0: their
-  count in x, 1: their normals summed: he touches what is within 'NEAR'
-  of him; his legs or the gun at work ('legs'), they hold him, not the
-  rubbing), the fastest he met anything ('landing') and the thuds. A
-  loose body's points look at the solids listed near it this frame
-  ('bodiesNear'), all of them if more than it lists."""
+  (their share pushed back; a body of no mass is put away: it meets
+  nothing and is met by nothing, '_deckthings'); counts Asger's
+  meetings ('asger' 0: their count in x, 1: their normals summed: he
+  touches what is within 'NEAR' of him; his legs or the gun at work
+  ('legs'), they hold him, not the rubbing), the fastest he met
+  anything ('landing') and the thuds. A loose body's points look at
+  the solids listed near it this frame ('bodiesNear'), all of them if
+  more than it lists."""
   i = wp.tid()
   body = owners[i]
   middle = places[body]
@@ -566,6 +614,9 @@ def pressed(places: wp.array(dtype=wp.vec3),
   moving = velocities[body]
   margin = float(0.0)
   grip = GRIP
+  if body != 0 and masses[body] <= 0.0:
+    touched[i] = 0
+    return
   if body == 0:
     if present == 0:
       touched[i] = 0
@@ -616,7 +667,7 @@ def pressed(places: wp.array(dtype=wp.vec3),
           push = push + meetingPush(met[3] - margin, normal, relative,
                                     heft, grip)
   for other in range(1, places.shape[0]):
-    if other != body:
+    if other != body and masses[other] > 0.0:
       half = halves[other]
       there = places[other]
       if wp.length(point - there) < wp.length(half) + radius:
@@ -673,7 +724,8 @@ def moved(places: wp.array(dtype=wp.vec3),
   vessel's own moving makes it feel) pushes the vessel back as hard
   ('reaction' 2: the push, N s; 3: its twist about the vessel's middle,
   N m s; the vessel's own axes: the walls and the air are the
-  vessel's, a push between two loose bodies cancels)."""
+  vessel's, a push between two loose bodies cancels). A body of no mass
+  is put away: it does not move."""
   b = wp.tid()
   push = pushes[b]
   twist = twists[b]
@@ -684,6 +736,8 @@ def moved(places: wp.array(dtype=wp.vec3),
     asger[1] = wp.vec3(0.0, 0.0, 0.0)
     return
   heft = masses[b]
+  if heft <= 0.0:
+    return
   place = places[b]
   velocity = velocities[b]
   feel = (push / heft - felt - wp.cross(turning, wp.cross(turning, place))

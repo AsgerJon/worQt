@@ -3,9 +3,10 @@ TestCollision covers the rocket meeting the space station (a bad
 approach passed straight through it: user, 2026-11-17, the station and
 "Get the docking!"): the station's solids and the hull's balls (the
 kernel's distances checked against the reference); drifting into the
-hub's side, the ring (its rim running at 94 m/s) and a thin antenna the
-rocket bounces off, never deep in, never through; the bump said; far
-off, the flight is as it was to the bit.
+drum's side, the ring (its rim running at 94 m/s), a thin antenna and,
+its head in the drum's hole, the hole's wall the rocket bounces off,
+never deep in, never through; centred in the hole it meets nothing;
+the bump said; far off, the flight is as it was to the bit.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -14,7 +15,8 @@ from __future__ import annotations
 import math
 
 from worQt.gaming.space._station import SPIN, Station
-from worQt.gaming.space._stationsolids import CAPSULE, CYLINDER, TORUS
+from worQt.gaming.space._stationinterior import PLANE
+from worQt.gaming.space._stationsolids import CAPSULE, HOLLOW, TORUS
 from worQt.gaming.space._stationsolids import hullBalls, hullReach
 from worQt.gaming.space._stationsolids import solidDistance
 from worQt.gaming.space._stationsolids import stationSolids, sweptDistance
@@ -95,17 +97,17 @@ class TestCollision(SpaceTest):
     return deepest, bump, (out, moving[2])
 
   def test_shapes(self) -> None:
-    """The station: the ring a torus round its axis, the hub and its
-    two ports cylinders on it, the rest capsules and balls; the hull's balls
+    """The station: the ring a torus round its axis, the drum a hollow
+    cylinder on it, the rest capsules and balls; the hull's balls
     within the rocket's radius, each two along it overlapping (their
-    waist most of the smaller one: a thin antenna finds no gap),
+    waist some half the smaller one at the nose's blunt cone, where
+    they shrink fast, more elsewhere: a thin antenna finds no gap),
     reaching near its nose's tip, not past it; a solid's
     swept distance never more than its distance."""
     solids = stationSolids()
     self.assertLessEqual(len(solids), 32)
-    self.assertEqual([s[0] for s in solids[:4]], [TORUS, CYLINDER,
-                                                  CYLINDER, CYLINDER])
-    self.assertTrue(all(s[0] == CAPSULE for s in solids[4:]))
+    self.assertEqual([s[0] for s in solids[:2]], [TORUS, HOLLOW])
+    self.assertTrue(all(s[0] == CAPSULE for s in solids[2:]))
     balls = hullBalls()
     self.assertTrue(all(r <= RADIUS + 1e-9 for _, _, _, r in balls))
     self.assertAlmostEqual(hullReach(), 36.0, 0)
@@ -114,8 +116,8 @@ class TestCollision(SpaceTest):
       gap = z1 - z0
       along = (gap * gap + r0 * r0 - r1 * r1) / (2.0 * gap)
       waist = math.sqrt(r0 * r0 - along * along)
-      self.assertGreater(waist, 0.7 * min(r0, r1), (z0, z1))
-    self.assertLess(axial[-1][0] + axial[-1][1], 36.0)
+      self.assertGreater(waist, 0.4 * min(r0, r1), (z0, z1))
+    self.assertLessEqual(axial[-1][0] + axial[-1][1], 36.0 + 1e-9)
     self.assertGreater(axial[-1][0] + axial[-1][1], 35.0)
     for solid in solids:
       for point in ((900.0, 30.0, 20.0), (50.0, -40.0, 70.0),
@@ -123,20 +125,42 @@ class TestCollision(SpaceTest):
         self.assertLessEqual(sweptDistance(solid, point),
                              solidDistance(solid, point) + 1e-9)
 
-  def test_hub(self) -> None:
-    """Drifting into the hub's side at 1 m/s (above the spokes' plane)
-    it bounces off, never 'DEEPEST' in; the bump said."""
+  def test_drum(self) -> None:
+    """Nose first down onto the drum's face beside its hole at 1 m/s (its
+    sides are hidden between the spokes: the rocket is wider than their
+    gaps there) it bounces off, never 'DEEPEST' in; the bump said."""
+    from worQt.gaming.space._dockingport import NOSE_PORT
+    from worQt.gaming.space._stationmeshes import DRUM_HALF
     solid = stationSolids()[1]
+    axes = ((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0))
     system, station, vessel = self._drifting(
-      (60.0, 0.0, 40.0), ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
-                          (0.0, 0.0, 1.0)), (-1.0, 0.0, 0.0))
+      (8.5, 0.0, DRUM_HALF + 2.0 + NOSE_PORT[2]), axes, (0.0, 0.0, -1.0))
     deepest, bump, moving = self._flown(station, system, vessel, solid,
-                                        30.0)
+                                        12.0)
     self.assertGreater(deepest, 0.0)
     self.assertLess(deepest, DEEPEST)
-    self.assertGreater(moving[0], 0.2)
+    self.assertGreater(moving[1], 0.2)
     self.assertGreater(bump, 0.5)
     self.assertLess(bump, 1.5)
+
+  def test_socket(self) -> None:
+    """Its head in the drum's hole, nose first down the axis as it docks
+    (user, 2026-11-19: "the head our rocket insert itself here"):
+    centred it meets nothing; drifting across at 0.3 m/s it meets the
+    hole's wall and bounces off it, never 'DEEPEST' in; the bump
+    said."""
+    solid = stationSolids()[1]
+    axes = ((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0))
+    for drift in (0.0, 0.3):
+      system, station, vessel = self._drifting(
+        (0.0, 0.0, PLANE), axes, (drift, 0.0, 0.0))
+      deepest, bump, _ = self._flown(station, system, vessel, solid, 8.0)
+      if drift == 0.0:
+        self.assertEqual((deepest, bump), (0.0, 0.0))
+      else:
+        self.assertGreater(deepest, 0.0)
+        self.assertLess(deepest, DEEPEST)
+        self.assertGreater(bump, 0.1)
 
   def test_ring(self) -> None:
     """Dropping onto the ring's tube from above at 2 m/s (its rim

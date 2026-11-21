@@ -23,18 +23,17 @@ from worQt.gaming.sandbox import FourthPeep, Knob, Pushbutton, Slider
 
 from ._ascentguidance import TARGET, TARGETS
 from ._control import Control
+from ._levels import CEILING, FLOOR, WALL, hullRadius
 from ._turns import aboutAxis
-from ._vessel import CAPSULE, CENTRE, RADIUS, SIZE
+from ._vessel import RADIUS
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
   from ._crewman import Crewman
 
 #  The capsule from inside, the vessel's own axes (z its nose, Asger
-#  facing x: east on the pad): its floor (the tank's top), its cone's
-#  radius at the floor and at the nose's foot, its wall's thickness, m.
-FLOOR = CAPSULE[0] - CENTRE
-NOSE = CAPSULE[1] - 0.4 * SIZE - CENTRE
-WALL = 0.05
+#  facing x: east on the pad): the cabin is its level 0 ('_levels'): its
+#  floor (the tank's top), its ceiling (where its cone has narrowed to
+#  the head's radius), its wall's thickness, m.
 #  Asger's place in the capsule (user, 2026-11-16: "Asger sits in what is
 #  more like an office chair. To his left is a window. The chair is like
 #  1/8 the diameter of the rocket from the hull"): the middle of his rig
@@ -269,6 +268,8 @@ KEYS = (('REAL WARP', '/', 'stop', (-0.585, 0.03), (0.03, 0.018)),
         ('ORBIT', 'J', 'ap orbit', (-0.462, 0.025), AUTO_HALF),
         ('RNDZ', 'H', 'ap rendezvous', (-0.358, 0.025), AUTO_HALF),
         ('DOCK', 'N', 'ap dock', (-0.254, 0.025), AUTO_HALF),
+        ('AUTO WARP', 'Home', 'autowarp', (-0.254, -0.055),
+         (0.042, 0.018)),
         ('ENGAGE', 'C', 'engage', (-0.3, -0.135), (0.075, 0.03)),
         ('HOLD', 'T', 'hold', (0.238, 0.095), MODE_HALF),
         ('PRO', 'F', 'prograde', (0.238, 0.04), MODE_HALF),
@@ -288,9 +289,10 @@ KEYS = (('REAL WARP', '/', 'stop', (-0.585, 0.03), (0.03, 0.018)),
         ('UNDOCK', 'Del', 'undock', (0.679, -0.222), ROW_HALF))
 #  The keys lit while what they work is on (amber letters on smoked
 #  glass), and what each key's cap reads where it is not its name.
-LIT_KEYS = ('ORBIT', 'RNDZ', 'DOCK', 'ENGAGE', 'WARP TO ACTION', 'HOLD',
-            'PRO', 'RETRO', 'AIM', 'MATCH')
-CAPS = {'REAL WARP': 'REAL\nWARP', 'WARP TO ACTION': 'WARP TO\nACTION'}
+LIT_KEYS = ('ORBIT', 'RNDZ', 'DOCK', 'ENGAGE', 'WARP TO ACTION',
+            'AUTO WARP', 'HOLD', 'PRO', 'RETRO', 'AIM', 'MATCH')
+CAPS = {'REAL WARP': 'REAL\nWARP', 'WARP TO ACTION': 'WARP TO\nACTION',
+        'AUTO WARP': 'AUTO\nWARP'}
 KEY_TRAVEL = 0.006
 KNOBS = (('WARP', '. ,', 'warp', (-0.665, -0.03), 8, math.radians(105),
           -math.radians(30)),
@@ -389,16 +391,8 @@ TAPE_MODEL = 'Stereo Reel to Reel Tape Deck.glb'
 TAPE_SCALE = 0.6
 TAPE_ORIGIN = (SIDEBOARD[0][0] - 0.05, SIDEBOARD[0][1], TOP + 0.014)
 TAPE_AXES = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
-#  A ray from his eyes looks this far at most, m. The Grav-Gun reaches
-#  a magic bolt this far, m (the bolt floating in the space station's
-#  hub's middle, straight up the axis through the hatch from the cabin's
-#  floor, 90 m: user, 2026-11-18, "so you can pull yourself in"),
-#  pointed at within 'AIM' rad (or its ring seen from there, 'BOLT_SEEN'
-#  m round).
+#  A ray from his eyes looks this far at most, m.
 REACH = 1.6
-GUN_REACH = 92.0
-AIM = math.radians(3.0)
-BOLT_SEEN = 0.15
 UP = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
 #  A console's top, its axes as he reads it: right (his right, -y), up
 #  along it (away from him, +x), out (+z).
@@ -406,16 +400,15 @@ CONSOLE_AXES = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
 
 
 def capsuleRadius(z: float) -> float:
-  """Returns the capsule cone's outer radius at height 'z' (the vessel's
-  own axes), m."""
-  share = min(1.0, max(0.0, (z - FLOOR) / (NOSE - FLOOR)))
-  return RADIUS + share * (0.45 * SIZE - RADIUS)
+  """Returns the capsule's outer radius at height 'z' (the vessel's own
+  axes: '_levels.hullRadius'), m."""
+  return hullRadius(z)
 
 
 def inCabin(point: tuple) -> bool:
-  """Returns whether 'point' is inside the cabin's walls."""
+  """Returns whether 'point' is inside the cabin's walls (level 0)."""
   x, y, z = point
-  return FLOOR < z < NOSE and math.hypot(x, y) < capsuleRadius(z) - WALL
+  return FLOOR < z < CEILING and math.hypot(x, y) < capsuleRadius(z) - WALL
 
 
 def _negative(axis: tuple) -> tuple:
@@ -477,6 +470,7 @@ PROMPTS = {'stop': 'Real time: stop the warp',
            'ap dock': 'Autopilot mode: dock with Terra Prime',
            'engage': 'Engage the autopilot (or let go)',
            'action': 'Warp to the autopilot\'s next burn',
+           'autowarp': 'Auto warp: to each of the autopilot\'s burns',
            'launch': 'LAUNCH', 'full': 'Full thrust',
            'cut': 'Cut the engine',
            'rcs up': 'Thrust up', 'rcs down': 'Thrust down',
@@ -645,9 +639,9 @@ class Cockpit:
     'down' pixels (a glance given up)."""
     self.glancing = None
     self.yaw -= TURN * right
-    most = YAW_MOST if self.crewman.buckled else NECK_YAW
+    most = YAW_MOST if self.crewman.sitting else NECK_YAW
     self.yaw = max(-most, min(most, self.yaw))
-    most = PITCH_MOST if self.crewman.buckled else UP_PITCH_MOST
+    most = PITCH_MOST if self.crewman.sitting else UP_PITCH_MOST
     self.pitch = max(-most, min(most, self.pitch - TURN * down))
 
   def gotUp(self, ) -> None:
@@ -667,56 +661,6 @@ class Cockpit:
     self.pitch = max(-PITCH_MOST, min(PITCH_MOST, math.asin(max(
       -1.0, min(1.0, look[2])))))
     return True
-
-  def boltAimed(self, bolts: tuple, seen: object = None) -> int | None:
-    """The 'boltAimed' method returns the magic bolt (its index in
-    'bolts': each its place and the way it faces) the gravity gun points
-    at out of his chair: within 'GUN_REACH' of his eyes, facing him, in
-    sight (user, 2026-11-17: "the gravgun should not be able to grab
-    bolts through walls": 'seen' says whether nothing is in the way from
-    his eyes to a place, '_sight.inSight'; None: no walls), nearest to
-    his eyes' middle within 'AIM' or its ring; None if none (or he
-    sits)."""
-    if self.crewman.sitting:
-      return None
-    eye, look = self.eye(), self.looking()[0]
-    best, least = None, math.inf
-    for k, (place, way) in enumerate(bolts):
-      off = tuple(p - e for p, e in zip(place, eye))
-      far = math.sqrt(sum(x * x for x in off))
-      if far > GUN_REACH or far < 1e-6 or sum(
-          w * o for w, o in zip(way, off)) >= 0.0:
-        continue
-      along = sum(o * l for o, l in zip(off, look)) / far
-      angle = math.acos(max(-1.0, min(1.0, along)))
-      if angle <= max(AIM, math.atan(BOLT_SEEN / far)) and angle < least:
-        if seen is None or seen(eye, place):
-          best, least = k, angle
-    return best
-
-  def looseAimed(self, things: tuple, seen: object = None) -> int | None:
-    """The 'looseAimed' method returns the loose thing (its index in
-    'things': each its middle and its half sizes) the Grav-Gun points at
-    out of his chair: the nearest whose round (its half sizes' length,
-    or as wide as 'AIM' is there, as a bolt's: a mug 8 m off is half a
-    degree across) his eyes' middle passes through, within 'GUN_REACH',
-    in sight ('seen', as 'boltAimed'); None if none (or he sits)."""
-    if self.crewman.sitting:
-      return None
-    eye, look = self.eye(), self.looking()[0]
-    best, nearest = None, math.inf
-    for k, (middle, half) in enumerate(things):
-      off = tuple(m - e for m, e in zip(middle, eye))
-      along = sum(o * l for o, l in zip(off, look))
-      if along <= 0.0 or along > GUN_REACH:
-        continue
-      round_ = max(math.sqrt(sum(h * h for h in half)),
-                   along * math.tan(AIM))
-      aside = math.sqrt(max(0.0, sum(o * o for o in off) - along * along))
-      if aside <= round_ and along < nearest:
-        if seen is None or seen(eye, middle):
-          best, nearest = k, along
-    return best
 
   def strappedIn(self, ) -> None:
     """The 'strappedIn' method puts him in his chair wherever he is (he

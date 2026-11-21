@@ -17,7 +17,6 @@ import math
 
 from worQt.gaming.space._accelerometer import Accelerometer
 from worQt.gaming.space._aerospike import G0
-from worQt.gaming.space._bolts import FLOOR_BOLTS
 from worQt.gaming.space._cockpit import FLOOR, SEAT_AT
 from worQt.gaming.space._egg import BALL, EGG_HALF, PEDESTAL, Egg
 from worQt.gaming.space._egg import eggMiddle, eggRows, marbleRows
@@ -105,13 +104,11 @@ class TestEgg(SpaceTest):
 
   def test_pedestal(self) -> None:
     """The pedestal stands in the room's middle, clear of the hatch's way
-    up (a metre and more off its axis), of the floor's bolts, of his
-    chair, and of every other solid; the egg sits on it at about chest
+    up (a metre and more off its axis: the ladder's there), of his chair,
+    and of every other solid; the egg sits on it at about chest
     height."""
     self.assertGreater(math.hypot(*PEDESTAL), 1.0)
     self.assertLess(math.hypot(*PEDESTAL), 2.0)
-    for bolt in FLOOR_BOLTS:
-      self.assertGreater(math.dist(PEDESTAL, bolt), 1.0, bolt)
     self.assertGreater(math.dist(PEDESTAL, SEAT_AT), 2.0)
     own = pedestalSolids()
     for middle, half, _ in obstacles():

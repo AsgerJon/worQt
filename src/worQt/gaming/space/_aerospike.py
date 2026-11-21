@@ -24,8 +24,11 @@ class Aerospike:
   'limited'); what it pushes ('push', N: the throttle's share of its
   thrust, no more than 'most') and the fuel it burns doing so ('flow',
   kg/s); whether it is 'lit' (user, 2026-11-17: "only after the launch
-  button will the rocket actually move": on the pad it stays dark,
-  however far it is opened, until the LAUNCH key lights it).
+  button will the rocket actually move"; 2026-11-19: "The launch switch
+  allows the throttle. It doesn't just hold down the rocket, whilst the
+  autopilot keeps burning the rocket": on the pad it stays dark and its
+  throttle shut, whoever opens it, the autopilot too, until the LAUNCH
+  key lights it).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -75,7 +78,10 @@ class Aerospike:
 
   def throttled(self, throttle: float) -> None:
     """The 'throttled' method opens the engine to 'throttle', kept
-    within nought and one."""
+    within nought and one; unlit, it stays shut."""
+    if not self.lit:
+      self.throttle = 0.0
+      return
     self.throttle = min(1.0, max(0.0, float(throttle)))
 
   def limited(self, most: float) -> None:

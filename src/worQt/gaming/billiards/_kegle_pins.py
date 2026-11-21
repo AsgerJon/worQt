@@ -36,7 +36,12 @@ class PinContacts(NamedTuple):
   ball does. Steps: 'fine' through a knock, 'coarse' while the pins
   only rock, slide or fall on the cloth. A pin 'settles', asleep again,
   once slower than 'still' mm/s and 'still' over its length in rad/s
-  for 'settle' s, upright or lying, never caught leaning.
+  for 'settle' s, upright, lying, or leaning on a cushion, a ball or a
+  pin, never caught leaning free (falling, or balanced on its foot's
+  edge a moment); asleep, it wakes only for something coming into it
+  faster than 'still', holding as the cloth does against anything
+  slower (else two pins leaning on each other woke each other in turn,
+  never both asleep, and the shot ran to its end).
   """
 
   cloth: float = 1.25e8
@@ -63,14 +68,16 @@ class Pin:
   is turned, 'q', a unit quaternion, scalar first, from the pin's own
   axes, its foot's middle at nought and its axis up z, to the table's;
   its spin 'w' about the table's axes; whether it is 'awake', moving,
-  and whether it is 'off' the table, flown past the rails, lying on the
-  floor out of play; the ball it is credited to, 'credit', the one that
+  and whether it is 'off' the table, flown over a cushion and
+  evaporated where it crossed (the user: as in Portal's grid), out of
+  play; the ball it is credited to, 'credit', the one that
   first set it going (8.1), and the ball that pushed it last, 'mover';
-  how long it has been still, 'quiet'.
+  how long it has been still, 'quiet'; whether it leans on a cushion, a
+  ball or a pin this step, 'held'.
   """
 
   __slots__ = ('number', 'p', 'v', 'q', 'w', 'awake', 'off', 'credit',
-               'mover', 'quiet')
+               'mover', 'quiet', 'held')
 
   def __init__(self, number: int, x: float, y: float,
                centre: float) -> None:
@@ -84,6 +91,7 @@ class Pin:
     self.credit = ''
     self.mover = ''
     self.quiet = 0.0
+    self.held = False
 
 
 class PinField:
@@ -96,18 +104,21 @@ class PinField:
   surface, and it them back, and pins push each other, with friction;
   the cushions and rails are blocks the table's 'top' high, reaching
   its 'cushion' and 'rail' out past the noses: a pin meets their faces
-  and tops, and may fly over them, off the table, to lie on the floor,
-  out of play, knocked over. 'KegleMotion' moves the
-  pins with the balls, compiled ('_kegle_kernels'); 'step' is the plain
-  Python it is checked against, moving the pins on and pushing the balls
-  given, rows as 'Motion' keeps them, the balls themselves moved
-  elsewhere ('playedSlowly'). Only the pins awake are moved; a pin
-  wakes when something meets it and sleeps once it has lain still a
-  while. Each pin is credited to the ball that first set it going,
-  directly or through the pins between, red when red and a white do so
-  at once (8.1). 'stands' and 'fallen' say how they stand, as the
-  rules count it ('KegleTable.pinStands'); 'rows' and 'setRows' hold
-  them as a sample does.
+  and tops, and may fly over them: its middle over a cushion, past the
+  noses' line, it is off the table, evaporated where it crossed (the
+  user: as in Portal's grid), out of play, knocked over. 'KegleMotion'
+  moves the pins with the balls, compiled ('_kegle_kernels'); 'step' is
+  the plain Python it is checked against, moving the pins on and pushing
+  the balls given, rows as 'Motion' keeps them, the balls themselves
+  moved elsewhere ('playedSlowly'). Only the pins awake are moved; a pin
+  wakes when something comes into it faster than 'still' (slower, it
+  holds as the cloth does) and sleeps once it has lain still a while,
+  upright, lying, or leaning on something holding it. Each pin is
+  credited to the ball that first set it going, directly or through the
+  pins between, red when red and a white do so at once (8.1). 'stands'
+  and 'fallen' say how they stand, as the rules count it
+  ('KegleTable.pinStands'); 'rows' and 'setRows' hold them as a sample
+  does.
   """
 
   __slots__ = ('table', 'shape', 'contacts', 'pins', 'spheres', 'foot',
@@ -158,6 +169,8 @@ class PinField:
     """The 'step' method moves the pins on 'dt' s, pushed by the cloth,
     the 'balls' (rows as 'Motion' keeps them, pushed back in turn), each
     other and the cushions; the balls are not moved."""
+    for pin in self.pins:
+      pin.held = False
     for pin in self.pins:
       if not pin.off:
         self._ballsMeet(pin, balls, dt)
@@ -418,6 +431,7 @@ class PinField:
           depth, nz = size + carom.top - place[2], 1.0
         if depth <= 0.0:
           continue
+        pin.held = True
         way = [0.0, 0.0, nz]
         way[axis] = -sign * nu
         reach = [arm[k] - size * way[k] for k in range(3)]
@@ -428,7 +442,9 @@ class PinField:
 
   def _ballsMeet(self, pin: Pin, balls: list, dt: float) -> None:
     """Pushes 'pin' and the 'balls' it meets apart, with friction, the
-    pin woken and credited to the first ball to set it going."""
+    pin woken and credited to the first ball to set it going; asleep and
+    met no faster than 'still', it holds as the cloth does, the ball
+    alone pushed."""
     radius = self.table.table.radius
     contacts = self.contacts
     met = []
@@ -444,6 +460,7 @@ class PinField:
         depth = radius + size - gap
         if depth <= 0.0 or gap <= 0.0:
           continue
+        pin.held = True
         way = tuple((place[k] - centre[k]) / gap for k in range(3))
         reach = tuple(arm[k] - size * way[k] for k in range(3))
         ballArm = tuple(radius * way[k] for k in range(3))
@@ -458,11 +475,12 @@ class PinField:
         push = max(stiff * depth + damp * closing, 0.0) * dt
         if push <= 0.0:
           continue
-        if not pin.awake:
+        moved = pin.awake or closing > contacts.still
+        if moved:
           pin.awake = True
-        met.append(row[0])
-        self._push(pin, reach, tuple(push * value for value in way),
-                   inverse)
+          met.append(row[0])
+          self._push(pin, reach, tuple(push * value for value in way),
+                     inverse)
         _ballPushed(row, ballArm, tuple(-push * value for value in way),
                     radius)
         pinSpeed = self._pointSpeed(pin, reach)
@@ -472,12 +490,15 @@ class PinField:
         size = math.sqrt(_dot(slip, slip))
         if size > 0.0:
           unit = tuple(value / size for value in slip)
-          give = self._give(pin, reach, unit, inverse) + 3.5 / _BALL_MASS
-          held = min(contacts.ballFriction * push, size / give)
-          self._push(pin, reach, tuple(held * value for value in unit),
-                     inverse)
-          _ballPushed(row, ballArm, tuple(-held * value for value in unit),
-                      radius)
+          give = 3.5 / _BALL_MASS
+          if moved:
+            give += self._give(pin, reach, unit, inverse)
+          gripped = min(contacts.ballFriction * push, size / give)
+          if moved:
+            self._push(pin, reach, tuple(gripped * value for value in unit),
+                       inverse)
+          _ballPushed(row, ballArm, tuple(-gripped * value
+                                          for value in unit), radius)
     if met:
       mover = 'red' if 'red' in met else met[0]
       pin.mover = mover
@@ -485,8 +506,10 @@ class PinField:
         pin.credit = mover
 
   def _pinsMeet(self, pin: Pin, other: Pin, dt: float) -> None:
-    """Pushes the pins 'pin' and 'other' apart where they meet, with
-    friction; the other woken, credited to the one moving it."""
+    """Pushes the pins 'pin' and 'other' apart where they meet; the
+    other woken, credited to the one moving it; but asleep and met no
+    faster than 'still', it holds as the cloth does, 'pin' alone
+    pushed. Both are 'held'."""
     otherFoot, otherTop = self._axis(other)
     if _segments(*self._axis(pin), otherFoot, otherTop) > \
         2.0 * self.widest:
@@ -507,6 +530,7 @@ class PinField:
         depth = size + otherSize - gap
         if depth <= 0.0 or gap <= 0.0:
           continue
+        pin.held = other.held = True
         way = tuple((there[k] - place[k]) / gap for k in range(3))
         reach = tuple(arm[k] + size * way[k] for k in range(3))
         otherReach = tuple(otherArm[k] - otherSize * way[k]
@@ -516,6 +540,10 @@ class PinField:
         closing = _dot(tuple(mine[k] - theirs[k] for k in range(3)), way)
         push = max(stiff * depth + damp * closing, 0.0) * dt
         if push <= 0.0:
+          continue
+        if not other.awake and closing <= contacts.still:
+          self._push(pin, reach, tuple(-push * value for value in way),
+                     inverse)
           continue
         if not other.awake:
           other.awake = True
@@ -535,31 +563,28 @@ class PinField:
     pin.q = _turned(pin.q, pin.w, dt)
 
   def _offTable(self, pin: Pin) -> bool:
-    """Tells whether 'pin' has flown past the rails, off the table, and
-    if so lays it on the floor below, out of play."""
+    """Tells whether 'pin' has flown over a cushion, its middle past
+    the noses' line, off the table, and if so evaporates it there (the
+    user: as in Portal's grid), stopped where it crossed, out of
+    play."""
     carom = self.table.table
-    out = carom.cushion + carom.rail
     x, y = pin.p[0], pin.p[1]
-    if -out <= x <= carom.width + out and -out <= y <= carom.length + out:
+    if 0.0 <= x <= carom.width and 0.0 <= y <= carom.length:
       return False
-    axis = _rotated(pin.q, (0.0, 0.0, 1.0))
-    flat = math.hypot(axis[0], axis[1])
-    if flat < 1e-6:
-      axis, flat = (1.0, 0.0, 0.0), 1.0
-    half = math.sqrt(0.5)
-    pin.q = [half, -half * axis[1] / flat, half * axis[0] / flat, 0.0]
-    pin.p = [x, y, self.widest - carom.bed]
     pin.v, pin.w = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
     pin.awake, pin.off, pin.quiet = False, True, 0.0
     return True
 
   def _settled(self, pin: Pin, dt: float) -> None:
-    """Puts 'pin' to sleep once it has lain still 'settle' s."""
+    """Puts 'pin' to sleep once it has lain still 'settle' s: upright,
+    lying, or leaning on a cushion, a ball or a pin; leaning free it is
+    falling, or balanced on its foot's edge a moment, never asleep."""
     contacts = self.contacts
     speed = math.sqrt(_dot(pin.v, pin.v))
     spin = math.sqrt(_dot(pin.w, pin.w)) * self.shape.height()
     tilt = self.tilt(pin)
-    resting = tilt < math.radians(2.0) or tilt > math.radians(80.0)
+    resting = (tilt < math.radians(2.0) or tilt > math.radians(80.0)
+               or pin.held)
     if resting and speed < contacts.still and spin < contacts.still:
       pin.quiet += dt
     else:
@@ -600,13 +625,18 @@ def _rulesOf(field: PinField) -> object:
   wallStiff, wallDamp = _spring(shape.mass, contacts.ballTime,
                                 contacts.ballLively)
   cloth = Cloth()
+  #  The least the felt slows a pin moving on it, mm/s²: rolling like a
+  #  log on its widest, against the felt's push 'rolling' ahead.
+  slowest = GRAVITY * contacts.rolling * field.widest * shape.mass / (
+    shape.mass * field.widest * field.widest + along)
   values = {
     'mass': shape.mass, 'centre': field.centre, 'height': shape.height(),
     'widest': field.widest, 'reach': field.reach, 'invAlong': 1.0 / along,
     'invAcross': 1.0 / across, 'foot': shape.foot(), 'gravity': GRAVITY,
     'cloth': contacts.cloth, 'clothDamping': contacts.clothDamping,
     'clothFriction': contacts.clothFriction, 'rolling': contacts.rolling,
-    'ballStiff': ballStiff, 'ballDamp': ballDamp,
+    'slowest': max(slowest, 1e-9), 'ballStiff': ballStiff,
+    'ballDamp': ballDamp,
     'ballFriction': contacts.ballFriction, 'pinStiff': pinStiff,
     'pinDamp': pinDamp, 'pinFriction': contacts.pinFriction,
     'wallStiff': wallStiff, 'wallDamp': wallDamp, 'fine': contacts.fine,
@@ -617,7 +647,7 @@ def _rulesOf(field: PinField) -> object:
     'spinDecay': cloth.spinDecay(carom.radius), 'spinTail': cloth.spinTail,
     'spinStop': cloth.spinStop, 'width': carom.width,
     'length': carom.length, 'top': carom.top,
-    'out': carom.cushion + carom.rail, 'bed': carom.bed}
+    'out': carom.cushion + carom.rail}
   for name, value in values.items():
     setattr(rules, name, float(value))
   return rules

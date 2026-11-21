@@ -1,9 +1,12 @@
 """
 The cabin's meshes, in the vessel's own axes ('_cockpit' has where
-everything is): the capsule's skin and its inner wall with the windows
-cut through both (from outside you see Asger through the glass), the
-glass, the floor and the ceiling, the seat, the consoles' rosewood and
-their aluminium tops. The dashboard on them is '_dashboard''s. Qt-free.
+everything is; '_levels' the capsule's three levels): the capsule's
+skin (its cone, its head and its nose) and its inner wall up its three
+levels with the windows, the door and the top floor's four doors cut
+through both (from outside you see Asger through the glass), the glass,
+the floors and the ceilings (a hatch through each slab), the seat, the
+consoles' rosewood and their aluminium tops. The dashboard on them is
+'_dashboard''s. Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -13,18 +16,18 @@ import math
 
 import numpy
 
-from ._cockpit import BACKREST, CUSHION, FLOOR, LEFT_CONSOLE, NOSE
+from ._cockpit import BACKREST, CUSHION, FLOOR, LEFT_CONSOLE
 from ._cockpit import RIGHT_CONSOLE, WALL, WINDOWS, capsuleRadius
 from ._cabinpictures import BOARD_TILE, PINE_TILE
-from ._stationinterior import HATCH, HATCH_HIGH
+from ._levels import HATCH, LEVELS, ROOF, TIP, TIP_RADIUS, TOP_DOORS
+from ._levels import hullSlope
 from ._walkway import DOOR
-from ._vessel import SIZE
 
-#  The cone's round in steps of this many degrees (the windows' and the
-#  door's edges fall on them), its heights at least every 'STOREY' m and
-#  at every window's and the door's edge. The openings cut through the
-#  walls: the windows and the door ('_walkway.DOOR', round 180 deg: its
-#  span past 180).
+#  The hull's round in steps of this many degrees (the windows' and the
+#  doors' edges fall on them), its heights at least every 'STOREY' m and
+#  at every window's and door's edge. The openings cut through the
+#  walls: the windows, the door ('_walkway.DOOR', round 180 deg: its
+#  span past 180) and the top floor's four ('_levels.TOP_DOORS').
 STEP = 2.0
 STOREY = 0.2
 #  The pilot's seat: its bolsters' half sizes (along, across, up), its
@@ -32,28 +35,36 @@ STOREY = 0.2
 BOLSTER = (0.25, 0.04, 0.07)
 HEADREST = (0.04, 0.12, 0.1)
 PEDESTAL = (0.12, 0.16)
-OPENINGS = WINDOWS + (DOOR,)
+OPENINGS = WINDOWS + (DOOR,) + TOP_DOORS
 
 
 def capsuleShell(inner: bool) -> tuple:
-  """Returns the capsule's skin (its nose, and the openings' jambs
-  through the wall) or, 'inner', its inner wall (and the ceiling), the
-  windows and the door cut through both: rows (place, normal) and
-  triangles."""
-  heights = sorted({FLOOR, NOSE} | {z for _, span in OPENINGS
-                                    for z in span}
-                   | set(numpy.arange(FLOOR, NOSE, STOREY).round(6)))
-  angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, STEP)
+  """Returns the capsule's skin (its cone and head, the openings' jambs
+  through the wall, its nose) or, 'inner', its inner wall up each level
+  (and the ceilings, the hatches through the slabs), the openings cut
+  through both: rows (place, normal) and triangles."""
+  spans = LEVELS if inner else ((FLOOR, ROOF),)
+  edges = {z for _, span in OPENINGS for z in span}
   rows, faces = [], []
-  for k in range(len(heights) - 1):
-    z0, z1 = heights[k], heights[k + 1]
-    for j in range(len(angles) - 1):
-      a0, a1 = angles[j], angles[j + 1]
-      if not _inWindow(0.5 * (a0 + a1), 0.5 * (z0 + z1)):
-        _cellOf(rows, faces, a0, a1, z0, z1, inner)
+  angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, STEP)
+  for low, high in spans:
+    heights = sorted({low, high} | {z for z in edges if low < z < high}
+                     | {z for z in (LEVELS[0][1], ROOF) if low < z < high}
+                     | set(numpy.arange(low, high, STOREY).round(6)))
+    for k in range(len(heights) - 1):
+      z0, z1 = heights[k], heights[k + 1]
+      for j in range(len(angles) - 1):
+        a0, a1 = angles[j], angles[j + 1]
+        if not _inWindow(0.5 * (a0 + a1), 0.5 * (z0 + z1)):
+          _cellOf(rows, faces, a0, a1, z0, z1, inner)
   if inner:
-    _annulusOf(rows, faces, NOSE, HATCH, capsuleRadius(NOSE) - WALL)
-    _tunnelOf(rows, faces, NOSE, HATCH_HIGH - 0.5, HATCH)
+    for k, (low, high) in enumerate(LEVELS):
+      wall = capsuleRadius(high) - WALL
+      if k < len(LEVELS) - 1:
+        _annulusOf(rows, faces, high, HATCH, wall)
+        _tunnelOf(rows, faces, high, LEVELS[k + 1][0], HATCH)
+      else:
+        _discOf(rows, faces, high, wall, -1.0)
     return numpy.array(rows), numpy.array(faces, numpy.uint32)
   for (a0, a1), (z0, z1) in OPENINGS:
     middle = (0.5 * (a0 + a1), 0.5 * (z0 + z1))
@@ -63,8 +74,7 @@ def capsuleShell(inner: bool) -> tuple:
       _jambOf(rows, faces, (b1, z1), (b0, z1), middle)
     for one, two in (((a1, z0), (a1, z1)), ((a0, z1), (a0, z0))):
       _jambOf(rows, faces, one, two, middle)
-  _coneOf(rows, faces, NOSE, capsuleRadius(NOSE), NOSE + 0.4 * SIZE,
-          0.05 * SIZE, True)
+  _coneOf(rows, faces, ROOF, capsuleRadius(ROOF), TIP, TIP_RADIUS, True)
   return numpy.array(rows), numpy.array(faces, numpy.uint32)
 
 
@@ -87,10 +97,14 @@ def glassRows() -> tuple:
 
 
 def floorRows() -> tuple:
-  """Returns the cabin's floor: a disc over the tank, facing up, its
-  boards laid across it ('BOARD_TILE' m a picture)."""
+  """Returns the levels' floors: level 0's a disc over the tank, the
+  others' rings round their hatches, facing up, their boards laid across
+  them ('BOARD_TILE' m a picture)."""
   rows, faces = [], []
   _discOf(rows, faces, FLOOR + 0.001, capsuleRadius(FLOOR) - WALL, 1.0)
+  for low, _ in LEVELS[1:]:
+    _annulusOf(rows, faces, low + 0.001, HATCH, capsuleRadius(low) - WALL,
+               1.0)
   out = numpy.zeros((len(rows), 8))
   out[:, :6] = numpy.array(rows)
   out[:, 6] = out[:, 0] / BOARD_TILE
@@ -209,12 +223,15 @@ def _inWindow(angle: float, z: float) -> bool:
              and z0 <= z <= z1 for (a0, a1), (z0, z1) in OPENINGS)
 
 
-def _onCone(angle: float, z: float, inner: bool) -> tuple:
-  """Returns a row of the cone at 'angle' (deg) and 'z': the skin's or
-  the inner wall's, its normal outward or inward."""
+def _onCone(angle: float, z: float, inner: bool, slope: float = None
+            ) -> tuple:
+  """Returns a row of the hull at 'angle' (deg) and 'z': the skin's or
+  the inner wall's, its normal outward or inward (leant as the hull
+  narrows there, 'slope' m a m: None, at 'z')."""
   r = capsuleRadius(z) - (WALL if inner else 0.0)
   c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
-  slope = (capsuleRadius(FLOOR) - capsuleRadius(NOSE)) / (NOSE - FLOOR)
+  if slope is None:
+    slope = hullSlope(z)
   size = math.sqrt(1.0 + slope * slope)
   sign = -1.0 if inner else 1.0
   return (r * c, r * s, z, sign * c / size, sign * s / size,
@@ -226,8 +243,9 @@ def _cellOf(rows: list, faces: list, a0: float, a1: float, z0: float,
   """Adds a cell of the cone between 'a0' and 'a1' (deg), 'z0' and
   'z1', the skin's or the inner wall's, facing out of its side."""
   first = len(rows)
+  slope = hullSlope(0.5 * (z0 + z1))
   for a, z in ((a0, z0), (a1, z0), (a1, z1), (a0, z1)):
-    rows.append(_onCone(a, z, inner))
+    rows.append(_onCone(a, z, inner, slope))
   if inner:
     faces.extend((first, first + 2, first + 1, first, first + 3,
                   first + 2))
@@ -291,24 +309,25 @@ def _discOf(rows: list, faces: list, z: float, radius: float,
 
 
 def _annulusOf(rows: list, faces: list, z: float, inner: float,
-               outer: float) -> None:
-  """Adds the ceiling at height 'z' from 'inner' (the hatch's hole
-  through the nose: user, 2026-11-17, going aboard the space station) to
-  'outer' m round, facing down."""
+               outer: float, up: float = -1.0) -> None:
+  """Adds a ceiling at height 'z' from 'inner' (the hatch's hole through
+  the slab over it) to 'outer' m round, facing down (or a floor round
+  the hatch, 'up' one)."""
   angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, 4 * STEP)
   first = len(rows)
   for a in angles:
     c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
-    rows.append((inner * c, inner * s, z, 0.0, 0.0, -1.0))
-    rows.append((outer * c, outer * s, z, 0.0, 0.0, -1.0))
+    rows.append((inner * c, inner * s, z, 0.0, 0.0, up))
+    rows.append((outer * c, outer * s, z, 0.0, 0.0, up))
   for j in range(len(angles) - 1):
     a, b = first + 2 * j, first + 2 * j + 2
-    faces.extend((a, b, b + 1, a, b + 1, a + 1))
+    faces.extend((a, b, b + 1, a, b + 1, a + 1) if up < 0.0 else (
+      a, b + 1, b, a, a + 1, b + 1))
 
 
 def _tunnelOf(rows: list, faces: list, low: float, high: float,
               radius: float) -> None:
-  """Adds the hatch's tunnel up through the nose from 'low' to 'high',
+  """Adds a hatch's tunnel up through a slab from 'low' to 'high',
   'radius' m round, facing in."""
   angles = numpy.arange(-180.0, 180.0 + 0.5 * STEP, 4 * STEP)
   first = len(rows)

@@ -76,3 +76,16 @@ def _boxMet(start: numpy.ndarray, way: numpy.ndarray, reach: float,
     high = numpy.where(still, numpy.where(inside, high, -math.inf),
                        numpy.minimum(high, far))
   return bool(numpy.any(low <= high))
+
+
+def boxGap(point: tuple, boxes: tuple) -> float:
+  """Returns how far 'point' is from the nearest of 'boxes' (as
+  'inSight' takes them), m: less than nought inside one (as deep as it
+  is in it); none, infinite."""
+  middles, halves, axes = boxes
+  if len(middles) == 0:
+    return math.inf
+  rel = numpy.asarray(point, numpy.float64)[None, :] - middles
+  local = numpy.abs(numpy.einsum('nij,ni->nj', axes, rel)) - halves
+  out = numpy.linalg.norm(numpy.maximum(local, 0.0), axis=1)
+  return float(numpy.min(out + numpy.minimum(local.max(1), 0.0)))

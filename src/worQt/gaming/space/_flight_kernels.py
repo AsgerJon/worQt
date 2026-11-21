@@ -158,6 +158,7 @@ STATION_CLEAR = _single(STATION_REACH + hullReach() + 100.0)
 SHORT_FRAME = _single(2.0)
 TORUS = wp.constant(0)
 CYLINDER = wp.constant(1)
+HOLLOW = wp.constant(3)
 GRADIENT_STEP = _single(0.01)
 #  A port that has caught a vessel's nose draws it in (user, 2026-11-18:
 #  "PHYSICS MUST BE REAL"; it snapped it into place): a spring from its
@@ -552,8 +553,11 @@ def solidDistance(kind: int, a: wp.vec3, b: wp.vec3, radius: float,
   if kind == TORUS:
     flat = wp.sqrt(x[0] * x[0] + x[1] * x[1]) - a[0]
     return wp.sqrt(flat * flat + x[2] * x[2]) - radius
-  if kind == CYLINDER:
-    across = wp.sqrt(x[0] * x[0] + x[1] * x[1]) - radius
+  if kind == CYLINDER or kind == HOLLOW:
+    flat = wp.sqrt(x[0] * x[0] + x[1] * x[1])
+    across = flat - radius
+    if kind == HOLLOW:
+      across = wp.max(across, a[0] - flat)
     along = wp.max(a[2] - x[2], x[2] - b[2])
     outA = wp.max(across, 0.0)
     outB = wp.max(along, 0.0)

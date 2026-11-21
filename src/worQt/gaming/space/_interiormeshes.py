@@ -2,14 +2,19 @@
 The space station's inside as it is drawn (user, 2026-11-17: "all aboard
 Asger's kolonihave i rummet!"), its own axes, every face into the rooms
 (seen from inside; the hull's faces outward, culled from in here): the
-hub's wall with the shafts' mouths cut, its ends (a port's mouth cut in
-each: user, 2026-11-18, "Terra Prime should have docking ports on both
-sides"), the ports' tubes and their docking rings; the cages' back
-walls through the hub; the four shafts out to the ring; the ring's tube
-over its deck, the shafts' holes and four strips of windows along it
-cut (the stars and Terra wheel past, once a minute); the deck. Rows of
-eight (place, normal, picture u v; the deck's picture in metres along
-and across it). Qt-free.
+four shafts' tunnels through the drum (each from the hole's wall, where
+a docked rocket's top floor's door opens, to the drum's outer side,
+where the spoke's open girders go on: user, 2026-11-19, "the spokes
+are not pressurized"), each shut at its root by a bulkhead on the hole's
+wall but for its door-sized opening, the sleeves over the gap from a
+docked rocket's doors to those openings; the ring's tube over its deck,
+a square hole in its ceiling over each terminal's guide tube
+('_terminal'), glazed from 3.5 m over the deck at each side over its
+top (user, 2026-11-19: "In the ring, make the window span the whole
+way": the stars, Terra and the spokes wheel past, once a minute) on a
+frame ('frameRows'); the deck. Rows of eight
+(place, normal, picture u v; the deck's picture in metres along and
+across it). Qt-free.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -20,41 +25,54 @@ import math
 
 import numpy
 
-from ._elevator import backWalls
-from ._stationinterior import DECK, HATCH, HUB_INSIDE, PORT_INSIDE
-from ._stationinterior import SHAFT_INSIDE, TUBE_INSIDE
-from ._stationmeshes import HUB, SPOKES, TUBE_MIDDLE, WINDOW_ROWS, portTip
-from ._shapes import boxRows, joined
+from ._levels import HEAD
+from ._stationinterior import DECK, DOORWAY_HALF, SHAFT_INSIDE
+from ._stationinterior import TUBE_INSIDE
+from ._stationmeshes import DRUM, SHAFT, SOCKET, SPOKES, TUBE_MIDDLE
+from ._stationmeshes import GLAZED, holeGrid, inOpening, shaftWay
+from ._terminal import GUIDE_HALF, GUIDE_WALL
+from ._shapes import joined
 
 TAU = 2.0 * math.pi
-#  How finely each is cut: round the hub and along it; round a shaft and
-#  along it; round the station (the ring and the deck) and round the
-#  tube; across the deck.
-HUB_CUTS = (192, 48)
-SHAFT_CUTS = (16, 48)
+#  How finely each is cut: round a shaft and along it; round the
+#  station (the ring and the deck) and round the tube; across the deck.
+SHAFT_CUTS = (32, 48)
 RING_CUTS = (720, 28)
 DECK_CUTS = 8
-#  The window strips round the tube: within this of each window row,
-#  rad. A shaft's mouth is cut where a cell's middle is this far inside
-#  its round (a little less than round: no gap to space at its corners),
-#  m.
-STRIP = math.radians(5.0)
-MOUTH_INSIDE = 1.2
+#  Over each terminal the ceiling's cells are made anew this much finer
+#  (round the station, round the tube), its guide tube's square hole cut
+#  ('_terminal.GUIDE_HALF' and its walls).
+PATCH_CUTS = (24, 24)
+#  The glass's frame: a rib round the tube every 'RIB_EVERY' rad round
+#  the station, a mullion along the ring at each of 'MULLIONS' (rad round
+#  the tube), each this half wide, m.
+RIB_EVERY = math.radians(1.0)
+MULLIONS = tuple(math.radians(a) for a in (90.0, 120.0, 150.0, 180.0,
+                                           210.0, 240.0, 270.0))
+FRAME_HALF = 0.25
+FRAME_IN = 0.01
+HOLE_HALF = GUIDE_HALF + 2.0 * GUIDE_WALL
 #  The deck meets the tube's wall this far round from straight out
 #  (cos: the deck's distance out over the tube's middle, by its radius).
 DECK_ANGLE = math.acos((DECK - TUBE_MIDDLE) / TUBE_INSIDE)
 DECK_HALF = TUBE_INSIDE * math.sin(DECK_ANGLE)
-#  The hub's ends inside (its z) and how far the shafts reach in the
-#  ring (to its deck).
-HUB_END = 0.5 * HUB[1] - 1.0
+#  A shaft's bulkhead lies this far out of the hole's wall (back to back
+#  with it), its cells this far past the shaft's round (hidden behind its
+#  tube: no slit at its edge), m. A sleeve's walls start a hair out of
+#  the rocket's wall (its doors' jambs end there) and reach this far
+#  past the hole's wall, m.
+BULKHEAD_OFF = 0.005
+BULKHEAD_OVER = 0.25
+SLEEVE_OFF = 0.001
+SLEEVE_OVER = 0.02
 
 
 @functools.lru_cache(maxsize=1)
 def interiorMeshes() -> dict:
   """Returns the station's inside by look: 'inside' (its walls), 'deck'
   (the ring's floor)."""
-  return {'inside': joined([hubRows(), portRows(), shaftRows(),
-                            backRows(), ringInsideRows()]),
+  return {'inside': joined([shaftRows(), bulkheadRows(), sleeveRows(),
+                            ringInsideRows()]),
           'deck': deckRows()}
 
 
@@ -99,71 +117,10 @@ def _spokeAngles() -> tuple:
   return tuple(TAU * k / count for k in range(count))
 
 
-def _offSpoke(angle: float) -> float:
-  """Returns how far 'angle' is round from the nearest spoke, rad."""
-  return min(abs((angle - a + math.pi) % TAU - math.pi)
-             for a in _spokeAngles())
-
-
-def hubRows() -> tuple:
-  """Returns the hub's wall (the shafts' mouths cut) and its two ends
-  (a port's mouth cut in each)."""
-  def wall(u: float, v: float) -> tuple:
-    c, s = math.cos(u), math.sin(u)
-    return (HUB_INSIDE * c, HUB_INSIDE * s, v), (-c, -s, 0.0)
-
-  def mouth(u: float, v: float) -> bool:
-    across = HUB_INSIDE * math.sin(_offSpoke(u))
-    return math.hypot(across, v) < SHAFT_INSIDE - MOUTH_INSIDE
-
-  parts = [gridRows(wall, (0.0, TAU), (-HUB_END, HUB_END), HUB_CUTS,
-                    mouth)]
-  for end in (1.0, -1.0):
-    low = PORT_INSIDE
-
-    def cap(u: float, v: float, end: float = end) -> tuple:
-      return (v * math.cos(u), v * math.sin(u), end * HUB_END), (
-        0.0, 0.0, -end)
-
-    parts.append(gridRows(cap, (0.0, TAU), (low, HUB_INSIDE), (96, 6)))
-  return joined(parts)
-
-
-def backRows() -> tuple:
-  """Returns the cages' back walls through the hub ('_elevator.
-  backWalls': the station turns about its own z), each a box."""
-  ways = tuple((math.cos(angle), math.sin(angle), 0.0)
-               for angle in _spokeAngles())
-  return joined([boxRows(place, half, axes) for place, half, axes in
-                 backWalls(ways, (0.0, 0.0, 1.0), (0.0, 0.0, 0.0))])
-
-
-def portRows() -> tuple:
-  """Returns each port's tube from the hub to its mouth and the docking
-  ring round the hatch at its mouth."""
-  parts = []
-  for side in (1.0, -1.0):
-    mouth = side * portTip(side)[2]
-
-    def wall(u: float, v: float, side: float = side) -> tuple:
-      c, s = math.cos(u), math.sin(u)
-      return (PORT_INSIDE * c, PORT_INSIDE * s, side * v), (-c, -s, 0.0)
-
-    def ring(u: float, v: float, side: float = side,
-             mouth: float = mouth) -> tuple:
-      return (v * math.cos(u), v * math.sin(u), side * (mouth - 0.05)), (
-        0.0, 0.0, -side)
-
-    parts += [gridRows(wall, (0.0, TAU), (HUB_END, mouth), (32, 4)),
-              gridRows(ring, (0.0, TAU), (HATCH, PORT_INSIDE), (32, 2))]
-  return joined(parts)
-
-
 def shaftRows() -> tuple:
-  """Returns the four shafts' tubes from the hub's wall to the ring's
-  tube."""
+  """Returns the four shafts' tunnels through the drum, from the hole's
+  wall to its outer side (each end where its round meets them)."""
   parts = []
-  top = TUBE_MIDDLE - TUBE_INSIDE + 2.0
   for angle in _spokeAngles():
     way = (math.cos(angle), math.sin(angle), 0.0)
     side = (-math.sin(angle), math.cos(angle), 0.0)
@@ -172,18 +129,88 @@ def shaftRows() -> tuple:
              side: tuple = side) -> tuple:
       round_ = tuple(math.cos(u) * s + math.sin(u) * z for s, z in zip(
         side, (0.0, 0.0, 1.0)))
-      place = tuple(v * w + SHAFT_INSIDE * r for w, r in zip(way, round_))
+      across = SHAFT_INSIDE * math.cos(u)
+      start = math.sqrt(SOCKET * SOCKET - across * across)
+      end = math.sqrt(DRUM * DRUM - across * across)
+      out = start + v * (end - start)
+      place = tuple(out * w + SHAFT_INSIDE * r for w, r in zip(way,
+                                                               round_))
       return place, tuple(-r for r in round_)
 
-    parts.append(gridRows(wall, (0.0, TAU), (HUB_INSIDE - 1.0, top),
-                          SHAFT_CUTS))
+    parts.append(gridRows(wall, (0.0, TAU), (0.0, 1.0), SHAFT_CUTS))
+  return joined(parts)
+
+
+def bulkheadRows() -> tuple:
+  """Returns the shafts' bulkheads: each on the drum's hole's wall
+  across its shaft's root, facing into the shaft, its door-sized
+  opening cut ('_stationmeshes.inOpening')."""
+  us, vs = holeGrid()
+  far = SOCKET + BULKHEAD_OFF
+  rows, faces = [], []
+  for u0, u1 in zip(us[:-1], us[1:]):
+    for v0, v1 in zip(vs[:-1], vs[1:]):
+      u, v = 0.5 * (u0 + u1), 0.5 * (v0 + v1)
+      across = SOCKET * math.sin(shaftWay(u))
+      if (math.hypot(across, v) > SHAFT + BULKHEAD_OVER
+              or inOpening(u, v)):
+        continue
+      first = len(rows)
+      for a, b in ((u0, v0), (u1, v0), (u1, v1), (u0, v1)):
+        c, s = math.cos(a), math.sin(a)
+        rows.append((far * c, far * s, b, c, s, 0.0, a, b))
+      faces.extend((first, first + 1, first + 2, first, first + 2,
+                    first + 3))
+  return numpy.array(rows, numpy.float64), numpy.array(faces,
+                                                       numpy.uint32)
+
+
+def sleeveRows() -> tuple:
+  """Returns the sleeves over the gap from a docked rocket's top floor's
+  doors (in its head's wall, '_levels.HEAD' round) to the shafts' mouths
+  in the drum's hole: each four walls round its door's doorway, facing
+  in (drawn docked: the station's inside)."""
+  parts = []
+  half, high = DOORWAY_HALF
+  near, far = HEAD + SLEEVE_OFF, SOCKET + SLEEVE_OVER
+  for angle in _spokeAngles():
+    way = (math.cos(angle), math.sin(angle), 0.0)
+    side = (-math.sin(angle), math.cos(angle), 0.0)
+    for across, up in ((side, (0.0, 0.0, 1.0)), ((0.0, 0.0, 1.0), side)):
+      reach = half if across is side else high
+      span = high if across is side else half
+      for sign in (1.0, -1.0):
+
+        def plate(u: float, v: float, across: tuple = across,
+                  up: tuple = up, sign: float = sign, reach: float = reach,
+                  span: float = span) -> tuple:
+          out = near + u * (far - near)
+          place = tuple(out * w + sign * reach * a + v * span * p
+                        for w, a, p in zip(way, across, up))
+          return place, tuple(-sign * a for a in across)
+
+        parts.append(gridRows(plate, (0.0, 1.0), (-1.0, 1.0), (1, 2)))
   return joined(parts)
 
 
 def ringInsideRows() -> tuple:
-  """Returns the ring's tube inside over its deck: the shafts' holes and
-  the window strips cut."""
-  strips = [r for r in WINDOW_ROWS] + [-r for r in WINDOW_ROWS]
+  """Returns the ring's tube inside over its deck: open where it is
+  glazed ('GLAZED' round it from straight out, over its top) but for its
+  frame ('frameRows'); over each terminal the ceiling's cells made anew
+  finer with its guide tube's square hole cut."""
+  vs = (DECK_ANGLE, TAU - DECK_ANGLE)
+  nu, nv = RING_CUTS
+  du, dv = TAU / nu, (vs[1] - vs[0]) / nv
+  patches = []
+  for angle in _spokeAngles():
+    reach = math.asin(HOLE_HALF / (TUBE_MIDDLE - TUBE_INSIDE))
+    i0 = math.floor((angle - reach) / du)
+    i1 = math.ceil((angle + reach) / du)
+    tilt = math.asin(HOLE_HALF / TUBE_INSIDE)
+    j0 = math.floor((math.pi - tilt - vs[0]) / dv)
+    j1 = math.ceil((math.pi + tilt - vs[0]) / dv)
+    patches.append((angle, (i0 * du, i1 * du), (vs[0] + j0 * dv,
+                                                vs[0] + j1 * dv)))
 
   def wall(u: float, v: float) -> tuple:
     c, s = math.cos(u), math.sin(u)
@@ -193,16 +220,63 @@ def ringInsideRows() -> tuple:
                                     -math.sin(v))
 
   def skip(u: float, v: float) -> bool:
-    out = TUBE_MIDDLE + TUBE_INSIDE * math.cos(v)
-    across = out * math.sin(_offSpoke(u))
-    if (math.cos(v) < 0.0 and math.hypot(across, TUBE_INSIDE * math.sin(
-        v)) < SHAFT_INSIDE - MOUTH_INSIDE):
-      return True
-    return any(abs((v - row + math.pi) % TAU - math.pi) < STRIP
-               for row in strips)
+    return _inPatch(patches, u, v) or GLAZED < v < TAU - GLAZED
 
-  return gridRows(wall, (0.0, TAU), (DECK_ANGLE, TAU - DECK_ANGLE),
-                  RING_CUTS, skip)
+  first = next(j for j in range(nv) if vs[0] + (j + 0.5) * dv > GLAZED)
+  ends = (vs[0] + first * dv, vs[1] - first * dv)
+  parts = [gridRows(wall, (0.0, TAU), vs, RING_CUTS, skip),
+           frameRows(wall, patches, ends)]
+  for angle, us, ws in patches:
+
+    def hole(u: float, v: float, angle: float = angle) -> bool:
+      out = TUBE_MIDDLE + TUBE_INSIDE * math.cos(v)
+      return (abs(out * math.sin(u - angle)) < HOLE_HALF
+              and abs(TUBE_INSIDE * math.sin(v)) < HOLE_HALF
+              and math.cos(v) < 0.0)
+
+    parts.append(gridRows(wall, us, ws, PATCH_CUTS, hole))
+  return joined(parts)
+
+
+def frameRows(wall: object, patches: list, ends: tuple) -> tuple:
+  """Returns the glass's frame on the tube's wall ('wall(u, v)': its
+  place and normal into the room) over the opening (round the tube from
+  'ends[0]' to 'ends[1]'): the ribs round the tube and the mullions along
+  the ring (each 'FRAME_HALF' half wide; the mullions 'FRAME_IN' into
+  the room, over the ribs where they cross), none in the terminals'
+  patches ('patches')."""
+  parts = []
+  radius = TUBE_MIDDLE - TUBE_INSIDE
+  half = FRAME_HALF / radius
+  ribs = int(round(TAU / RIB_EVERY))
+
+  def skip(u: float, v: float) -> bool:
+    return _inPatch(patches, u, v)
+
+  def raised(u: float, v: float) -> tuple:
+    place, normal = wall(u, v)
+    return tuple(p + FRAME_IN * n for p, n in zip(place, normal)), normal
+
+  for k in range(ribs):
+    u = TAU * k / ribs
+    parts.append(gridRows(wall, (u - half, u + half), ends, (1, 24), skip))
+  across = FRAME_HALF / TUBE_INSIDE
+  for v in MULLIONS:
+    parts.append(gridRows(raised, (0.0, TAU), (v - across, v + across),
+                          (RING_CUTS[0], 1), skip))
+  return joined(parts)
+
+
+def _inPatch(patches: list, u: float, v: float) -> bool:
+  """Returns whether the ring's cell whose middle is at 'u', 'v' lies in
+  a terminal's patch (made anew finer)."""
+  for _, us, ws in patches:
+    if not ws[0] < v < ws[1]:
+      continue
+    for turned in (u, u - TAU, u + TAU):
+      if us[0] < turned < us[1]:
+        return True
+  return False
 
 
 def deckRows() -> tuple:

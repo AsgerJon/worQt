@@ -27,28 +27,11 @@ PALETTE = {'K': (40, 40, 44, 255), 'k': (82, 82, 90, 255),
            'R': (196, 44, 32, 255), 'r': (110, 22, 16, 255),
            'P': (228, 196, 136, 255), 'p': (170, 118, 62, 255)}
 #  Each item's pixels, a row a string from the top ('.': clear): the
-#  gravity gun (dark, its orange claws, the violet glow of a magic
-#  bolt at its muzzle), the telescope (brass, its glass at the far end),
+#  telescope (brass, its glass at the far end),
 #  the commando bar (olive wrapper, a yellow band, crimped ends), the
 #  bag of pork scratchings (red, crimped on top, the rinds seen through
 #  its window, a yellow band).
 ICONS = {
-  'gravgun': ('................',
-              '................',
-              '...........O....',
-              '..........O.....',
-              '.kkkkkkkkkO..V..',
-              'kWWWWWWWWWkO.VV.',
-              'kKKKKKKKKKKkOVVV',
-              'kKKKKOOKKKKkOVV.',
-              '.kKKKKKKKKKk.V..',
-              '..kKKk.kkkkO....',
-              '..kKKk......O...',
-              '..kKKk..........',
-              '..kKKk..........',
-              '..kkkk..........',
-              '................',
-              '................'),
   'telescope': ('................',
                 '............bbb.',
                 '...........bLGGb',

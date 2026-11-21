@@ -23,6 +23,7 @@ from .. import Ball, Cue, Match, Motion, Recorder, Recording, Referee
 from .. import KegleCall, KegleGame, KegleMatch, KegleMotion
 from .. import KegleRecorder, KegleReferee
 from .. import KegleShot, KegleTable, PinField, Rules, Shot, ShotWorker
+from .._kegle_motion import flingOf
 from .. import Room, Streak, Trails, Trenches, Unfolded
 from .._carom_table import isParked
 from . import BilliardsSounds, BilliardsToolBar, ShotPanel, TableView
@@ -73,6 +74,10 @@ class BilliardsWindow(MainWindow):
   balls rest (the user: they respawn before each shot); each shot is
   called by keglebillard's referee, the series going on while it
   scores, to the distance chosen before the lag ('To 400': 200 to 800).
+  A debug, the menu 'Debug', 'Fling pins', or F8 (the user: to see a pin
+  go over a cushion at will): on, a click on a pin sends it flying over
+  the nearest cushion, where it evaporates ('flingPin'), the game
+  untouched.
 
   The stroke (the user) is a spring: pressing the right button on the
   view and pulling the mouse back towards the player draws the cue back,
@@ -176,6 +181,12 @@ class BilliardsWindow(MainWindow):
   __shot_record__: dict | None = None
   __shot_recording__: Recording | None = None
   __struck_balls__: tuple | None = None
+  __play_recorder__: object = None
+  __stay_put__: bool = False
+  __flinging__: bool = False
+  __fling_action__: object = None
+  __fling_rise__ = 2000.0  # mm/s a flung pin is sent up (debug)
+  __fling_tumble__ = 12.0  # rad/s a flung pin is set tumbling (debug)
   __shot_verdict__: tuple | None = None
   __play_time__: float = 0.0
   __play_kind__: str = ''
@@ -304,6 +315,7 @@ class BilliardsWindow(MainWindow):
     bar.moveButton.clicked.connect(self.toggleMoving)
     bar.handBox.toggled.connect(view.setHandShown)
     bar.shadowBox.toggled.connect(view.setShadowShown)
+    view.pinTapped.connect(self.flingPin)
     panel.markAsked.connect(self.markAlongCamera)
     panel.cueChanged.connect(lambda *_: self.refresh())
     panel.lookChanged.connect(self._lookChanged)
@@ -355,6 +367,12 @@ class BilliardsWindow(MainWindow):
     view.minimapMenuAsked.connect(self._minimapMenuAt)
     self.frameTimer.timeout.connect(self.tick)
     self.mainMenuBar.fileMenu.exitAction.triggered.connect(self.close)
+    debug = self.mainMenuBar.addMenu('Debug')
+    fling = debug.addAction('Fling pins')
+    fling.setCheckable(True)
+    fling.setShortcut(QKeySequence(Qt.Key.Key_F8))
+    fling.toggled.connect(self.setFlinging)
+    self.__fling_action__ = fling
     self._layoutViews()
 
   def closeEvent(self, event: QCloseEvent) -> None:
@@ -721,6 +739,51 @@ class BilliardsWindow(MainWindow):
     first call sets white's shot, the second strikes both at once."""
     panel = self.panel
     self._strike((aimX, aimY, panel.speed, panel.top, panel.side))
+
+  def setFlinging(self, flinging: bool) -> None:
+    """The 'setFlinging' method turns the debug 'Fling pins' on or off
+    (menu 'Debug', F8; the user: to see a pin go over a cushion at
+    will): on, a click on a keglebillard pin sends it flying
+    ('flingPin'), a tag over the table saying so."""
+    self.__flinging__ = True if flinging else False
+    action = self.__fling_action__
+    if action is not None and action.isChecked() != self.__flinging__:
+      action.setChecked(self.__flinging__)
+    self.view.setFlinging(self.__flinging__)
+
+  def flingPin(self, number: int) -> None:
+    """The 'flingPin' method, a debug ('Fling pins', 'setFlinging'; the
+    user: to see a pin go over a cushion at will), sends pin 'number'
+    flying over the nearest cushion as a shot of its own, the balls at
+    rest: given a
+    speed and a tumble as the cue gives a ball, at the top of its flight
+    as it crosses the cushion, the physics all as it has it from then
+    on; the game left as it was, the balls as they lie after. Nothing in
+    three-cushion, while anything moves, or for a pin not set up."""
+    if not self.isKegler() or not self.resting() or self.moving:
+      return
+    if self.walking or not self.__flinging__:
+      return
+    balls = self.view.balls
+    kegle = KegleTable(self.view.table)
+    if number not in kegle.pinsPlaced(balls):
+      return
+    plain = self.recorderFor(balls)
+    recorder = KegleRecorder(plain.motion, plain.rate, plain.size,
+                             plain.longest, plain.numbers,
+                             (flingOf(kegle, self.motion.cloth.gravity,
+                                      number, self.__fling_rise__,
+                                      self.__fling_tumble__),))
+    self._stopPlacing()
+    self._clearMark()
+    self._clearTrails()
+    self.__shot_record__ = {'kind': 'fling', 'pin': number}
+    self._playOut(balls, recorder)
+    self.__stay_put__ = True
+    try:
+      self._started()
+    finally:
+      self.__stay_put__ = False
 
   def showKegler(self, ) -> None:
     """The 'showKegler' method lays the table out for keglebillard, a
@@ -1232,7 +1295,9 @@ class BilliardsWindow(MainWindow):
     stroke ('strikeAt'), seen from where the player stands: the aim and
     the choices hidden, 'Mark' and 'Replay' greyed out."""
     self.view.stopAiming()
-    if self.__stay_down__:
+    if self.__stay_put__:
+      pass
+    elif self.__stay_down__:
       self._watchWhole()
     else:
       self._watchFromAbove()
@@ -1524,10 +1589,17 @@ class BilliardsWindow(MainWindow):
     if start is None or now - start > wait + 0.1:
       speed = max(math.hypot(ball.vx, ball.vy) for ball in balls)
       self._beginStroke(now - wait, speed)
-    recorder = self.recorderFor(balls)
+    self._playOut(balls, self.recorderFor(balls))
+    self.sounds.struck(max(math.hypot(ball.vx, ball.vy) for ball in balls))
+    self._started()
+
+  def _playOut(self, balls: tuple[Ball, ...], recorder: object) -> None:
+    """Has the worker play 'balls' as 'recorder' has the shot, the pins
+    set up, shown as it comes."""
     self._raisePins(balls)
     self.view.balls = balls
     self.__struck_balls__ = balls
+    self.__play_recorder__ = recorder
     self.__shot_recording__ = Recording(tuple(ball.name for ball in balls),
                                         recorder.rate)
     self.__shot_verdict__ = None
@@ -1542,8 +1614,6 @@ class BilliardsWindow(MainWindow):
       self.worker.start(recorder, balls)
     except OSError:
       self.worker.close()
-    self.sounds.struck(max(math.hypot(ball.vx, ball.vy) for ball in balls))
-    self._started()
 
   def _received(self, ) -> Recording:
     """Returns the shot shown, with what has come of it since; played
@@ -1562,7 +1632,8 @@ class BilliardsWindow(MainWindow):
     """Plays the shot shown here, all of it at once, the worker being
     gone or stuck."""
     balls = self.__struck_balls__
-    recording = self.recorderFor(balls).recorded(balls)
+    recorder = self.__play_recorder__ or self.recorderFor(balls)
+    recording = recorder.recorded(balls)
     self.__shot_recording__ = recording
     return recording
 
@@ -1599,7 +1670,13 @@ class BilliardsWindow(MainWindow):
       return None
     touches, after = recording.touchesOf(), recording.last()
     referee = self.referee()
-    if record['kind'] == 'lag':
+    if record['kind'] == 'fling':
+      gone = any(int(row[0]) == record['pin'] and row[8] > 1.5
+                 for row in recording.lastPins())
+      verdict = (None, 'Debug: pin %d flung, %s.' % (
+        record['pin'], 'evaporated over the cushion' if gone
+        else 'still on the table'), recording.known())
+    elif record['kind'] == 'lag':
       winner, words = referee.lagCall(touches, after)
       if self.isKegler():
         words = words.replace('Yellow', 'The marked white')
@@ -1780,6 +1857,11 @@ class BilliardsWindow(MainWindow):
       self._dropStaleTrails()
       self.refresh()
       return
+    if record['kind'] == 'fling':
+      #  Debug: the game as it was, the balls as they lie.
+      self._dropStaleTrails()
+      self.refresh()
+      return
     call = verdict[0]
     if isinstance(call, KegleCall):
       if self.__window_mode__ == 'game':
@@ -1872,7 +1954,8 @@ class BilliardsWindow(MainWindow):
     else:
       words = _counterWords(recording, self.__play_time__)
     verdict = self.__shot_verdict__
-    if words and self.callShown and verdict is not None:
+    if words and self.callShown and verdict is not None and (
+        verdict[0] is not None):
       words += '   —   ' + _calledWords(verdict[0])
     self.view.setCounter(words)
 
@@ -2019,8 +2102,8 @@ class BilliardsWindow(MainWindow):
                 False, False)
     return self.referee().call(shot).words
 
-  def startWalking(self, ) -> None:
-    """The 'startWalking' method stands the player up to walk the room,
+  def enterRoom(self, ) -> None:
+    """The 'enterRoom' method stands the player up to walk the room,
     first person, cue in hand (the user): the shot under way and any
     stroke let go, the panel, the bar and the maps out of the way, the
     keys walking instead of aiming; 'useAsked' (E) near a table opens
@@ -2059,7 +2142,7 @@ class BilliardsWindow(MainWindow):
     """The 'standUp' method leaves the table played at to walk the room,
     the player standing at its foot end, facing it."""
     kind = self.__game_kind__
-    self.startWalking()
+    self.enterRoom()
     self.view.walkTo(*self.room.beside(kind))
 
   def useAsked(self, ) -> None:

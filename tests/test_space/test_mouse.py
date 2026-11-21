@@ -8,7 +8,17 @@ release from the scene: a slot of the open inventory was left pressed,
 holding the mouse, and the stack carried stuck where it was; and the
 scene followed the pointer by hovering, which the slots' own areas took
 from it. Now a free pointer's releases are the scene's and the window
-says where the pointer is at every move.
+says where the pointer is at every move. Taken, the cursor is hidden by
+the X server before the pointer is put back in the middle (user,
+2026-11-18: "when i open the inventory the mouse escapes"): Qt Quick put
+a shown cursor back a moment after the inventory shut, Xwayland let the
+pointer's lock go, and gamescope let the mouse out of its window. A
+click is what takes the mouse back (user, 2026-11-19: "I used to hit
+escape and then click which somehow allowed the mouse to snap back"):
+shutting the inventory with E or Esc, or the pause menu with Esc, leaves
+it free till a click in the window takes it; the menus' buttons act on
+the press, taking it then; taken, if it ever leaves the window it is let
+go, so a click takes it again ("the mouse escapes with now way back").
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -19,6 +29,10 @@ from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
+
+from worQt.gaming.sandbox._hiddencursor import HiddenCursor, drawnOnX
+from worQt.gaming.sandbox import _pointer as pointerModule
+from worQt.gaming.sandbox._pointer import Pointer
 
 from worQt.gaming.space._spacewindow import SpaceWindow
 
@@ -39,6 +53,7 @@ class TestMouse(SpaceTest):
     pointer = SimpleNamespace(
       taken=taken, take=lambda: told.append('take'),
       forget=lambda: told.append('forget'),
+      letGo=lambda: told.append('let go'),
       movedTo=lambda at, local, stamp: told.append(('look', local)))
     viewport = SimpleNamespace(
       quick=QUICK, takesClick=lambda at: not taken,
@@ -100,6 +115,48 @@ class TestMouse(SpaceTest):
     self._sent(taken, QEvent.Type.MouseMove, (700.0, 380.0))
     self.assertEqual([told[0] for told in taken.told], ['look'])
 
+  def test_clicked_back(self) -> None:
+    """Free, nothing under the click to take it, a click takes the mouse
+    (the click is the window's); taken, the pointer leaving the window
+    is let go (a click takes it again). E or Esc shutting the inventory
+    and Esc shutting the pause menu leave it free; the inventory's close
+    button and the pause menu's resume take it, on the press."""
+    from PySide6.QtCore import QEvent as Event
+    free = self._window(False)
+    free.viewport.takesClick = lambda at: False
+    self.assertTrue(self._sent(free, QEvent.Type.MouseButtonPress,
+                               (640.0, 360.0), Qt.MouseButton.LeftButton))
+    self.assertEqual(free.told, ['take'])
+    taken = self._window(True)
+    self.assertFalse(SpaceWindow.eventFilter(taken, QUICK, Event(
+      QEvent.Type.Leave)))
+    self.assertEqual(taken.told, ['let go', 'forget'])
+    told = []
+    window = SimpleNamespace(
+      inventory=SimpleNamespace(closed=lambda: told.append('closed')),
+      _inventoryOpen=True, pointer=SimpleNamespace(
+        take=lambda: told.append('take')),
+      _paused=True, _pauseAsk='', _pauseNote='')
+    window._inventoryShut = lambda: SpaceWindow._inventoryShut(window)
+    window._resumed = lambda: SpaceWindow._resumed(window)
+    SpaceWindow._inventoryShut(window)
+    self.assertEqual(told, ['closed'])
+    window._inventoryOpen = True
+    SpaceWindow._inventoryShutPicked(window)
+    self.assertEqual(told, ['closed', 'closed', 'take'])
+    SpaceWindow._resumed(window)
+    self.assertFalse(window._paused)
+    self.assertEqual(told[-1], 'take')
+    window._paused = True
+    SpaceWindow._pausePicked(window, 'resume')
+    self.assertFalse(window._paused)
+    self.assertEqual(told, ['closed', 'closed', 'take', 'take'])
+    import worQt.gaming.space as space
+    scene = (Path(space.__file__).parent / 'space.qml').read_text(
+      encoding='utf-8')
+    self.assertIn('onPressed: root.pausePicked(pauseButton.what)', scene)
+    self.assertIn('onPressed: root.inventoryShutPicked()', scene)
+
   def test_scene(self) -> None:
     """The scene draws the stack carried where the window says the
     pointer is and sets that nowhere itself (no hover area to lose the
@@ -111,3 +168,33 @@ class TestMouse(SpaceTest):
     self.assertIn('y: root.pointerY - 20', scene)
     self.assertNotIn('root.pointerX =', scene)
     self.assertNotIn('root.pointerY =', scene)
+
+  def test_hidden(self) -> None:
+    """Taken, the cursor is hidden by the X server before the pointer is
+    put back in the middle (the warp then locks it); let go, shown
+    again. Off X11 (here: no Qt app) the X server's hide does
+    nothing."""
+    told = []
+    surface = SimpleNamespace(
+      setCursor=lambda cursor: told.append('blank'),
+      unsetCursor=lambda: told.append('unset'))
+    pointer = Pointer(surface)
+    pointer.hiding = SimpleNamespace(
+      hidden=lambda: told.append('hidden'),
+      shown=lambda: told.append('shown'))
+    pointer._recentred = lambda: told.append('warped')
+    cursor = pointerModule.QCursor
+    pointerModule.QCursor = lambda shape: shape  # no app: no real one
+    try:
+      pointer.take()
+    finally:
+      pointerModule.QCursor = cursor
+    self.assertEqual(told, ['blank', 'hidden', 'warped'])
+    pointer.letGo()
+    self.assertEqual(told[3:], ['unset', 'shown'])
+    hiding = HiddenCursor()
+    self.assertEqual(hiding.live, drawnOnX())
+    hiding.hidden()
+    self.assertEqual(hiding.held, hiding.live)
+    hiding.shown()
+    self.assertFalse(hiding.held)

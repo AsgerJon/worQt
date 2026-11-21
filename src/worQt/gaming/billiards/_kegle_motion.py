@@ -163,11 +163,14 @@ class KegleMotion(NamedTuple):
           first = time
     return motion.glided(balls, first)
 
-  def hitsOf(self, balls: tuple[Ball, ...], field: PinField) -> KegleHits:
+  def hitsOf(self, balls: tuple[Ball, ...], field: PinField,
+             settles: bool = False) -> KegleHits:
     """The 'hitsOf' method returns 'KegleHits' stepping 'balls' and the
     pins of 'field' together, to be run on as long as asked: the steps
-    come out the same however the runs cut them."""
-    return KegleHits(self, balls, field)
+    come out the same however the runs cut them; 'settles', they end as
+    the balls rest with pins still moving that no longer matter (a shot
+    recorded, 'KegleHits.settled')."""
+    return KegleHits(self, balls, field, settles)
 
   def played(self, balls: tuple[Ball, ...], field: PinField,
              seconds: float) -> tuple[tuple[Ball, ...], tuple]:
@@ -198,17 +201,20 @@ class KegleHits:
   the pins, and while any pin moves ('_kegle_kernels.kegleRun'): made of
   the balls and the 'field' of pins as they begin
   ('KegleMotion.hitsOf'), 'run' steps them on for so long, as often as
-  asked, until all are clear, 'over'; 'balls' are the balls now, and
+  asked, until all are clear, 'over', or, if it 'settles' (a shot
+  recorded), the balls rest with pins still moving that can neither
+  stand again nor move a ball, 'over' and 'settled' (the user: only
+  the balls must settle); 'balls' are the balls now, and
   the field's pins are kept as they are now after each run. The steps
   are whole and the same however the runs cut them, so a shot sampled at
   any rate comes out the same, to the last digit.
   """
 
   __slots__ = ('motion', 'field', 'names', 'arrays', 'rules', 'red',
-               'used', 'over')
+               'used', 'over', 'settled', 'settles')
 
   def __init__(self, motion: KegleMotion, balls: tuple[Ball, ...],
-               field: PinField) -> None:
+               field: PinField, settles: bool = False) -> None:
     import warp as wp
 
     from ._kegle_pins import _rulesOf as pinRulesOf
@@ -219,7 +225,8 @@ class KegleHits:
     self.red = self.names.index('red') if 'red' in self.names else -1
     self.rules = (hitRulesOf(motion.motion), pinRulesOf(field),
                   _pocketRulesOf(motion.table))
-    self.used, self.over = 0.0, False
+    self.used, self.over, self.settled = 0.0, False, False
+    self.settles = True if settles else False
     pins, names = field.pins, self.names
     values = {
       'spheres': (wp.vec2d, [(z, size) for _, _, z, size in field.spheres]),
@@ -244,6 +251,7 @@ class KegleHits:
       'mover': (wp.int32, [names.index(pin.mover) if pin.mover in names
                            else -1 for pin in pins]),
       'quiet': (wp.float64, [pin.quiet for pin in pins]),
+      'held': (wp.int32, [0] * len(pins)),
       'holes': (wp.vec2d, list(motion.table.pockets().holes)),
       'jaws': (wp.vec3d, [(x, y, float(side))
                           for x, y, side in motion.engine().jawsOf()])}
@@ -291,15 +299,17 @@ class KegleHits:
                  a['speed'], a['spin'], a['settling'], a['going'],
                  a['pinGoing'], a['pinNow'], a['lifts'], a['pinP'],
                  a['pinV'], a['pinQ'], a['pinW'], a['awake'], a['credit'],
-                 a['mover'], a['quiet'], self.red, float(begun),
+                 a['mover'], a['quiet'], a['held'], self.red, float(begun),
                  float(self.used), float(seconds), 1 if whole else 0,
-                 100000000, a['events'], a['out']], [], [], [], 'cpu')
+                 100000000, 1 if self.settles else 0, a['events'],
+                 a['out']], [], [], [], 'cpu')
       used, _, clear, logged = (float(value)
                                 for value in a['out'].numpy()[:4])
       log.extend(self._touchesOf(a['events'].numpy()[:int(logged)]))
       self.used = used
       if clear:
         self.over = True
+        self.settled = clear > 1.5
     self._pinsBack()
     return self.balls(), self.used - begun, tuple(log)
 
@@ -354,12 +364,20 @@ class KegleRecorder(NamedTuple):
   KegleRecorder plays keglebillard shots on the table of 'motion' at
   once and samples them, as 'Recorder' samples three-cushion: 'rate'
   times a second, 'size' samples a 'Stretch', each shot followed until
-  every ball rests and no pin moves, 'longest' seconds at most. The pins
+  every ball rests, 'longest' seconds at most: only the balls must
+  settle (the user), pins moving on then unless one may stand again,
+  is in the air, or may yet reach a ball ('KegleHits.settled'); a pin
+  still moving at the end is down for good, counted so ('fallenOf').
+  The pins
   'numbers' stand on their spots as each shot begins (the rules: always
   set up, those clear of the balls, 'KegleTable.pinsPlaced'), and each
   sample holds them too, 'Stretch.pins'. As the 'Recorder', the samples
   do not change the shot: it is the one 'KegleMotion.played' gives over
-  its whole length at once, whatever the rate.
+  its whole length at once, whatever the rate. 'flung' are pins sent
+  flying as the shot begins (the window's debug 'Fling pins', the user:
+  to see one go over a cushion at will), each (number, vx, vy, vz, wx,
+  wy, wz), mm/s and rad/s, as the cue sends a ball: from then on all as
+  the physics has it.
   """
 
   motion: KegleMotion = KegleMotion()
@@ -367,6 +385,7 @@ class KegleRecorder(NamedTuple):
   size: int = 50
   longest: float = 60.0
   numbers: tuple = (0, 1, 2, 3, 4)
+  flung: tuple = ()
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -377,21 +396,33 @@ class KegleRecorder(NamedTuple):
     on their spots, asleep."""
     return self.motion.fieldOf(self.numbers)
 
+  def flungOf(self, ) -> PinField:
+    """The 'flungOf' method returns the pins as a shot begins, as
+    'fieldOf' does, those 'flung' sent flying, awake."""
+    field = self.fieldOf()
+    for number, vx, vy, vz, wx, wy, wz in self.flung:
+      for pin in field.pins:
+        if pin.number == number:
+          pin.v, pin.w = [vx, vy, vz], [wx, wy, wz]
+          pin.awake = True
+    return field
+
   def stretches(self, balls: tuple[Ball, ...]) -> Iterator[Stretch]:
     """The 'stretches' method plays 'balls' on from now, the pins set
     up, until all rest, yielding the samples a 'Stretch' at a time, the
     last one 'over'."""
-    motion, field = self.motion, self.fieldOf()
+    motion, field = self.motion, self.flungOf()
     cloth, radius = motion.motion.cloth, motion.motion.table.radius
     names, every = tuple(ball.name for ball in balls), 1.0 / self.rate
-    balls, passed, hits = tuple(balls), 0.0, None
+    balls, passed, hits, settled = tuple(balls), 0.0, None, False
     rows, pins, touches, count, first = [], [], [], 0, 0
     while True:
       while count * every <= passed + _DUE:
         rows.append(_rowsOf(balls))
         pins.append(field.rows(names))
         count += 1
-      over = motion.resting(balls, field) or passed >= self.longest
+      over = settled or motion.resting(balls, field) or (
+        passed >= self.longest)
       if over:
         rows.append(_rowsOf(balls))
         pins.append(field.rows(names))
@@ -404,13 +435,14 @@ class KegleRecorder(NamedTuple):
         rows, pins, touches, first = [], [], [], count
       if hits is not None or motion.busy(balls, field):
         if hits is None:
-          hits = motion.hitsOf(balls, field)
+          hits = motion.hitsOf(balls, field, True)
         balls, used, began = hits.run(count * every - passed, True)
         passed += used
         touches.extend((passed, touch) for touch in began)
         if hits.over:
+          settled = hits.settled
           hits = None
-        if used > 0.0:
+        if used > 0.0 or settled:
           continue
       glide = motion.glided(balls, field, self.longest - passed)
       end, inner, at = passed + glide.span, balls, passed
@@ -447,6 +479,34 @@ class KegleRecorder(NamedTuple):
     field = self.fieldOf()
     field.setRows(recording.lastPins(), recording.names)
     return field.fallen()
+
+
+def flingOf(table: KegleTable, gravity: float, number: int, rise: float,
+            tumble: float) -> tuple:
+  """The 'flingOf' function returns how pin 'number' of 'table' is flung
+  (a debug, the window's 'Fling pins'; the user: to see a pin go over a
+  cushion at will), as 'KegleRecorder.flung' takes it: out of the cross
+  the way it stands from its middle (the middle pin between two arms),
+  to the long cushion for those on the long arm, up at 'rise' mm/s, as
+  fast across as brings it over the cushion's nose at the top of its
+  flight under 'gravity', tumbling forward at 'tumble' rad/s."""
+  carom = table.table
+  mx, my = table.middle()
+  x, y = table.pinSpots()[number]
+  if abs(x - mx) > 1.0:
+    dx, dy = math.copysign(1.0, x - mx), 0.0
+  elif abs(y - my) > 1.0:
+    dx, dy = -1.0, 0.0
+  else:
+    dx, dy = -math.sqrt(0.5), -math.sqrt(0.5)
+  reaches = []
+  if dx:
+    reaches.append(((carom.width - x) if dx > 0.0 else x) / abs(dx))
+  if dy:
+    reaches.append(((carom.length - y) if dy > 0.0 else y) / abs(dy))
+  across = min(reaches) * gravity / rise
+  return (number, across * dx, across * dy, rise, -tumble * dy,
+          tumble * dx, 0.0)
 
 
 @functools.lru_cache(maxsize=16)

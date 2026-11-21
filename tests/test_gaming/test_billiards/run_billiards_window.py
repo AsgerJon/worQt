@@ -1033,7 +1033,7 @@ class RunBilliardsWindow(BilliardsWidgetTest):
     window = self.openWindow()
     window.frameTimer.stop()
     view = window.view
-    window.startWalking()
+    window.enterRoom()
     self.assertTrue(window.walking)
     self.assertTrue(view.sceneValue('walking'))
     self.assertTrue(window.panel.isHidden())

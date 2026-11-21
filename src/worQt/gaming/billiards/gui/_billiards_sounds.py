@@ -43,6 +43,7 @@ class BilliardsSounds(BaseObject):
   __loud_speed__ = 3500.0  # mm/s meeting at which a sound is loudest
   __landed_up__ = 0.26  # a pin's axis this far up, cos 75 deg, has fallen
   __landed_volume__ = 0.45  # how loud a pin falling onto the cloth rings
+  __fizzle_volume__ = 0.75  # how loud a pin evaporating fizzes
 
   #  Private Variables
   __sound_player__: SoundPlayer | None = None
@@ -178,8 +179,9 @@ class BilliardsSounds(BaseObject):
                 room: int) -> None:
     """Plays the note of each pin of 'recording' falling onto the cloth
     after 'start' and by 'end', its axis coming down past
-    '__landed_up__' of upright, the sad one for a pin credited to red;
-    'room' at most."""
+    '__landed_up__' of upright, the sad one for a pin credited to red,
+    and the fizz of one evaporating as it flies over a cushion (the
+    user: as in Portal's grid); 'room' at most."""
     if room <= 0 or not recording.pinParts:
       return
     before, after = recording.pinsAt(start), recording.pinsAt(end)
@@ -187,7 +189,10 @@ class BilliardsSounds(BaseObject):
     for one, other in zip(before, after):
       if room <= 0:
         return
-      if _upOf(one) > self.__landed_up__ >= _upOf(other):
+      if float(one[8]) < 1.5 <= float(other[8]):
+        self._play('evaporate', self.__fizzle_volume__)
+        room -= 1
+      elif _upOf(one) > self.__landed_up__ >= _upOf(other):
         number = int(one[0])
         if red >= 0 and int(other[9]) == red:
           self._play('sadLand%d' % number, self.__landed_volume__)

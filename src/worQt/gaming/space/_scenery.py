@@ -23,20 +23,19 @@ from ._cockpit import FLOOR, GLOBE_AT, GLOBE_AXES, GUARD_OPEN, LIT_KEYS
 from ._cockpit import panelPoint
 from ._dashboard import BUGS, LEGENDS, ballCentre, dialAngle
 from ._dashboard import dialAxes, dialCentre
-from ._dashboard import HATCH_HINGE, HATCH_OPEN, guardHinge, headPlace
+from ._dashboard import guardHinge, headPlace
 from ._dashboard import pieces
 from ._deckmodel import AXIS, movingParts
 from ._dockingport import NOSE_PORT
 from ._furnishings import candleLight, lampLight, looseParts
-from ._gunbeam import beamRows
 from ._meshes import CAP_REACH
 from ._night import shineOf
 from ._walkway import Walkway, leafTurn
-from ._bolts import axesOf
 from ._walkwaymeshes import hallLight
 from ._orrery import SPAN
 from ._planets import PAD
-from ._stationinterior import FAR_HIGH
+from ._shaftdoor import leafTurnOf
+from ._stationlamps import ringAt, ringLightAt
 from ._stationmeshes import beaconTips
 from ._turns import aboutAxis, cross, dot, matrixBack, matrixTimes, norm
 from ._turns import product, quaternionOf, rotated, unit, unrotated
@@ -62,8 +61,12 @@ SATELLITE_SEEN = 2.9e6
 #  seen as a point however small it is; drawn as it is it would fall
 #  between the pixels), m.
 LIGHTS_FROM = 2e4
-#  The station's bolts' rings glow this much (violet: magic).
-BOLT_GLOW = 1.0
+#  The elevators' cages glow (user, 2026-11-19: "Have the elevator glow
+#  brightly seen from the outside"), their frames this much.
+CAR_GLOW = 1.0
+#  An elevator's button glows this share of its own colour (red: seen
+#  under its guard in the cage's light).
+CAR_BUTTON_GLOW = 0.6
 #  The door's leaf glows this share of its own colour (lit inside and out
 #  alike: the tower's lights pass through walls).
 DOOR_FILL = 0.15
@@ -238,15 +241,17 @@ class Scenery:
     'Navball.frameOf' as 'ball'), its marks, Asger's limbs (his head and
     arms left out 'inside' his eyes; 'Cockpit.figureOf'), the loose
     things where 'dash''s 'loose' has them, the candles' flames tall or
-    round by its 'weight' (g at the candles), the gravity gun as its
-    'gun' says (shown, his eyes' place and their frame's turn); 'light'
+    round by its 'weight' (g at the candles); 'light'
     (the cabin's lamp's
     place), 'lamp' (the panel's flood lamp's), 'flood' (the hull's
     floodlight: its place, the way it shines, its up), 'hygge' (the
     floor lamp's light's place, the candles', their flicker), 'egg' (the
     gravity egg's marble, where 'dash''s 'egg' has it: its light),
     'headlamp' (Asger's, as 'dash''s 'headlamp' has it: whether it is
-    on, its place, the way it shines, its up) and
+    on, its place, the way it shines, its up), 'stationLamps' (the
+    head's lamp rings' lights, levels one and two, and each of Terra
+    Prime's cages', '_stationlamps'), 'cabinLit' (whether the cabin's
+    small lamps shine, Asger in it: 'dash''s; the rings' then not) and
     'camera' (the closed circuit camera feeding the monitor, the
     nose's if 'dash''s 'nose' else the hull's: its place, the way it
     looks and its picture's up, from the eye)."""
@@ -293,8 +298,12 @@ class Scenery:
               'headlamp', HEADLAMP_OFF)),
             'camera': self._cameraOf(there, turn, dash['nose']),
             'aboard': dash.get('aboard', False),
-            'beam': self._beamOf(there, turn, dash.get('beam', (False,))),
-            'hand': (bool(dash.get('hand', dash['gun'][0])) and inside,
+            'stationLamps': (there(ringLightAt(1)), there(ringLightAt(2)),
+                             [there(light) for _, light, _ in dash.get(
+                               'carLamps', ())]),
+            'cabinLit': dash.get('cabinLit', True),
+            'ride': self._rideOf(there, turn, dash.get('ride', (False,))),
+            'hand': (bool(dash.get('hand', False)) and inside,
                      tuple(dash['gun'][3]) if len(dash['gun']) > 3 else (
                        0.0, 0.0, 0.0)),
             'walkway': dash.get('walkway', _AWAY),
@@ -308,17 +317,16 @@ class Scenery:
     return (bool(on), there(eye), rotated(turn, unit(look)),
             rotated(turn, unit(up)))
 
-  def _beamOf(self, there: object, turn: tuple, beam: tuple) -> tuple:
-    """Returns the gravity gun's beam ('_gunbeam'; 'beam' the window's:
-    shown, the muzzle and the bolt (the vessel's own axes), its phase and
-    strength): its place from the eye, its turn, whether shown, its core's
-    and its coils' meshes (None when not shown)."""
-    if not beam[0]:
-      return (0.0, 0.0, 0.0), turn, False, None, None
-    _, start, end, phase, strength = beam
-    core, coils = beamRows(tuple(e - s for e, s in zip(end, start)), phase,
-                           strength)
-    return there(start), turn, True, core, coils
+  def _rideOf(self, there: object, turn: tuple, ride: tuple) -> tuple:
+    """Returns the ride's small frame ('ride' the window's: riding, the
+    camera before his face, the way it looks, its up, his middle; the
+    vessel's own axes): riding, its camera's place from the eye, the way
+    it looks and its up, and his middle from the eye; else none."""
+    if not ride[0]:
+      return (False,)
+    _, place, look, up, middle = ride
+    return (True, there(place), rotated(turn, look), rotated(turn, up),
+            there(middle))
 
   def _cameraOf(self, there: object, turn: tuple, nose: bool) -> tuple:
     """Returns the closed circuit camera feeding the monitor ('nose':
@@ -395,23 +403,8 @@ class Scenery:
     if kind == 'loose':
       place, held = dash['loose'][looseParts()[what][0]]
       return there(place), product(turn, held), True, 0.0
-    if kind in ('gun', 'gun mark'):
-      shown, eye, held = dash['gun'][:3]
-      return there(eye), product(turn, held), shown and not dash.get(
-        'inside', False), 0.0
     if kind == 'egg ball':
       return there(dash['egg']), turn, True, EGG_GLOW
-    if kind == 'hatch':
-      return there(HATCH_HINGE), product(turn, aboutAxis(
-        (0.0, 1.0, 0.0), -HATCH_OPEN * dash.get('hatch', 0.0))), True, 0.0
-    if kind in ('sbolt', 'sring'):
-      bolts = dash.get('sbolts', ())
-      if what >= len(bolts):
-        return there((0.0, 0.0, 0.0)), turn, False, 0.0
-      place, way = bolts[what]
-      held = quaternionOf(tuple(zip(*axesOf(way))))
-      return there(place), product(turn, held), True, (
-        BOLT_GLOW if kind == 'sring' else 0.0)
     if kind in ('lift', 'lift glass'):
       place, held, shown = dash.get('lift', (((0.0, 0.0, 0.0), (
         1.0, 0.0, 0.0, 0.0), False),) * 4)[what + (
@@ -424,15 +417,47 @@ class Scenery:
     if kind == 'door glass':
       return there((0.0, 0.0, 0.0)), product(turn, leafTurn(dash.get(
         'door', 0.0))), True, 0.0
-    if kind == 'port door':
-      return there((0.0, 0.0, FAR_HIGH - 0.05)), turn, bool(dash.get(
-        'aboard', False)), 0.0
-    if kind == 'car':
+    if kind == 'shaft door':
+      shares = dash.get('shaftDoors', (0.0,) * 4)
+      return there((0.0, 0.0, 0.0)), product(turn, leafTurnOf(
+        shares[what])), True, DOOR_FILL
+    if kind in ('car', 'car glass'):
       cars = dash.get('cars', ())
+      if kind == 'car glass':
+        what = 6 * (what // 4) + 2 + what % 4
       if what >= len(cars):
         return there((0.0, 0.0, 0.0)), turn, False, 0.0
       middle, held, shown = cars[what]
-      return there(middle), product(turn, held), shown, 0.0
+      return there(middle), product(turn, held), shown, (
+        CAR_GLOW if kind == 'car' else 0.0)
+    if kind == 'deck thing':
+      deck = dash.get('deck', ())
+      if what >= len(deck):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      place, held = deck[what]
+      return there(place), product(turn, held), True, 0.0
+    if kind == 'car seat':
+      seats = dash.get('carSeats', ())
+      if what >= len(seats):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      middle, held = seats[what]
+      return there(middle), product(turn, held), True, 0.0
+    if kind in ('car button', 'car guard'):
+      shown = dash.get('carButtons' if kind == 'car button' else
+                       'carGuards', ())
+      if what >= len(shown):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      place, held = shown[what]
+      return there(place), product(turn, held), True, (
+        CAR_BUTTON_GLOW if kind == 'car button' else 0.0)
+    if kind == 'level lamp':
+      return there(ringAt(what)), turn, True, 0.0
+    if kind == 'car lamp':
+      lamps = dash.get('carLamps', ())
+      if what >= len(lamps):
+        return there((0.0, 0.0, 0.0)), turn, False, 0.0
+      middle, _, held = lamps[what]
+      return there(middle), product(turn, held), True, 0.0
     if kind in ('guard', 'glint lid'):
       share = dash['guards'].get(what.action, 0.0)
       return (there(guardHinge(what)), product(turn, aboutAxis(

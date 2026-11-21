@@ -31,11 +31,21 @@ if TYPE_CHECKING:  # pragma: no cover, no mutate
 #  body pulling every other, and the space station flown, user
 #  2026-11-18: "PHYSICS MUST BE REAL"; 6: the door a real leaf on its
 #  motor, '_door', Asger knocked down, 'Crewman.fallen', the walkway's
-#  sections on their motors, '_walkway').
-SAVE_VERSION = 6
+#  sections on their motors, '_walkway'; 7: the rocket's three levels and
+#  its top floor's four doors, '_shaftdoor', Terra Prime's drum for its
+#  head, user 2026-11-19; 8: no Grav-Gun, the ladder's hold instead,
+#  user 2026-11-19: "Forget about the gravity gun ... Just have
+#  ladders"; 9: the deck's loose furnishings, '_deckthings'; 10: the
+#  handles moving him without physics, '_ladder', user 2026-11-19: "When
+#  Asger is in ladder mode, no more physics", and the elevators' guarded
+#  buttons; 11: each save's summary for the save lists).
+SAVE_VERSION = 11
 #  The quick save's file in the saves' folder (F5 writes it, F9 reads
-#  it).
+#  it); the save slots' (user, 2026-11-19: "we need multiple save
+#  files"; the pause menu's Save game and Load game), how many.
 QUICK = 'quicksave.json'
+SLOT = 'save-%d.json'
+SLOTS = 8
 
 
 def savesFolder() -> Path:
@@ -46,6 +56,33 @@ def savesFolder() -> Path:
   folder = Path(home) / 'worQt' / 'space'
   folder.mkdir(parents=True, exist_ok=True)
   return folder
+
+
+def slotPath(slot: int) -> Path:
+  """Returns save slot 'slot''s file (one to 'SLOTS'; nought: the quick
+  save's)."""
+  if slot == 0:
+    return savesFolder() / QUICK
+  if not 1 <= slot <= SLOTS:
+    raise ValueError('no save slot %r' % (slot,))
+  return savesFolder() / (SLOT % slot)
+
+
+def savesListed() -> tuple:
+  """Returns the quick save and every slot (nought, then one to
+  'SLOTS'): each its number and its save (None: empty; a file that
+  cannot be read: the error's words)."""
+  out = []
+  for slot in range(SLOTS + 1):
+    path = slotPath(slot)
+    if not path.exists():
+      out.append((slot, None))
+      continue
+    try:
+      out.append((slot, SaveGame.read(path)))
+    except (OSError, ValueError, KeyError) as error:
+      out.append((slot, '%s' % error))
+  return tuple(out)
 
 
 def keptOf(thing: object) -> dict:
@@ -96,10 +133,11 @@ def skyTo(system: SolarSystem, sky: dict) -> None:
 class SaveGame:
   """
   SaveGame is one save: the game's 'state' (plain values: JSON's
-  types) and when it was saved ('saved', UTC). 'written' writes it to a
-  file at once (written aside first, then put in place: a save cut off
-  never spoils the last); 'read' reads one (a save of another version
-  raises).
+  types), when it was saved ('saved', UTC) and what the save lists say
+  of it ('summary': where the game was, its clock). 'written' writes it
+  to a file at once (written aside first, then put in place: a save cut
+  off never spoils the last); 'read' reads one (a save of another
+  version raises).
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -109,14 +147,17 @@ class SaveGame:
   #  Public Variables
   state: dict
   saved: datetime
+  summary: str
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-  def __init__(self, state: dict, saved: datetime = None) -> None:
+  def __init__(self, state: dict, saved: datetime = None,
+               summary: str = '') -> None:
     self.state = dict(state)
     self.saved = saved or datetime.now(timezone.utc)
+    self.summary = str(summary)
 
   @classmethod
   def read(cls, path: Path) -> SaveGame:
@@ -127,7 +168,8 @@ class SaveGame:
     if version != SAVE_VERSION:
       raise ValueError('%s is a save of version %r; this game reads %d'
                        % (path, version, SAVE_VERSION))
-    return cls(data['state'], datetime.fromisoformat(data['saved']))
+    return cls(data['state'], datetime.fromisoformat(data['saved']),
+               data['summary'])
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  PUBLIC METHODS   # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -139,7 +181,7 @@ class SaveGame:
     aside = path.with_name(path.name + '.part')
     with open(aside, 'w', encoding='utf-8') as file:
       json.dump({'version': SAVE_VERSION, 'saved': self.saved.isoformat(),
-                 'state': self.state}, file)
+                 'summary': self.summary, 'state': self.state}, file)
       file.flush()
       os.fsync(file.fileno())
     os.replace(aside, path)

@@ -32,7 +32,7 @@ from ._quest import CHECKLIST
 #  The pictures' versions (a change paints them anew) and sizes, pixels:
 #  the face's across and up (as many a metre each way along its middle
 #  line and up its slant), the hood's, a dial's, a label's cell.
-VERSION = 17
+VERSION = 18
 FACE_ACROSS = 2.0 * PANEL_RADIUS * PANEL_SPAN
 HOOD_ACROSS = 2.0 * HOOD_RADIUS * HOOD_SPAN
 FACE = (4096, round(4096 * (FACE_HIGH - FACE_LOW) / FACE_ACROSS))

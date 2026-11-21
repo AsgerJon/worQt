@@ -164,6 +164,7 @@ class CabinWorld:
     self._velocities = numpy.zeros((len(masses), 3))
     self.velocities = self._sent(self._velocities, vec3)
     self.spins = self._sent(numpy.zeros((len(masses), 3)), vec3)
+    self._masses = numpy.array(masses, numpy.float64)
     self.masses = self._sent(masses, wp.float32)
     self.halves = self._sent(halves, vec3)
     self.inertias = self._sent(inertias, vec3)
@@ -240,7 +241,8 @@ class CabinWorld:
               jet: tuple = (0.0, 0.0, 0.0), here: bool = True) -> None:
     """The 'stepped' method moves the cabin's bodies 'seconds' s on (real
     time), feeling what 'accelerometer' read; Asger ('crewman') too,
-    unless he sits, his legs as 'want' asks ('Crewman.wantOf' and a leap:
+    unless he sits or is on the handles ('_ladder'), his legs as 'want'
+    asks ('Crewman.wantOf' and a leap:
     the velocity wanted, walking, wanting, the leap's velocity); the
     Grav-Gun's push ('gun': its force on Asger over his mass, m/s², the
     loose thing it acts on (its index in 'shown', None: none) and its
@@ -255,7 +257,8 @@ class CabinWorld:
       return
     began = time.perf_counter()
     wp = self.wp
-    present = 1 if here and not crewman.sitting else 0
+    present = 1 if here and not (crewman.sitting
+                                 or crewman.climbing) else 0
     if present and not self._present:
       self._asgerSent(crewman)
     seated = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
@@ -295,7 +298,7 @@ class CabinWorld:
       nearby.launch()
       walked.launch()
       self._boxUp = tuple(crewman.up)
-    if not self.pointCount:
+    if not self.pointCount or not (self._masses[1:] > 0.0).any():
       self._taken(crewman, present, seated)
       self.lastSteps = present
       self.lastMs = 1e3 * (time.perf_counter() - began)
@@ -322,11 +325,14 @@ class CabinWorld:
     self.lastSteps = steps
     self.lastMs = 1e3 * (time.perf_counter() - began)
 
-  def stationed(self, docked: bool, ways: tuple, boxes: tuple) -> None:
+  def stationed(self, docked: bool, ways: tuple, boxes: tuple,
+                cages: tuple = ()) -> None:
     """The 'stationed' method joins the space station's rooms to the
     cabin's ('docked'; its shafts out along 'ways', the docked rocket's
-    own axes) and puts its solids ('boxes': each its middle, half sizes,
-    turn (w x y z) and velocity, where it is as the frame begins: the
+    own axes; its cages' insides along them, 'cages': each from, to,
+    m: none given, no cage's inside is a room) and puts its solids
+    ('boxes': each its middle, half sizes, turn (w x y z) and velocity,
+    where it is as the frame begins: the
     world moves it on through the frame; at most 'STATION_SLOTS') in the
     world, the rest away; undocked, its rooms not joined (the boxes may
     be the launch tower's then, '_launchtower')."""
@@ -344,7 +350,11 @@ class CabinWorld:
       middles[k], halves[k], turns[k], velocities[k] = (middle, half,
                                                         turn, velocity)
     if docked:
+      rows = self.kernels.CAGES
       self._layout[:len(ways)] = ways
+      self._layout[rows:rows + self.kernels.SHAFTS] = 0.0
+      for k, (low, high) in enumerate(cages):
+        self._layout[rows + k] = (low, high, 0.0)
       self.layout.assign(self._layout.astype(numpy.float32))
     self._middles[first:first + count] = middles
     self._halves[first:first + count] = halves
@@ -519,6 +529,27 @@ class CabinWorld:
     self.turned.zero_()
     self._struck = self._unstruck()
     self._last = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+  def bodiesPlaced(self, first: int, bodies: tuple, masses: tuple) -> None:
+    """The 'bodiesPlaced' method puts loose things 'first' on (as 'shown'
+    counts them) where 'bodies' says (each its middle and turn from its
+    rest, w x y z, the vessel's own axes), still, each of 'masses' kg
+    (nought: put away, it meets nothing and does not move:
+    '_deckthings')."""
+    for k, ((place, turn), mass) in enumerate(zip(bodies, masses)):
+      b = first + k + 1
+      self._places[b] = place
+      self._turns[b] = _products(numpy.array([turn], numpy.float64),
+                                 self._rest[b - 1:b])[0]
+      self._velocities[b] = (0.0, 0.0, 0.0)
+      self._masses[b] = mass
+    self.places.assign(self._places.astype(numpy.float32))
+    self.turns.assign(_warpQuats(self._turns).astype(numpy.float32))
+    self.velocities.assign(self._velocities.astype(numpy.float32))
+    spins = self.spins.numpy()
+    spins[first + 1:first + 1 + len(bodies)] = 0.0
+    self.spins.assign(spins)
+    self.masses.assign(self._masses.astype(numpy.float32))
 
   def shown(self, ) -> tuple:
     """The 'shown' method returns each loose thing's place (its middle,

@@ -109,9 +109,11 @@ class TestAutoflight(SpaceTest):
     self.assertFalse(flying.engaged)
 
   def test_dark(self) -> None:
-    """Unlit, the engine pushes nothing however far it is opened, and
-    the rocket stays on the pad with the ascent flying it; lit, it
-    lifts off."""
+    """Unlit, the throttle stays shut though the ascent opens it (user,
+    2026-11-19: "The launch switch allows the throttle. It doesn't just
+    hold down the rocket, whilst the autopilot keeps burning the
+    rocket"): nothing pushes, the rocket stays on the pad; lit, the
+    ascent opens it and it lifts off."""
     system, keeper, flying = self._ready()
     flight = self.flightOf()
     vessel = self.padded(system)
@@ -123,7 +125,7 @@ class TestAutoflight(SpaceTest):
       flying.acted(vessel, system, keeper, reading, True)
       flight.flown((vessel,), system, keeper.now, FRAME)
       keeper.ticked(FRAME)
-    self.assertEqual(vessel.engine.throttle, 1.0)
+    self.assertEqual(vessel.engine.throttle, 0.0)
     self.assertEqual(vessel.engine.push, 0.0)
     self.assertLess(abs(vessel.heightOver(system) - standing), 0.05)
     vessel.engine.lit = True

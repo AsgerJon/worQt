@@ -22,6 +22,7 @@ from worQt.gaming.space._dockingguidance import ROCKET_UP, ROCKET_WIDE
 from worQt.gaming.space._dockingguidance import DockingGuidance, routeOf
 from worQt.gaming.space._stationsolids import stationSolids, sweptDistance
 from worQt.gaming.space._dockingport import NOSE_PORT, PUSH_OFF
+from worQt.gaming.space._stationmeshes import portTip
 from worQt.gaming.space._dockingport import DockingPort
 from worQt.gaming.space._station import SPIN, Station
 from worQt.gaming.space._vessel import Vessel
@@ -52,7 +53,7 @@ class TestDocking(SpaceTest):
     rows = station.turnAt(0.0)
     axis = tuple(row[2] for row in rows)
     side = tuple(row[0] for row in rows)
-    place = tuple(m + (80.0 + out + NOSE_PORT[2]) * a + aside * s
+    place = tuple(m + (portTip()[2] + out + NOSE_PORT[2]) * a + aside * s
                   for m, a, s in zip(middle, axis, side))
     vessel.placed(station.parent, place, velocity, (1.0, 0.0, 0.0, 0.0),
                   (0.0, 0.0, 0.0))
@@ -88,6 +89,33 @@ class TestDocking(SpaceTest):
     self.assertFalse(vessel.docked)
     off = port.readingOf(vessel, system, 30.0)
     self.assertAlmostEqual(-off['closing'], PUSH_OFF, 6)
+
+  def test_roll(self) -> None:
+    """Its doors face the shafts docked (user, 2026-11-19: "so that the
+    spokes align with the doors to our top floor"): the turn it docks at
+    is rolled to the nearest quarter turn; the hole's guides catch it
+    rolled a few degrees off that, not 30 degrees off."""
+    from worQt.gaming.space._dockingport import ROLL
+    from worQt.gaming.space._turns import aboutAxis, product
+    system, station, port, vessel = self._near(0.0, 0.0)
+    port.aligned(vessel, 0.0)
+    flat = port.relative[0]
+    self.assertEqual(sorted(abs(round(c)) for c in flat), [0, 0, 1])
+    port.homed(vessel, 0.0)
+    home = vessel.turn
+    for degrees, caught in ((0.0, True), (5.0, True), (30.0, False),
+                            (95.0, True), (-178.0, True)):
+      vessel.placed(vessel.anchor, vessel.place, vessel.velocity, product(
+        home, aboutAxis((0.0, 0.0, 1.0), math.radians(degrees))),
+                    vessel.spin)
+      reading = port.readingOf(vessel, system, 0.0)
+      self.assertEqual(port.caught(reading), caught, degrees)
+      self.assertEqual(reading['roll'] <= ROLL, caught, degrees)
+    vessel.placed(vessel.anchor, vessel.place, vessel.velocity, product(
+      home, aboutAxis((0.0, 0.0, 1.0), math.radians(80.0))), vessel.spin)
+    port.aligned(vessel, 0.0)
+    self.assertEqual(sorted(abs(round(c)) for c in port.relative[0]),
+                     [0, 0, 1])
 
   def test_teleported(self) -> None:
     """The debug menu's warp (user, 2026-11-18: "a debug menu available

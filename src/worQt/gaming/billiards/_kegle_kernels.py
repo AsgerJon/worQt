@@ -35,6 +35,9 @@ UPRIGHT = wp.constant(wp.float64(0.03490658503988659))  # 2 degrees
 LYING = wp.constant(wp.float64(1.3962634015954636))  # 80 degrees
 POINTS = wp.constant(wp.float64(8.0))  # the foot's points, a number
 ZONE = wp.constant(wp.float64(1.0))  # mm: a ball this near is stepped
+#  Past this lean, 20 degrees, a pin moving is down for good: past its
+#  tipping angle, 8.8, and falling; nearer upright it may stand again.
+DECIDED = wp.constant(wp.float64(0.3490658503988659))
 TOUCH = wp.constant(wp.float64(1e-6))  # mm: nearer than this touches
 
 
@@ -54,6 +57,7 @@ class PinRules:
   clothDamping: wp.float64
   clothFriction: wp.float64
   rolling: wp.float64
+  slowest: wp.float64
   ballStiff: wp.float64
   ballDamp: wp.float64
   ballFriction: wp.float64
@@ -78,7 +82,6 @@ class PinRules:
   length: wp.float64
   top: wp.float64
   out: wp.float64
-  bed: wp.float64
 
 
 @wp.struct
@@ -307,12 +310,15 @@ def ballsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
                pinQ: wp.array(dtype=wp.quatd),
                pinW: wp.array(dtype=wp.vec3d),
                awake: wp.array(dtype=wp.int32),
+               held: wp.array(dtype=wp.int32),
                pinNow: wp.array(dtype=wp.int32), i: int,
                dt: wp.float64) -> int:
   """Pushes pin 'i' and the balls meeting it apart for 'dt', with
-  friction, as 'PinField._ballsMeet' does, the pin woken; marks pin 'i'
-  in 'pinNow' for each ball pressing into it; returns the balls that
-  pushed it, a bit each."""
+  friction, as 'PinField._ballsMeet' does: the pin woken by a ball
+  coming into it faster than 'still', else, asleep, holding as the
+  cloth does, the ball alone pushed; marks pin 'i' in 'pinNow' for each
+  ball pressing into it, and 'held'; returns the balls that pushed it, a
+  bit each."""
   balls = place.shape[0]
   count = spheres.shape[0]
   ballInertia = INERTIA * rules.ballMass * rules.radius * rules.radius
@@ -333,6 +339,7 @@ def ballsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
       if depth <= ZERO or gap <= ZERO:
         continue
       pinNow[b] = pinNow[b] | (1 << i)
+      held[i] = int(1)
       way = off / gap
       reach = arm - size * way
       ballArm = rules.radius * way
@@ -344,11 +351,17 @@ def ballsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
                     ZERO) * dt
       if push <= ZERO:
         continue
-      awake[i] = int(1)
-      mask = mask | (1 << b)
+      #  Asleep, a pin holds against a ball barely coming into it.
+      moved = ONE
+      if awake[i] == 0 and closing <= rules.still:
+        moved = ZERO
+      else:
+        awake[i] = int(1)
+        mask = mask | (1 << b)
       impulse = push * way
-      pinV[i] = pinV[i] + impulse / rules.mass
-      pinW[i] = pinW[i] + _invTimes(rules, axis, wp.cross(reach, impulse))
+      pinV[i] = pinV[i] + moved * impulse / rules.mass
+      pinW[i] = pinW[i] + moved * _invTimes(rules, axis,
+                                            wp.cross(reach, impulse))
       speed[b] = speed[b] - wp.vec2d(impulse[0], impulse[1]) / \
         rules.ballMass
       spin[b] = spin[b] - wp.cross(ballArm, impulse) / ballInertia
@@ -360,11 +373,13 @@ def ballsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
       slipSize = wp.length(slip)
       if slipSize > ZERO:
         unit = slip / slipSize
-        give = _give(rules, axis, reach, unit) + BALL_GIVE / rules.ballMass
-        held = wp.min(rules.ballFriction * push, slipSize / give)
-        grip = held * unit
-        pinV[i] = pinV[i] + grip / rules.mass
-        pinW[i] = pinW[i] + _invTimes(rules, axis, wp.cross(reach, grip))
+        give = moved * _give(rules, axis, reach, unit) + \
+          BALL_GIVE / rules.ballMass
+        gripped = wp.min(rules.ballFriction * push, slipSize / give)
+        grip = gripped * unit
+        pinV[i] = pinV[i] + moved * grip / rules.mass
+        pinW[i] = pinW[i] + moved * _invTimes(rules, axis,
+                                              wp.cross(reach, grip))
         speed[b] = speed[b] - wp.vec2d(grip[0], grip[1]) / rules.ballMass
         spin[b] = spin[b] - wp.cross(ballArm, grip) / ballInertia
   return mask
@@ -377,11 +392,14 @@ def pinsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
               pinQ: wp.array(dtype=wp.quatd),
               pinW: wp.array(dtype=wp.vec3d),
               awake: wp.array(dtype=wp.int32),
+              held: wp.array(dtype=wp.int32),
               credit: wp.array(dtype=wp.int32),
               mover: wp.array(dtype=wp.int32), i: int, dt: wp.float64):
   """Pushes pin 'i', moving, and each pin it meets apart for 'dt', as
   'PinField._pinsMeet' does, the other woken and credited to the ball
-  that moved 'i'."""
+  that moved 'i'; but asleep and met no faster than 'still', the other
+  holds as the cloth does, 'i' alone pushed (else two pins leaning on
+  each other woke each other in turn, for ever). Both marked 'held'."""
   pins = pinP.shape[0]
   count = spheres.shape[0]
   axisP = _axis(pinQ[i])
@@ -413,6 +431,8 @@ def pinsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
         depth = size + otherSize - gap
         if depth <= ZERO or gap <= ZERO:
           continue
+        held[i] = int(1)
+        held[j] = int(1)
         way = off / gap
         reach = arm + size * way
         otherReach = otherArm - otherSize * way
@@ -422,6 +442,12 @@ def pinsOnPin(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
         push = wp.max(rules.pinStiff * depth + rules.pinDamp * closing,
                       ZERO) * dt
         if push <= ZERO:
+          continue
+        if awake[j] == 0 and closing <= rules.still:
+          impulse = push * way
+          pinV[i] = pinV[i] - impulse / rules.mass
+          pinW[i] = pinW[i] - _invTimes(rules, axisP,
+                                        wp.cross(reach, impulse))
           continue
         awake[j] = int(1)
         if mover[i] >= 0:
@@ -444,12 +470,16 @@ def pinOnCloth(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
                pinQ: wp.array(dtype=wp.quatd),
                pinW: wp.array(dtype=wp.vec3d),
                awake: wp.array(dtype=wp.int32),
+               held: wp.array(dtype=wp.int32),
                quiet: wp.array(dtype=wp.float64), i: int, dt: wp.float64):
   """Moves pin 'i', moving, on for 'dt': pulled down, pushed up off the
   cloth where its foot's edge or its surface presses into it, with
-  friction, meeting the cushions and rails, blocks it may fly over, off
-  the table to lie on the floor, out of play; moved and turned, put to
-  sleep once still a while, upright or lying, as 'PinField' does."""
+  friction, meeting the cushions and rails, blocks it may fly over; its
+  middle over a cushion, past the noses' line, off the table, evaporated
+  where it is (the user: as in Portal), out of play; moved and turned,
+  put to
+  sleep once still a while, upright, lying, or leaning on a cushion, a
+  ball or a pin ('held'), as 'PinField' does."""
   count = spheres.shape[0]
   pinV[i] = pinV[i] - wp.vec3d(ZERO, ZERO, rules.gravity * dt)
   q = pinQ[i]
@@ -489,9 +519,9 @@ def pinOnCloth(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
                     pointSpeed[1] * pointSpeed[1])
     if slide > ZERO:
       along = wp.vec3d(pointSpeed[0] / slide, pointSpeed[1] / slide, ZERO)
-      held = wp.min(rules.clothFriction * push,
-                    HALF * slide / _give(rules, axis, arm, along))
-      grip = -held * along
+      gripped = wp.min(rules.clothFriction * push,
+                       HALF * slide / _give(rules, axis, arm, along))
+      grip = -gripped * along
       pinV[i] = pinV[i] + grip / rules.mass
       pinW[i] = pinW[i] + _invTimes(rules, axis, wp.cross(arm, grip))
   #  The felt pushing back 'rolling' ahead slows its turning across it.
@@ -541,6 +571,7 @@ def pinOnCloth(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
         nz = ONE
       if depth <= ZERO:
         continue
+      held[i] = int(1)
       way = wp.vec3d(-sign * nu, ZERO, nz)
       if wall >= 2:
         way = wp.vec3d(ZERO, -sign * nu, nz)
@@ -556,32 +587,23 @@ def pinOnCloth(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
   spinNow = pinW[i]
   spinQ = wp.quatd(spinNow[0], spinNow[1], spinNow[2], ZERO)
   pinQ[i] = wp.normalize(q + HALF * dt * (spinQ * q))
-  #  Past the rails it is off the table: on the floor, out of play.
+  #  Over a cushion it is off the table (the user): evaporated where it
+  #  crossed the noses' line, as in Portal's grid, out of play.
   p = pinP[i]
-  if p[0] < -rules.out or p[0] > rules.width + rules.out or \
-      p[1] < -rules.out or p[1] > rules.length + rules.out:
-    axisNow = _axis(pinQ[i])
-    flatX = axisNow[0]
-    flatY = axisNow[1]
-    flat = wp.sqrt(flatX * flatX + flatY * flatY)
-    if flat < TINY:
-      flatX = ONE
-      flatY = ZERO
-      flat = ONE
-    half = wp.sqrt(HALF)
-    pinQ[i] = wp.quatd(-half * flatY / flat, half * flatX / flat, ZERO,
-                       half)
-    pinP[i] = wp.vec3d(p[0], p[1], rules.widest - rules.bed)
+  if p[0] < ZERO or p[0] > rules.width or p[1] < ZERO or \
+      p[1] > rules.length:
     pinV[i] = wp.vec3d(ZERO, ZERO, ZERO)
     pinW[i] = wp.vec3d(ZERO, ZERO, ZERO)
     quiet[i] = ZERO
     awake[i] = int(2)
     return
+  #  Leaning free a pin is falling, or balanced on its foot's edge for a
+  #  moment: never asleep so; leaning on something, held, it may sleep.
   tilt = wp.acos(wp.clamp(_axis(pinQ[i])[2], -ONE, ONE))
   pace = wp.length(pinV[i])
   spinning = wp.length(pinW[i]) * rules.height
-  if (tilt < UPRIGHT or tilt > LYING) and pace < rules.still and \
-      spinning < rules.still:
+  if (tilt < UPRIGHT or tilt > LYING or held[i] != 0) and \
+      pace < rules.still and spinning < rules.still:
     quiet[i] = quiet[i] + dt
   else:
     quiet[i] = ZERO
@@ -590,6 +612,52 @@ def pinOnCloth(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
     pinV[i] = wp.vec3d(ZERO, ZERO, ZERO)
     pinW[i] = wp.vec3d(ZERO, ZERO, ZERO)
     quiet[i] = ZERO
+
+
+@wp.func
+def lowestOf(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
+             p: wp.vec3d, q: wp.quatd) -> wp.float64:
+  """Returns how high over the cloth a pin's lowest point is, of its
+  foot's edge and its surface, its centre of mass at 'p', turned 'q'."""
+  axis = _axis(q)
+  e1 = wp.quat_rotate(q, wp.vec3d(ONE, ZERO, ZERO))
+  e2 = wp.quat_rotate(q, wp.vec3d(ZERO, ONE, ZERO))
+  low = p[2]
+  for k in range(8):
+    angle = TURN * wp.float64(k) / POINTS
+    arm = rules.foot * wp.cos(angle) * e1 + \
+      rules.foot * wp.sin(angle) * e2 - rules.centre * axis
+    low = wp.min(low, p[2] + arm[2])
+  for k in range(spheres.shape[0]):
+    low = wp.min(low, p[2] + spheres[k][0] * axis[2] - spheres[k][1])
+  return low
+
+
+@wp.func
+def stirring(rules: PinRules, spheres: wp.array(dtype=wp.vec2d),
+             place: wp.array(dtype=wp.vec2d),
+             pinP: wp.array(dtype=wp.vec3d),
+             pinV: wp.array(dtype=wp.vec3d),
+             pinQ: wp.array(dtype=wp.quatd), i: int) -> int:
+  """Returns 1 if pin 'i', moving, may yet stand again or move a ball:
+  leaning less than 'DECIDED', in the air, or near enough a ball to
+  reach it, falling over its height or rolling on as far as the felt
+  lets it ('slowest'); 0 if it may not, down for good, its count
+  known."""
+  out = int(0)
+  if wp.acos(wp.clamp(_axis(pinQ[i])[2], -ONE, ONE)) < DECIDED:
+    out = int(1)
+  if lowestOf(rules, spheres, pinP[i], pinQ[i]) > ZONE:
+    out = int(1)
+  v = pinV[i]
+  far = rules.height + rules.radius + rules.widest + ZONE + \
+    wp.dot(v, v) / (TWO * rules.slowest)
+  for b in range(place.shape[0]):
+    dx = place[b][0] - pinP[i][0]
+    dy = place[b][1] - pinP[i][1]
+    if dx * dx + dy * dy < far * far:
+      out = int(1)
+  return out
 
 
 @wp.func
@@ -674,9 +742,10 @@ def kegleRun(hits: HitRules, rules: PinRules, pockets: PocketRules,
              awake: wp.array(dtype=wp.int32),
              credit: wp.array(dtype=wp.int32),
              mover: wp.array(dtype=wp.int32),
-             quiet: wp.array(dtype=wp.float64), red: wp.int32,
+             quiet: wp.array(dtype=wp.float64),
+             held: wp.array(dtype=wp.int32), red: wp.int32,
              begun: wp.float64, start: wp.float64, seconds: wp.float64,
-             whole: wp.int32, most: wp.int32,
+             whole: wp.int32, most: wp.int32, settles: wp.int32,
              events: wp.array(dtype=wp.vec4i),
              out: wp.array(dtype=wp.float64)):
   """Steps the balls and the pins together for 'seconds' at most, cut
@@ -687,15 +756,21 @@ def kegleRun(hits: HitRules, rules: PinRules, pockets: PocketRules,
   moving, and no ball moving near a pin ('zoneOf'). 'going' holds the
   balls' contacts as 'hitsRun' has them, 'pinGoing' the pins each ball
   presses into, a bit each; 'awake' 1 a pin moving, 2 one off the table,
-  out of play; each contact beginning is written to 'events',
-  (step, kind, first, second), kind 0 a cushion, 1 a pair, 2 a pin, 3
+  evaporated over a cushion, out of play; 'held' marks, each step anew,
+  the pins leaning on a cushion, a ball or a pin. Asked to, 'settles' (a
+  shot recorded), it hands back too once every ball rests, still and
+  spinning not at all, though pins move on, if none of them may stand
+  again, is in the air or may reach a ball ('stirring'; the user: only
+  the balls must settle), 'out' [2] two. Each contact beginning is
+  written to 'events', (step, kind, first, second), kind 0 a cushion,
+  1 a pair, 2 a pin, 3
   a ball into a hole of 'holes' ('pockets', 'jaws': 'Motion' has them),
   kept far off the table after, where nothing meets it;
   a pin is credited to the first ball to set it going, red when red
   is among them ('red', its index, -1 for none). Time is kept from
   'start', the run begun at 'begun', each step added on, so a run cut
   anywhere goes on the same. 'out': the time now, the steps, whether
-  all are clear, how many events."""
+  all are clear (one) or the balls rest so (two), how many events."""
   count = place.shape[0]
   pins = pinP.shape[0]
   room = events.shape[0]
@@ -780,6 +855,23 @@ def kegleRun(hits: HitRules, rules: PinRules, pockets: PocketRules,
     if anyContact == 0 and moving == 0 and near == 0:
       clear = int(1)
       break
+    #  Only the balls must settle (the user): resting, they are done with
+    #  the pins still moving, unless one may stand again, is in the air
+    #  or may reach one; asked so ('settles', a shot recorded).
+    if settles != 0 and anyContact == 0 and near == 0:
+      calm = int(1)
+      for k in range(count):
+        if speed[k][0] != ZERO or speed[k][1] != ZERO:
+          calm = int(0)
+        if spin[k][0] != ZERO or spin[k][1] != ZERO or spin[k][2] != ZERO:
+          calm = int(0)
+      for i in range(pins):
+        if calm != 0 and awake[i] == 1:
+          if stirring(rules, spheres, place, pinP, pinV, pinQ, i) != 0:
+            calm = int(0)
+      if calm != 0:
+        clear = int(2)
+        break
     dt = rules.coarse
     if fastest > ZERO:
       dt = wp.clamp(rules.closeBy / fastest, rules.fine, rules.coarse)
@@ -804,10 +896,12 @@ def kegleRun(hits: HitRules, rules: PinRules, pockets: PocketRules,
     for b in range(count):
       pinNow[b] = int(0)
     for i in range(pins):
+      held[i] = int(0)
+    for i in range(pins):
       if awake[i] == 2:
         continue
       mask = ballsOnPin(rules, spheres, place, speed, spin, pinP, pinV,
-                        pinQ, pinW, awake, pinNow, i, dt)
+                        pinQ, pinW, awake, held, pinNow, i, dt)
       if mask != 0:
         met = int(-1)
         for b in range(count):
@@ -839,19 +933,19 @@ def kegleRun(hits: HitRules, rules: PinRules, pockets: PocketRules,
     #  Pins on pins, then each pin moving on the cloth.
     for i in range(pins):
       if awake[i] == 1:
-        pinsOnPin(rules, spheres, pinP, pinV, pinQ, pinW, awake, credit,
-                  mover, i, dt)
+        pinsOnPin(rules, spheres, pinP, pinV, pinQ, pinW, awake, held,
+                  credit, mover, i, dt)
     for i in range(pins):
       if awake[i] == 1:
-        pinOnCloth(rules, spheres, pinP, pinV, pinQ, pinW, awake, quiet, i,
-                   dt)
+        pinOnCloth(rules, spheres, pinP, pinV, pinQ, pinW, awake, held,
+                   quiet, i, dt)
     #  The balls moved on: on the slate through a hit, else on the cloth.
     for k in range(count):
       if going[k] != 0:
         slated(hits, place, turn, speed, spin, settling, k, lifts[k], dt)
       else:
         ballOnCloth(rules, place, turn, speed, spin, k, dt)
-        if pinNow[k] != 0:
+        if pinNow[k] != 0 and wp.length(speed[k]) > hits.settleSpeed:
           settling[k] = int(0)
     used = used + dt
     steps = steps + 1

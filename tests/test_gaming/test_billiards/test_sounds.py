@@ -35,7 +35,7 @@ class TestSounds(BilliardsTest):
     takes = _sounds.takes()
     self.assertEqual(set(takes), {'clack', 'thud', 'tock', 'fanfare',
                                   'windUp', 'whirr', 'windDown', 'carom',
-                                  'pocket', 'sadPocket',
+                                  'pocket', 'sadPocket', 'evaporate',
                                   *('%s%d' % (name, k)
                                     for name in ('pin', 'sadPin', 'sadLand')
                                     for k in range(5))})

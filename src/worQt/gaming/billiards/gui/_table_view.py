@@ -100,6 +100,7 @@ class TableView(QQuickWidget, WidgetMixin):
   __view_shapes__: dict[str, Prism] | None = None
   __view_trails__: tuple | None = None
   __view_kegler__: bool = False
+  __view_flinging__: bool = False
   __pin_rows__: list | None = None
   __pin_mesh__: numpy.ndarray | None = None
   __pin_shapes__: tuple = ()
@@ -130,6 +131,7 @@ class TableView(QQuickWidget, WidgetMixin):
   clothDragged = Signal(float, float)
   clothReleased = Signal()
   tableTapped = Signal(float, float)
+  pinTapped = Signal(int)
   strokePressed = Signal(float, float)
   strokeMoved = Signal(float, float)
   strokeReleased = Signal()
@@ -343,6 +345,15 @@ class TableView(QQuickWidget, WidgetMixin):
     root = self.rootObject()
     if root is not None:
       root.setProperty('moving', True if moving else False)
+
+  def setFlinging(self, flinging: bool) -> None:
+    """The 'setFlinging' method lets a tap on a pin of the table played
+    ask for it to be sent flying, 'pinTapped' (debug, the user: to see a
+    pin go over a cushion at will); or not."""
+    self.__view_flinging__ = True if flinging else False
+    root = self.rootObject()
+    if root is not None:
+      root.setProperty('flinging', self.__view_flinging__)
 
   def setKegler(self, kegler: bool) -> None:
     """The 'setKegler' method lays the table out for keglebillard, the
@@ -835,6 +846,7 @@ class TableView(QQuickWidget, WidgetMixin):
       root.clothDragged.connect(self._dragged)
       root.clothReleased.connect(self.clothReleased.emit)
       root.tableTapped.connect(self._tapped)
+      root.pinTapped.connect(self.pinTapped.emit)
       root.strokePressed.connect(self.strokePressed.emit)
       root.strokeMoved.connect(self.strokeMoved.emit)
       root.strokeReleased.connect(self.strokeReleased.emit)
@@ -936,6 +948,7 @@ class TableView(QQuickWidget, WidgetMixin):
     root.setProperty('pinSpots', [self.scenePlace(x, y, 0.0)
                                   for x, y in kegle.pinSpots()])
     root.setProperty('kegler', self.__view_kegler__)
+    root.setProperty('flinging', self.__view_flinging__)
     self._pushPinShape(root)
 
   def _pushPinShape(self, root: object) -> None:
@@ -953,15 +966,17 @@ class TableView(QQuickWidget, WidgetMixin):
 
   def _pushPins(self, root: object) -> None:
     """Shows the pins as 'setPins' has them: each pin's foot where it
-    is, the pin turned so in the scene, those not on the table hidden."""
+    is, the pin turned so in the scene, those not on the table hidden,
+    those flown over a cushion evaporating where they crossed (the user:
+    as in Portal's grid; 'PIN_STATE' awake two)."""
     kegle, pin = KegleTable(self.table), KeglePin()
     rows = self.__pin_rows__
     if rows is None:
-      rows = [(k, x, y, pin.centre(), 1.0, 0.0, 0.0, 0.0)
+      rows = [(k, x, y, pin.centre(), 1.0, 0.0, 0.0, 0.0, 0.0)
               for k, (x, y) in enumerate(kegle.pinSpots())]
     count = len(kegle.pinSpots())
     places, turns = [QVector3D()] * count, [QQuaternion()] * count
-    shown = [False] * count
+    shown, gone = [False] * count, [False] * count
     up = QVector3D(0.0, pin.centre(), 0.0)
     for row in rows:
       number = int(row[0])
@@ -970,9 +985,11 @@ class TableView(QQuickWidget, WidgetMixin):
         - turn.rotatedVector(up)
       turns[number] = turn
       shown[number] = True
+      gone[number] = float(row[8]) > 1.5
     root.setProperty('pinPlaces', places)
     root.setProperty('pinTurns', turns)
     root.setProperty('pinShown', shown)
+    root.setProperty('pinGone', gone)
 
   def _pushTrails(self, *_) -> None:
     """Draws the trails set, as wide as the view from above shows them

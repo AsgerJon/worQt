@@ -104,18 +104,19 @@ class TestCockpit(SpaceTest):
   """Tests for 'Cockpit', its dashboard and its cabin's parts."""
 
   def test_inputs(self) -> None:
-    """The dashboard has its 35 inputs, each its own action and key
+    """The dashboard has its 36 inputs, each its own action and key
     (but the tape deck's own keys: the right console's work the same):
     the map's switch (the view is no dashboard's: user, 2026-11-17, "the
     dashboard should not show the view as a dashboard function"), three
     knobs (warp, orbit, the
-    engine's limit), 30 keys (the AUTOPILOT's three modes, ENGAGE and
-    WARP TO ACTION, the ASSISTS, LAUNCH, the docking's six thrusters, the
-    monitor's feed, undock; the tape's on the console and on the deck),
+    engine's limit), 31 keys (the AUTOPILOT's three modes, ENGAGE,
+    WARP TO ACTION and AUTO WARP, the ASSISTS, LAUNCH, the docking's six
+    thrusters, the monitor's feed, undock; the tape's on the console and
+    on the deck),
     the push-pull throttle; the switches plain FourthPeeps, the rest
     their kinds."""
     controls = Cockpit().controls
-    self.assertEqual(len(controls), 35)
+    self.assertEqual(len(controls), 36)
     own = [control for control in controls if not _atDeck(control)]
     self.assertEqual(len(own), len(controls) - len(DECK_KEYS))
     actions = [control.action for control in own]
@@ -126,7 +127,7 @@ class TestCockpit(SpaceTest):
     for control in controls:
       kind = type(control.peep).__name__
       kinds[kind] = kinds.get(kind, 0) + 1
-    self.assertEqual(kinds, {'FourthPeep': 1, 'Knob': 3, 'Pushbutton': 30,
+    self.assertEqual(kinds, {'FourthPeep': 1, 'Knob': 3, 'Pushbutton': 31,
                              'Slider': 1})
     self.assertIs(type(Cockpit().controlOf('map').peep), FourthPeep)
     self.assertIsNone(Cockpit().controlOf('view'))
@@ -272,11 +273,12 @@ class TestCockpit(SpaceTest):
       self.assertTrue((numpy.hypot(rows[:, 0], rows[:, 1]) <= wall).all())
     cells = labelCells()
     for piece in pieces(cockpit.controls):
-      if piece[0] in ('car', 'sbolt', 'sring', 'lift', 'lift glass',
-                      'egg ball', 'port door'):
+      if piece[0] in ('car', 'car glass', 'car seat', 'car button',
+                      'car guard', 'deck thing', 'lift', 'lift glass',
+                      'egg ball', 'level lamp', 'car lamp'):
         continue
       rows = numpy.asarray(pieceRows(piece, cells)[0])
-      if piece[0] in ('door', 'door glass'):
+      if piece[0] in ('door', 'door glass', 'shaft door'):
         skin = numpy.vectorize(capsuleRadius)(rows[:, 2])
         across = numpy.hypot(rows[:, 0], rows[:, 1])
         self.assertTrue((across < skin).all())

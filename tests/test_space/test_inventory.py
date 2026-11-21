@@ -25,12 +25,14 @@ class TestInventory(SpaceTest):
   """Tests for Asger's inventory."""
 
   def test_carried(self) -> None:
-    """He begins with the gun held, the telescope beside it and a stack
-    of commando bars in the inventory over the hotbar."""
+    """He begins with the telescope held (the Grav-Gun is gone: user,
+    2026-11-19, "Forget about the gravity gun") and a stack of commando
+    bars in the inventory over the hotbar."""
     inventory = Inventory()
     self.assertEqual(len(inventory.slots), SLOTS)
-    self.assertEqual(inventory.held, 'gravgun')
-    self.assertEqual(inventory.slots[1], ['telescope', 1])
+    self.assertEqual(inventory.held, 'telescope')
+    self.assertEqual(inventory.slots[0], ['telescope', 1])
+    self.assertNotIn('gravgun', ITEMS)
     bars = [s for s in inventory.slots[HOTBAR:] if s is not None]
     self.assertEqual(bars[0][0], 'commando')
     self.assertGreater(bars[0][1], 1)
@@ -39,9 +41,9 @@ class TestInventory(SpaceTest):
     """Keys choose a hotbar slot; the wheel goes round it; past the
     hotbar is no slot to choose."""
     inventory = Inventory()
-    inventory.chosen(1)
+    inventory.chosen(0)
     self.assertEqual(inventory.held, 'telescope')
-    inventory.scrolled(-2)
+    inventory.scrolled(-1)
     self.assertEqual(inventory.selected, HOTBAR - 1)
     self.assertIsNone(inventory.held)
     with self.assertRaises(IndexError):
@@ -75,10 +77,8 @@ class TestInventory(SpaceTest):
     self.assertEqual(total, count)
     inventory.clicked(0, False)
     inventory.clicked(1, False)
-    self.assertEqual(inventory.slots[1], ['gravgun', 1])
-    self.assertEqual(inventory.carried, ['telescope', 1])
-    inventory.closed()
-    self.assertEqual(inventory.slots[0], ['telescope', 1])
+    self.assertEqual(inventory.slots[1], ['telescope', 1])
+    self.assertIsNone(inventory.slots[0])
 
   def test_eaten(self) -> None:
     """A bar held and eaten is one fewer, and feeds him its points once

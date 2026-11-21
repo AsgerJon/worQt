@@ -4,9 +4,10 @@ things bump into (user, 2026-11-17: Asger getting up and floating
 round, "FAFO rules"), Qt-free, the vessel's own axes: his rig (the
 pilot seat, the consoles, the curved panel and its hood as boxes round
 the curve, the risers its wings stand on, the globe in the panel, the
-sideboard and the tape deck on it) and the furnishings fixed down
-('_furnishings.obstacles'). The floor, the wall and the ceiling are the
-cabin kernel's own ('_cabin_kernels').
+sideboard and the tape deck on it), the furnishings fixed down
+('_furnishings.obstacles') and the ladder's rails up the rocket's axis
+through its three levels ('_ladder'). The floors, the walls and the
+ceilings are the cabin kernel's own ('_cabin_kernels').
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -27,6 +28,7 @@ from ._cockpit import SIDEBOARD, TOP, hoodAxes, hoodPoint, panelAxes
 from ._cockpit import panelPoint
 from ._deckmodel import stillParts
 from ._furnishings import obstacles
+from ._ladder import railsOf
 from ._shapes import UNTURNED
 
 #  The curved panel and its hood as boxes round the curve, each so many
@@ -61,6 +63,7 @@ def solids() -> tuple:
       hx, hy, 0.5 * (high - TOP)), UNTURNED))
   out.append(_deckBox())
   out.append((GLOBE_AT, (GLASS, GLASS, GLASS), GLOBE_AXES))
+  out += list(railsOf())
   return tuple(out) + obstacles()
 
 

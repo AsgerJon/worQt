@@ -26,14 +26,15 @@ from worQt.gaming.sandbox import Knob, Pushbutton, Slider
 
 from . import _cabin, _dashboard, _deckmodel
 from ._cabinpictures import cabinPicturesReady
-from ._bolts import boltGlintRows, boltRingRows, boltRows
 from ._egg import eggRows
 from ._furnishings import furnishings, looseParts
-from ._gunmodel import gunParts
 from ._handitems import heldParts
 from ._itempictures import itemPictures
 from ._interiormeshes import interiorMeshes
+from ._ladder import ladderRows
 from ._kolonihave import gardenMeshes
+from ._terminal import terminalMeshes
+from ._deckthings import deckThings
 from ._stationmeshes import stationMeshes
 from ._stationpictures import stationPicturesReady
 from ._cockpit import BALL_RADIUS, LAMPS, LIT_KEYS, SCALE
@@ -151,20 +152,25 @@ LIGHT_LOOKS = {'flames': (((255, 186, 84), 0.0, 1.0), True),
                'shade': (((246, 224, 182), 0.0, 0.9), False),
                'bulbs': (((255, 196, 112), 0.0, 1.0), True)}
 #  The space station's looks by mesh ('_stationmeshes'): white hull, its
-#  windows lit warm, its port's collar green, its antennas and beacons
-#  in the rainbow sliding along them (user, 2026-11-17: "RGB lighting");
-#  all but the hull shine of their own; how fast the rainbow slides.
+#  windows lit warm, its spokes' lamps cool blue (user, 2026-11-19: "we
+#  need illuminated spokes"), its port's collar green, its antennas and
+#  beacons in the rainbow sliding along them (user, 2026-11-17: "RGB
+#  lighting"); all but the hull and the girders shine of their own; how
+#  fast the rainbow slides.
 STATION_LOOKS = {'hull': (((232, 234, 238), 0.1, 0.45), False),
+                 'girders': (((170, 174, 182), 0.6, 0.45), False),
+                 'spoke lamps': (((120, 206, 255), 0.0, 1.0), True),
                  'windows': (((255, 214, 150), 0.0, 1.0), True),
                  'collar': (((96, 255, 150), 0.0, 1.0), True),
                  'antennas': (((255, 255, 255), 0.0, 1.0), True),
                  'beacons': (((255, 255, 255), 0.0, 1.0), True)}
 RAINBOW_SLIDES = 1.0
 #  Going aboard (user, 2026-11-17: "all aboard Asger's kolonihave i
-#  rummet!"): the hatch's lid, the elevators' cages; the station's inside
-#  and Asger's kolonihave by look (none shine of their own; lit inside
-#  by the station's own light on its axis, 'habitatLight').
-HATCH_LOOK = ((176, 178, 184), 0.6, 0.35)
+#  rummet!"): the elevators' cages; the station's inside and Asger's
+#  kolonihave by look (none shine of their own; lit inside by the
+#  station's own light on its axis, 'habitatLight'). The ladder up the
+#  rocket's levels ('_ladder'): brushed aluminium.
+LADDER_LOOK = ((196, 198, 204), 0.7, 0.35)
 #  The gravity egg's marble's warm white, glowing and lighting round it
 #  ('_egg'; user, 2026-11-18: "a ball that emits light").
 EGG_LIGHT = (255, 236, 200)
@@ -172,10 +178,26 @@ EGG_LIGHT = (255, 236, 200)
 #  of it shows.
 EGG_GLASS = (((215, 232, 245), 0.0, 0.05), 0.18)
 #  Lit from overhead alone (the station's light on its axis) walls stood
-#  black: the inside glows this share of its own colour while docked (a
-#  fill: the light thrown about in it), on a slot of its own.
+#  black: the inside glows this share of its own colour (a fill: the
+#  light thrown about in it), on a slot of its own, drawn docked only
+#  (undocked the sleeves would hang in the drum's empty hole).
 INSIDE_FILL = 0.3
 CAR_LOOK = ((214, 196, 120), 0.4, 0.45)
+#  The cages glowing from outside (warm white: a lit box going down the
+#  spoke), their windows' glass (how much of it shows), their seats.
+CAR_EMIT = (255, 226, 170)
+CAR_GLASS = 0.2
+CAR_SEAT_LOOK = ((48, 52, 64), 0.0, 0.8)
+#  An elevator's button: red (its guard is the dashboard's, 'GUARD_LOOK').
+CAR_BUTTON_LOOK = ((214, 36, 28), 0.0, 0.4)
+#  The deck's loose furnishings ('_deckthings') by look.
+DECK_LOOKS = {'crate': ((168, 122, 70), 0.0, 0.85),
+              'bench': ((92, 64, 44), 0.0, 0.8),
+              'table': ((214, 210, 200), 0.1, 0.6),
+              'planter': ((72, 120, 60), 0.0, 0.9)}
+#  The head's lamp rings and Terra Prime's cages' lamps
+#  ('_stationlamps'): warm white, shining of their own (drawn unlit).
+STATION_LAMP_LOOK = ((255, 236, 196), 0.0, 1.0)
 #  The way in on the pad (user, 2026-11-17: "The door out of the rocket
 #  should be connected to a retractable walk way"): the launch tower, its
 #  walkway, the door, its panels, by look; the ones that shine of their
@@ -211,6 +233,9 @@ FLOOD_AIM = 16.0
 TOWER_FILL = 0.18
 ARM_FILL = 0.3
 INSIDE_LOOKS = {'inside': ((176, 180, 188), 0.05, 0.7),
+                'terminal': ((200, 204, 210), 0.2, 0.6),
+                'stairs': ((112, 116, 122), 0.4, 0.6),
+                'railing': ((214, 172, 44), 0.2, 0.5),
                 'deck': ((132, 136, 142), 0.15, 0.75),
                 'path': ((198, 182, 150), 0.0, 1.0),
                 'lawn': ((118, 186, 72), 0.0, 0.95),
@@ -231,11 +256,6 @@ INSIDE_LOOKS = {'inside': ((176, 180, 188), 0.05, 0.7),
                 'gnome face': ((240, 190, 160), 0.0, 0.8),
                 'gnome beard': ((248, 248, 248), 0.0, 0.9),
                 'gnome hat': ((220, 30, 36), 0.0, 0.7)}
-#  The magic bolts (user, 2026-11-17: "clearly marked 'magic' bolts"):
-#  their steel, their rings' violet glow (unlit: they shine of their
-#  own), the glint over them.
-BOLT_LOOK = ((150, 152, 160), 0.3, 0.35)
-BOLT_RING = (186, 112, 255)
 #  The inputs' guards: red plastic, a little see-through.
 GUARD_LOOK = ((226, 44, 32), 0.0, 0.25)
 GUARD_SEEN = 0.38
@@ -270,6 +290,8 @@ class SpaceViewport(QWidget):
   inventoryClicked = Signal(int, bool)
   teleportPicked = Signal(str)
   gearPicked = Signal(str)
+  inventoryShutPicked = Signal()
+  pausePicked = Signal(str)
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
   #  CONSTRUCTORS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -285,12 +307,11 @@ class SpaceViewport(QWidget):
     self.component, self.problems, self.loaded = None, (), False
     self.furnishedYet, self._kept, self._caps = False, [], []
     self._orbits = []
-    self._beams = []
     self._path, self._slots, self._paper = None, CABIN_SLOT, None
     self._readout = None
-    self._heldKind, self._hands, self._inventory = 'gravgun', {}, None
+    self._heldKind, self._hands, self._inventory = 'telescope', {}, None
     self._armSlot, self._quest, self._teleports = 0, None, None
-    self._debug, self._gear = None, None
+    self._debug, self._gear, self._pauseSlots = None, None, []
     self.fps, self._frames, self._since = 0.0, 0, time.perf_counter()
     self.quick.frameSwapped.connect(self._swapped)
     self.setMinimumSize(800, 600)
@@ -396,7 +417,7 @@ class SpaceViewport(QWidget):
     root.setProperty('paperLayout', _dashboard.paperLayout())
     root.setProperty('manualPicture', QUrl.fromLocalFile(str(
       cabinPicturesReady()['manual'])).toString())
-    root.setProperty('handParts', self._handParts('gravgun'))
+    root.setProperty('handParts', self._handParts('telescope'))
     root.setProperty('itemIcons', {kind: QUrl.fromLocalFile(str(
       path)).toString() for kind, path in itemPictures().items()})
     root.setProperty('paperGeometry', self._kept1(Mesh(
@@ -445,9 +466,10 @@ class SpaceViewport(QWidget):
     first = self._armSlot - 2 * count
     moving += [(first + k, satellite + (0.0,)) for k, satellite in
                enumerate(frame['satellites'])]
-    fill = INSIDE_FILL if cabin.get('aboard') else 0.0
-    moving += [(first + count + k, satellite + (fill,)) for k, satellite
-               in enumerate(frame['satellites'])]
+    aboard = bool(cabin.get('aboard'))
+    moving += [(first + count + k, (place, turn, seen and aboard,
+                                    INSIDE_FILL))
+               for k, (place, turn, seen) in enumerate(frame['satellites'])]
     for k, (place, turn, _) in enumerate(cabin['walkway']):
       moving.append((self._armSlot + k, _sectionOf(frame['pad'], place,
                                                    turn)))
@@ -467,8 +489,11 @@ class SpaceViewport(QWidget):
     shown, shake = cabin['hand']
     root.setProperty('handShown', bool(shown))
     root.setProperty('handShake', QVector3D(*shake))
-    if satellites:
-      root.setProperty('habitatLight', QVector3D(*satellites[0][0]))
+    upper, top, cages = cabin['stationLamps']
+    root.setProperty('habitatLight', QVector3D(*top))
+    root.setProperty('levelLights', [QVector3D(*upper), QVector3D(*top)])
+    root.setProperty('cageLights', [QVector3D(*light) for light in cages])
+    root.setProperty('cabinLit', bool(cabin['cabinLit']))
     root.setProperty('panelLamp', QVector3D(*cabin['lamp']))
     root.setProperty('globeLight', QVector3D(*cabin['globe']))
     lamp, candles, flicker = cabin['hygge']
@@ -486,6 +511,14 @@ class SpaceViewport(QWidget):
     at, way, up = cabin['camera']
     root.setProperty('cctvPlace', QVector3D(at[0], at[2], -at[1]))
     root.setProperty('cctvTurn', sceneTurnOf(way, up))
+    ride = cabin.get('ride', (False,))
+    root.setProperty('rideShown', bool(ride[0]))
+    if ride[0]:
+      _, at, way, up, middle = ride
+      root.setProperty('facePlace', QVector3D(at[0], at[2], -at[1]))
+      root.setProperty('faceTurn', sceneTurnOf(way, up))
+      root.setProperty('riderPlace', QVector3D(middle[0], middle[2],
+                                               -middle[1]))
     place, turn, seen, made = frame['cap']
     if made is not None:
       cap = Mesh(*capRows(*made))
@@ -493,15 +526,6 @@ class SpaceViewport(QWidget):
       root.setProperty('capGeometry', cap)
       root.setProperty('capPicture', QUrl.fromLocalFile(str(self._files[
         system.bodies[anchor].look])).toString())
-    place_, turn_, shown_, core, coils = cabin['beam']
-    if shown_:
-      meshes = (Mesh(*core), Mesh(*coils))
-      self._beams = (self._beams + [meshes])[-KEPT_CAPS:]
-      root.setProperty('beamCore', meshes[0])
-      root.setProperty('beamCoils', meshes[1])
-      root.setProperty('beamPlace', QVector3D(*place_))
-      root.setProperty('beamTurn', QQuaternion(*turn_))
-    root.setProperty('beamShown', bool(shown_))
     root.setProperty('capPlace', QVector3D(*place))
     root.setProperty('capTurn', QQuaternion(*turn))
     root.setProperty('capShown', bool(seen) and bool(self._caps))
@@ -573,6 +597,7 @@ class SpaceViewport(QWidget):
                       ('apMode', 'boardApMode'),
                       ('engaged', 'boardEngaged'), ('phase', 'boardPhase'),
                       ('action', 'boardAction'),
+                      ('autowarp', 'boardAutoWarp'),
                       ('launched', 'boardLaunched'),
                       ('target', 'boardTarget'), ('map', 'boardMap'),
                       ('up', 'boardUp'),
@@ -706,6 +731,39 @@ class SpaceViewport(QWidget):
     root.setProperty('viewField', field)
     root.setProperty('scopeShown', max(0.0, min(1.0, (zoom - 1.2) / 2.0)))
 
+  def holdShown(self, share: float, shown: bool, text: str) -> None:
+    """The 'holdShown' method shows the ring filling as E is held ('share'
+    of the way round, 'shown'), its word ('text')."""
+    root = self._root()
+    if root is None:
+      return
+    for name, value in (('holdShare', float(share)),
+                        ('holdShown', bool(shown)), ('holdText', str(text))):
+      if root.property(name) != value:
+        root.setProperty(name, value)
+
+  def pauseShown(self, shown: bool, ask: str, note: str, canSave: bool,
+                 canLoad: bool, slots: list) -> None:
+    """The 'pauseShown' method shows the pause menu ('shown'), its
+    question or list ('ask': '' none, 'exit': save before exiting?,
+    'save' and 'load': the list of saves, 'overwrite': write over a
+    save?), what it last said ('note'), whether saving and loading may
+    be picked ('canSave', 'canLoad') and the list's buttons ('slots':
+    each its words, what picking it says, whether it may be picked; set
+    only when it changes)."""
+    root = self._root()
+    if root is None:
+      return
+    for name, value in (('pauseOpen', bool(shown)), ('pauseAsk', str(ask)),
+                        ('pauseNote', str(note)),
+                        ('pauseCanSave', bool(canSave)),
+                        ('pauseCanLoad', bool(canLoad))):
+      if root.property(name) != value:
+        root.setProperty(name, value)
+    if slots != self._pauseSlots:
+      self._pauseSlots = [dict(slot) for slot in slots]
+      root.setProperty('pauseSlots', self._pauseSlots)
+
   def manualShown(self, shown: bool) -> None:
     """The 'manualShown' method shows the warning manual close up, or
     puts it back."""
@@ -765,7 +823,7 @@ class SpaceViewport(QWidget):
     root = self._root()
     if root is None:
       return False
-    if root.property('inventoryOpen'):
+    if root.property('inventoryOpen') or root.property('pauseOpen'):
       return True
     under = root.childAt(at.x(), at.y())
     return under is not None and under.objectName() in CLICKED
@@ -828,14 +886,8 @@ class SpaceViewport(QWidget):
     out.append(_partOf(kept(Mesh(*placardRows())), ((255, 255, 255), 0.0,
                                                     0.8), ROCKET_SLOT,
                        False, cabin['manual']))
-    out.append(_partOf(kept(Mesh(*boltRows())), BOLT_LOOK, ROCKET_SLOT,
-                       False))
-    out.append(_partOf(kept(Mesh(*boltRingRows())), (BOLT_RING, 0.0, 1.0),
-                       ROCKET_SLOT, False, '', True))
-    out.append(_partOf(kept(Mesh(*boltGlintRows())),
-                       ((255, 255, 255), 0.0, 1.0), ROCKET_SLOT, False,
-                       cabin['glint'], True, SEE_THROUGH, False, None,
-                       True, GLINT_LOOKS['warp'][1]))
+    out.append(_partOf(kept(Mesh(*ladderRows())), LADDER_LOOK,
+                       ROCKET_SLOT, False))
     for material, rows in _deckmodel.stillParts():
       look, picture, opacity = self._deckLook(material)
       out.append(_partOf(kept(Mesh(*rows)), look, ROCKET_SLOT, False,
@@ -860,8 +912,7 @@ class SpaceViewport(QWidget):
         continue
       look, picture, unlit, emit, opacity = self._pieceLook(piece, labels)
       out.append(_partOf(kept(Mesh(*rows)), look, CABIN_SLOT + k, False,
-                         picture, unlit, opacity, piece[0] == 'gun mark',
-                         emit))
+                         picture, unlit, opacity, False, emit))
     slot = CABIN_SLOT + len(pieces)
     rows, indices = sphereRows(*NAV_SPHERE)
     rows[:, :3] *= BALL_RADIUS
@@ -894,16 +945,18 @@ class SpaceViewport(QWidget):
     rainbow = stationPicturesReady()['rainbow']
     inside = dict(interiorMeshes())
     inside.update(gardenMeshes())
+    inside.update(terminalMeshes())
     out = []
     for k in range(count):
       for name, rows in stationMeshes().items():
         look, unlit = STATION_LOOKS[name]
         coloured = name in ('antennas', 'beacons')
-        out.append(_partOf(self._kept1(Mesh(*rows)), look, first + k,
-                           name in ('hull', 'windows'),
-                           rainbow if coloured else '',
-                           unlit, 1.0, False, None, False,
-                           RAINBOW_SLIDES if coloured else 0.0))
+        part = _partOf(self._kept1(Mesh(*rows)), look, first + k,
+                       name in ('hull', 'windows', 'girders'),
+                       rainbow if coloured else '',
+                       unlit, 1.0, False, None, False,
+                       RAINBOW_SLIDES if coloured else 0.0)
+        out.append(part)
       for name, rows in inside.items():
         out.append(_partOf(self._kept1(Mesh(*rows)), INSIDE_LOOKS[name],
                            first + count + k, True))
@@ -951,42 +1004,39 @@ class SpaceViewport(QWidget):
       return (dark, 0.0, 0.3), '', False, CHECK_COLOUR, 1.0
     if kind == 'loose':
       return HYGGE_LOOKS[looseParts()[what][1]], '', False, None, 1.0
-    if kind == 'gun':
-      look, picture, _, _ = gunParts()[what]
-      return look, picture, False, None, 1.0
-    if kind == 'gun mark':
-      return ((255, 255, 255), 0.0, 1.0), str(cabinPicturesReady()[
-        'three']), True, None, 1.0
-    if kind == 'hatch':
-      return HATCH_LOOK, '', False, None, 1.0
     if kind == 'car':
-      return CAR_LOOK, '', False, None, 1.0
-    if kind == 'door':
+      return CAR_LOOK, '', False, CAR_EMIT, 1.0
+    if kind == 'car glass':
+      return (WINDOW_GLASS[0], 0.0, 0.05), '', True, None, CAR_GLASS
+    if kind == 'car seat':
+      return CAR_SEAT_LOOK, '', False, None, 1.0
+    if kind == 'car button':
+      return CAR_BUTTON_LOOK, '', False, CAR_BUTTON_LOOK[0], 1.0
+    if kind == 'car guard':
+      return GUARD_LOOK, '', False, None, GUARD_SEEN
+    if kind == 'deck thing':
+      return DECK_LOOKS[deckThings()[what][1]], '', False, None, 1.0
+    if kind in ('level lamp', 'car lamp'):
+      return STATION_LAMP_LOOK, '', True, None, 1.0
+    if kind in ('door', 'shaft door'):
       return WALKWAY_LOOKS['door'], '', False, None, 1.0
-    if kind == 'sbolt':
-      return BOLT_LOOK, '', False, None, 1.0
     if kind == 'lift':
       return WALKWAY_LOOKS['lift'], '', False, None, 1.0
     if kind == 'lift glass':
       return WALKWAY_LOOKS['glass'], '', True, None, WALKWAY_GLASS
-    if kind == 'sring':
-      return (BOLT_RING, 0.0, 1.0), '', True, None, 1.0
     if kind == 'egg ball':
       return (EGG_LIGHT, 0.0, 1.0), '', True, None, 1.0
     if kind == 'door glass':
       return (WINDOW_GLASS[0], 0.0, 0.1), '', True, None, WINDOW_GLASS[1]
-    if kind == 'port door':
-      return HATCH_LOOK, '', False, None, 1.0
     return looks['black'], '', False, None, 1.0
 
   def _handParts(self, kind: str) -> list:
-    """Returns what is in his hand ('kind': the gravity gun, the
-    telescope, a commando bar: '_handitems') as the hand's view draws it
-    over the world (user, 2026-11-17: "the gravgun cuts in to walls and
-    textures when you are cloes to the wall"): each part in his eyes'
-    frame (right, up, back: the view's camera's own), its look and
-    picture; the gun's 3 on its side unlit, its clear pixels holes;
-    made once a kind."""
+    """Returns what is in his hand ('kind': the telescope, a commando
+    bar: '_handitems') as the hand's view draws it over the world (user,
+    2026-11-17: "the gravgun cuts in to walls and textures when you are
+    cloes to the wall"): each part in his eyes' frame (right, up, back:
+    the view's camera's own), its look and picture; made once a
+    kind."""
     if kind in self._hands:
       return self._hands[kind]
     out = []
@@ -996,13 +1046,6 @@ class SpaceViewport(QWidget):
                   'colour': QColor(*rgb), 'metal': metal, 'rough': rough,
                   'picture': QUrl.fromLocalFile(str(picture)).toString()
                   if picture else '', 'unlit': False, 'masked': False})
-    if kind == 'gravgun':
-      rows, faces = _dashboard.pieceRows(('gun mark', 0), None)
-      out.append({'geometry': self._kept1(Mesh(rows, faces)),
-                  'colour': QColor(255, 255, 255), 'metal': 0.0,
-                  'rough': 1.0, 'picture': QUrl.fromLocalFile(str(
-                    cabinPicturesReady()['three'])).toString(),
-                  'unlit': True, 'masked': True})
     self._hands[kind] = out
     return out
 
@@ -1068,6 +1111,8 @@ class SpaceViewport(QWidget):
       root.inventoryClicked.connect(self.inventoryClicked)
       root.teleportPicked.connect(self.teleportPicked)
       root.gearPicked.connect(self.gearPicked)
+      root.inventoryShutPicked.connect(self.inventoryShutPicked)
+      root.pausePicked.connect(self.pausePicked)
 
 
 def _sectionOf(pad: tuple, place: tuple, turn: tuple) -> tuple:

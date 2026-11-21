@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import math
 
-from ._cockpit import FLOOR, NOSE, capsuleRadius
+from ._cockpit import FLOOR, capsuleRadius
+from ._levels import CEILING
 from ._hoist import hoisted
 from ._pad import PAD_UP, fromPad, movingToPad, turnedToPad
 from ._turns import aboutAxis, cross, rotated
@@ -81,7 +82,7 @@ HOLE = ((TUNNEL_FROM - 1.0, -TUNNEL_HALF, FLOOR),
         (TUNNEL_FROM + 0.7, TUNNEL_HALF, FLOOR + TUNNEL_HIGH))
 #  The hull's slope (the cone's radius falls this much a metre up) and
 #  how much less a point's distance from its face is than across it.
-SLOPE = (capsuleRadius(NOSE) - capsuleRadius(FLOOR)) / (NOSE - FLOOR)
+SLOPE = (capsuleRadius(CEILING) - capsuleRadius(FLOOR)) / (CEILING - FLOOR)
 LEAN = 1.0 / math.sqrt(1.0 + SLOPE * SLOPE)
 #  Its far end's seal (user, 2026-11-18: "Use a soft inflatable thing
 #  like for airliners"): an air bumper round the door 'SEAL' deep, as
@@ -254,7 +255,7 @@ class Walkway:
       return (0.0, 0.0, 0.0), point
     q = fromPad(rocket, point)
     across = math.hypot(q[0], q[1])
-    if across < 1e-6 or not FLOOR - 1.0 < q[2] < NOSE:
+    if across < 1e-6 or not FLOOR - 1.0 < q[2] < CEILING:
       return (0.0, 0.0, 0.0), point
     gap = (across - capsuleRadius(q[2])) * LEAN
     squeeze = SEAL - gap

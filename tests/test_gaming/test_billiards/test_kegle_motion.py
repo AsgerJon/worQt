@@ -6,13 +6,15 @@ cloth a ball stops exactly on the edge of a pin's zone, to be stepped
 with the pins from there; a fallen pin stays on the cloth, slowing a
 ball that meets it and shoved by it (the user: pins must be allowed to
 remain on the table slowing the balls); a pin hit square on and hard
-flies over the rail, off the table, onto the floor (the user: it is
-yeeted off the table), knocked over, out of play; a ball rolled into a
+flies over the cushion, off the table (the user: it is yeeted off the
+table), evaporating where it crosses the noses' line (the user: as in
+Portal's grid), knocked over, out of play; a ball rolled into a
 middle or a corner pocket goes in, kept far off the table, while one
-rolled into the cushion beside it, or onto a jaw, comes back; recorded, a shot through the
-pins comes out the same at any rate, to the last digit, and as played
-at once over its whole length; the samples hold the pins, standing on
-their spots as the shot begins, and the pins it leaves fallen.
+rolled into the cushion beside it, or onto a jaw, comes back;
+recorded, a shot through the pins comes out the same at any rate, to
+the last digit, and as played at once over its whole length; the
+samples hold the pins, standing on their spots as the shot begins, and
+the pins it leaves fallen.
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -25,6 +27,7 @@ import numpy
 from worQt.gaming.billiards import STILL, Ball, Cloth, Cue, KegleMotion
 from worQt.gaming.billiards import KegleRecorder, KegleTable, Motion
 from worQt.gaming.billiards import Trails
+from worQt.gaming.billiards._kegle_motion import flingOf
 from worQt.gaming.billiards._kegle_table import HOLE_NAMES
 
 from . import BilliardsTest
@@ -106,9 +109,11 @@ class TestKegleMotion(BilliardsTest):
     self.assertIn(('pin', 'white', '1'), touches)
 
   def test_yeeted(self) -> None:
-    """A pin hit square on at 6 m/s flies over the rail, off the table,
-    and lies on the floor, out of play, knocked over (the user: it is
-    yeeted off the table)."""
+    """A pin hit square on at 6 m/s flies over the cushion, off the
+    table (the user: it is yeeted off the table), and evaporates where
+    its middle crosses the noses' line, as in Portal's grid (the user),
+    stopped in the air there, out of play, knocked over; never back on
+    the cloth."""
     x, y = TABLE.pinSpots()[3]
     field = MOTION.fieldOf((3,))
     ball = rolling('white', x, y - 300.0, 0.0, 6000.0)
@@ -117,13 +122,31 @@ class TestKegleMotion(BilliardsTest):
     carom = TABLE.table
     self.assertTrue(pin.off)
     self.assertFalse(pin.awake)
-    self.assertLess(pin.p[2], -0.5 * carom.bed)
-    out = carom.cushion + carom.rail
     beyond = (-pin.p[0], pin.p[0] - carom.width, -pin.p[1],
               pin.p[1] - carom.length)
-    self.assertGreater(max(beyond), out)
+    self.assertGreater(max(beyond), 0.0)
+    self.assertLess(max(beyond), 5.0)
+    self.assertGreater(pin.p[2], carom.top)
+    self.assertEqual((pin.v, pin.w), ([0.0] * 3, [0.0] * 3))
     self.assertEqual(field.fallen(), ((3, 'white'),))
     self.assertEqual(MOTION.zonesOf(field), ())
+
+  def test_flung(self) -> None:
+    """The window's debug (the user: to see a pin go over a cushion at
+    will): each of the five pins, flung as 'flingOf' has it, the balls
+    laid out, goes over the cushion and evaporates, out of play, knocked
+    over, credited to no ball; the others standing still."""
+    balls = TABLE.opening()
+    gravity = Cloth().gravity
+    for number in range(5):
+      flung = flingOf(TABLE, gravity, number, 2000.0, 12.0)
+      recorder = KegleRecorder(MOTION, 250.0, 50, 60.0, (0, 1, 2, 3, 4),
+                               (flung,))
+      recording = recorder.recorded(balls)
+      pins = {int(row[0]): row for row in recording.lastPins()}
+      self.assertGreater(pins[number][8], 1.5, number)
+      self.assertEqual(recorder.fallenOf(recording), ((number, '?'),))
+      self.assertLess(recording.known(), 2.0)
 
   def test_pockets(self) -> None:
     """A ball rolled into the left middle pocket, or the foot left

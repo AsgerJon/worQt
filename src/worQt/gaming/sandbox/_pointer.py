@@ -2,7 +2,9 @@
 Pointer is the mouse pointer taken by a surface to look round with: it
 is hidden, kept near the middle, and its moves are handed on: as they
 came ('moved') or by time, each frame the motion of its own span of
-time ('movedBy', '_mousetrail').
+time ('movedBy', '_mousetrail'). Taken, the cursor is also hidden by the
+X server itself ('_hiddencursor': else gamescope does not hold the
+mouse in its window).
 """
 #  Apache-2.0 license
 #  Copyright (c) 2026 Asger Jon Vistisen
@@ -13,6 +15,7 @@ import time
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QCursor
 
+from ._hiddencursor import HiddenCursor
 from ._mousetrail import MouseTrail
 
 
@@ -34,6 +37,7 @@ class Pointer:
 
   def __init__(self, surface: object) -> None:
     self.surface, self.taken, self.trail = surface, False, MouseTrail()
+    self.hiding = HiddenCursor()
     self._frames, self._right, self._down = [], 0.0, 0.0
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -41,17 +45,20 @@ class Pointer:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def take(self, ) -> None:
-    """The 'take' method takes the pointer: hidden, put in the middle."""
+    """The 'take' method takes the pointer: hidden (by the X server too,
+    before it is put back: the warp locks it), put in the middle."""
     self.taken, self._frames = True, []
     self._right, self._down = 0.0, 0.0
     self.trail.cleared()
     self.surface.setCursor(QCursor(Qt.CursorShape.BlankCursor))
+    self.hiding.hidden()
     self._recentred()
 
   def letGo(self, ) -> None:
     """The 'letGo' method lets the pointer go, shown again."""
     if self.taken:
       self.surface.unsetCursor()
+    self.hiding.shown()
     self.taken, self._frames = False, []
     self.trail.cleared()
 

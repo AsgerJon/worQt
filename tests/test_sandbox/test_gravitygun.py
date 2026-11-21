@@ -91,7 +91,7 @@ class TestGravityGun(SandboxTest):
     self.assertIsNotNone(punched)
     self.assertAlmostEqual(avatar.thrust(gun, punched + 0.5 * PUNCH),
                            THRUST, 9)
-    self.assertEqual(avatar.thrust(gun, punched + PUNCH), 0.0)
+    self.assertAlmostEqual(avatar.thrust(gun, punched + PUNCH), 0.0, 9)
 
   def test_punt_counted(self) -> None:
     """A punt of what is pointed at (not held) counts as a punt, not a

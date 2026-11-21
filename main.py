@@ -7,6 +7,7 @@ import os
 import sys
 
 from worQt.gaming.billiards.gui import BilliardsApp
+from worQt.gaming.billiards._runs import mainBilliards
 from worQt.gaming.space._runs import mainSpace
 from worQt.gaming.trains._runs import mainSteam
 
@@ -42,9 +43,9 @@ def tester01() -> int:
   its exit code."""
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
-    app.window.startWalking()
+    app.window.enterRoom()
   return app.returnCode
 
 
 if __name__ == '__main__':
-  yolo(mainSpace)
+  yolo(mainBilliards)

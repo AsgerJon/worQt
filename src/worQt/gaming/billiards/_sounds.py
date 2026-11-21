@@ -18,6 +18,9 @@ at, struck by a short click. It needs no Qt; 'SoundPlayer' plays them.
   credited to red falls ('sadLand0' to 'sadLand4').
 - carom: keglebillard's 'rødt', red meeting both whites, 4 points: the
   xylophone happy, a major chord run up and its top held.
+- evaporate: a pin flown over a cushion, evaporating as in Portal's
+  emancipation grid (the user): an electric fizz, crackling, a shimmer
+  sweeping up, gone in about a second.
 - takes: every sound by name, the takes of each, for 'SoundPlayer'.
 """
 #  Apache-2.0 license
@@ -286,6 +289,32 @@ def sadPocket(seed: int) -> numpy.ndarray:
   return _shaped(out, 0.7)
 
 
+def evaporate(seed: int) -> numpy.ndarray:
+  """The 'evaporate' function returns a pin evaporating as it flies
+  over a cushion, as things do in Portal's emancipation grid (the user):
+  a hiss of bright noise swelling and dying over about a second,
+  crackling with sparks, a thin shimmer sweeping up through it."""
+  rng = numpy.random.default_rng(seed)
+  seconds = 1.2
+  t = numpy.arange(int(seconds * RATE)) / RATE
+  swell = numpy.minimum(t / 0.06, 1.0) * numpy.exp(-t / 0.35)
+  white = rng.uniform(-1.0, 1.0, len(t) + 1)
+  hiss = numpy.diff(white)
+  crackle = numpy.zeros(len(t))
+  for start in rng.uniform(0.0, 0.8, 40):
+    n = int(0.002 * RATE)
+    begin = int(start * RATE)
+    end = min(len(t), begin + n)
+    crackle[begin:end] += rng.uniform(0.4, 1.0) * rng.uniform(
+      -1.0, 1.0, end - begin) * numpy.exp(-start / 0.4)
+  pitch = 1500.0 + 2500.0 * t / seconds
+  turn = 2.0 * numpy.pi * numpy.cumsum(pitch) / RATE
+  shimmer = numpy.sin(turn) * (0.6 + 0.4 * numpy.sin(2.0 * numpy.pi * 31.0
+                                                     * t))
+  out = swell * (0.55 * hiss + 0.35 * shimmer) + 0.5 * crackle
+  return _shaped(out, 0.55)
+
+
 def _muted(pitch: float, seconds: float, held: bool) -> numpy.ndarray:
   """'seconds' of a muted brass note at 'pitch' Hz: its first harmonics
   only, softer up the row, swelling in and dying away, held long with a
@@ -309,6 +338,7 @@ def takes() -> dict:
           'tock': [tock(k) for k in range(2)],
           'fanfare': [fanfare()],
           'carom': [carom(0)],
+          'evaporate': [evaporate(k) for k in range(2)],
           'pocket': [pocket(k) for k in range(2)],
           'sadPocket': [sadPocket(0)],
           'windUp': [windUp()],

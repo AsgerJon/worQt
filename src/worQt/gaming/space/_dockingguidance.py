@@ -22,9 +22,9 @@ from typing import TYPE_CHECKING
 
 from ._dockingport import NOSE_PORT
 from ._stationmeshes import portTip
-from ._stationsolids import CAPSULE, CYLINDER, TORUS, hullBalls
+from ._stationsolids import CYLINDER, HOLLOW, TORUS, hullBalls
 from ._stationsolids import stationSolids
-from ._turns import cross, dot, norm, unrotated, unit
+from ._turns import cross, norm, unrotated, unit
 from ._vessel import MASS
 
 if TYPE_CHECKING:  # pragma: no cover, no mutate
@@ -69,9 +69,8 @@ SETTLE = 2.0
 #  It never hurries time (user, 2026-11-17: "Warp should not be
 #  automatic!").
 #  Going round, it keeps 'ROUND_MARGIN' m clear of all the station sweeps
-#  as it turns (its wheel, spokes and antennas a disc, its hub, port and
-#  the antenna behind it on the axis) and passes each corner of its way
-#  within 'ROUND_NEAR' m.
+#  as it turns (its wheel, spokes and antennas a disc, its drum on the
+#  axis) and passes each corner of its way within 'ROUND_NEAR' m.
 ROUND_MARGIN = 50.0
 ROUND_NEAR = 20.0
 #  Its phases.
@@ -85,19 +84,16 @@ def _reaches() -> tuple:
   reaches from its axis, and up the station's axis from its nose (its
   nose down the axis: its body above it). All m."""
   out = top = disc = 0.0
-  hub = 0.0
   for kind, a, b, radius in stationSolids():
     if kind == TORUS:
       reach, high, low = a[0] + radius, radius, radius
-    elif kind == CYLINDER:
-      reach, high, low = radius, max(a[2], b[2]) + radius, min(
-        a[2], b[2]) - radius
-      hub = max(hub, radius)
+    elif kind in (CYLINDER, HOLLOW):
+      reach, high, low = radius, max(a[2], b[2]), min(a[2], b[2])
     else:
       reach = max(math.hypot(a[0], a[1]), math.hypot(b[0], b[1])) + radius
       high, low = max(a[2], b[2]) + radius, min(a[2], b[2]) - radius
     out, top = max(out, reach), max(top, high)
-    if kind != CYLINDER and reach > radius + 1e-6:
+    if kind not in (CYLINDER, HOLLOW) and reach > radius + 1e-6:
       disc = max(disc, high, -low)
   balls = hullBalls()
   wide = max(math.hypot(x, y) + r for x, y, _, r in balls)

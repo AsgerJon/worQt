@@ -59,6 +59,7 @@ class HitRules:
   spinDecay: wp.float64
   cushionStep: wp.float64
   caromStep: wp.float64
+  settleSpeed: wp.float64
   width: wp.float64
   length: wp.float64
 
@@ -324,7 +325,9 @@ def slated(rules: HitRules, place: wp.array(dtype=wp.vec2d),
            settling: wp.array(dtype=wp.int32), k: int, lift: wp.float64,
            step: wp.float64):
   """Moves ball 'k', touching a cushion or ball, on for 'step' on the
-  slate, bearing its weight less 'lift', as '_slate' does."""
+  slate, bearing its weight less 'lift', as '_slate' does: hit again,
+  set going faster than the felt's push back, it will be pushed back
+  as its next roll ends."""
   bearing = wp.max(rules.gravity - lift, ZERO)
   vx = speed[k][0]
   vy = speed[k][1]
@@ -351,7 +354,8 @@ def slated(rules: HitRules, place: wp.array(dtype=wp.vec2d),
   spin[k] = wp.vec3d(wx, wy, wz)
   place[k] = place[k] + wp.vec2d(vx * step, vy * step)
   turn[k] = turned(turn[k], wx * step, wy * step, wz * step)
-  settling[k] = int(0)
+  if wp.sqrt(vx * vx + vy * vy) > rules.settleSpeed:
+    settling[k] = int(0)
 
 
 @wp.kernel

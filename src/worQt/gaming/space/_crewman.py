@@ -116,7 +116,10 @@ class Crewman:
   ('ground', summed normals' unit, None: nothing), his 'gait', and on
   the sofa ('lounge': the seat's
   top middle and the way it faces; None: not on it; user, 2026-11-17:
-  "chill out by sitting in sofa"), sitting as in his chair, still.
+  "chill out by sitting in sofa"), sitting as in his chair, still; on
+  the handles ('climbing', '_ladder': user, 2026-11-19, "When Asger is
+  in ladder mode, no more physics. Asger just moves through the ladder
+  system"), his body moved by them alone, out of the cabin's world.
   'unbuckled' gets him up, 'satDown' sits him if near enough; 'righted'
   turns his body as his feet, hands or jetpack turn it toward where his
   head looks (standing, up against the pull) and as it spins; 'wantOf'
@@ -129,9 +132,9 @@ class Crewman:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   #  What a saved game keeps of it ('_savegame'): its fields.
-  SAVED = ('buckled', 'lounge', 'crouching', 'up', 'ahead', 'spin',
-           'middle', 'velocity', 'touches', 'ground', 'crouched', 'rising',
-           'floor', 'fallen')
+  SAVED = ('buckled', 'lounge', 'climbing', 'crouching', 'up', 'ahead',
+           'spin', 'middle', 'velocity', 'touches', 'ground', 'crouched',
+           'rising', 'floor', 'fallen')
 
   #  Public Variables
   buckled: bool
@@ -144,6 +147,7 @@ class Crewman:
   ground: tuple | None
   gait: Gait
   lounge: tuple | None
+  climbing: bool
   crouched: bool
   crouching: bool
   rising: float
@@ -155,7 +159,7 @@ class Crewman:
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def __init__(self, ) -> None:
-    self.buckled, self.lounge = True, None
+    self.buckled, self.lounge, self.climbing = True, None, False
     self.crouching = False
     self._stood()
     self.gait = Gait()
@@ -185,13 +189,17 @@ class Crewman:
     the sofa): his body is not moved then."""
     return self.buckled or self.lounge is not None
 
-  def lounged(self, seat: tuple, facing: tuple) -> None:
-    """The 'lounged' method sits him on the sofa ('seat': its top's
-    middle; 'facing': the way it faces), still, his head ahead."""
+  def lounged(self, seat: tuple, facing: tuple,
+              up: tuple = (0.0, 0.0, 1.0),
+              velocity: tuple = (0.0, 0.0, 0.0)) -> None:
+    """The 'lounged' method sits him on a seat ('seat': its top's middle;
+    'facing': the way it faces; 'up' its up: the sofa's the cabin's, an
+    elevator's toward the station's axis), moving with it ('velocity'),
+    his head ahead."""
     self.buckled, self.lounge = False, (tuple(seat), tuple(facing))
-    self.up, self.ahead = (0.0, 0.0, 1.0), tuple(facing)
+    self.up, self.ahead = tuple(up), tuple(facing)
     self.middle = tuple(s + 0.3 * u for s, u in zip(seat, self.up))
-    self.velocity, self.touches = (0.0, 0.0, 0.0), True
+    self.velocity, self.touches = tuple(velocity), True
 
   def offSofa(self, ) -> None:
     """The 'offSofa' method stands him up off the sofa, before it,
@@ -281,8 +289,8 @@ class Crewman:
     knocked down ('fallen': leant past 'FALLEN', till he stands within
     'RISEN' again), his arms and legs push him up so; weightless,
     touching something, his hands turn him to it whole (his up his
-    head's), or not touching, his jetpack's fans; else (or 'limp': dead)
-    he spins on (as a free body: his moments differ). Each no harder
+    head's), or not touching, his jetpack's fans; else (or 'limp':
+    dead) he spins on (as a free body: his moments differ). Each no harder
     than it can ('STANCE', 'GET_UP', 'ARMS', 'FAN_ARM'). His head keeps
     looking where it looked (within his neck's reach: 'NECK'). Moves his
     stride on.

@@ -18,8 +18,7 @@ SLOTS = 36
 #  The kinds of item, by their names: what they are called, how many
 #  stack in a slot, what they are for ('tool': held and used; 'food':
 #  eaten one at a time).
-ITEMS = {'gravgun': ('Grav-Gun', 1, 'tool'),
-         'telescope': ('Telescope', 1, 'tool'),
+ITEMS = {'telescope': ('Telescope', 1, 'tool'),
          'commando': ('Commando bar', 16, 'food'),
          'scratchings': ('Pork scratchings', 16, 'food')}
 #  What he carries to begin with: each a slot and its stack (the bars in
@@ -27,7 +26,7 @@ ITEMS = {'gravgun': ('Grav-Gun', 1, 'tool'),
 #  Asgers inventory"; a few bags of pork scratchings beside them: "key_E
 #  should *always* open Asger's inventory, where there should be a few
 #  snacks").
-CARRIED = ((0, 'gravgun', 1), (1, 'telescope', 1), (HOTBAR, 'commando', 12),
+CARRIED = ((0, 'telescope', 1), (HOTBAR, 'commando', 12),
            (HOTBAR + 1, 'scratchings', 4))
 
 

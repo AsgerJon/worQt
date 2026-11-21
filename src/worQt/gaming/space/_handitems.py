@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import functools
 
-from ._gunmodel import gunParts
 from ._shapes import boxRows, cylinderRows, discRows, frustumRows, joined
 
 #  The looks (colour 0 to 255, metalness, roughness): brass, its dark
@@ -46,8 +45,6 @@ def heldParts(kind: str) -> tuple:
   """Returns what 'kind' (an '_inventory.ITEMS' name) looks like in his
   hand: each part its look, its picture ('' none), its rows and
   triangles (the eyes' frame)."""
-  if kind == 'gravgun':
-    return gunParts()
   if kind == 'telescope':
     return _telescopeParts()
   if kind == 'commando':

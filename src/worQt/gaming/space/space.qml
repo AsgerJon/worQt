@@ -45,6 +45,17 @@ Item {
   property real nearClip: 0.3
   property vector3d habitatLight: Qt.vector3d(0, 0, 0)
   property bool habitatOn: false
+  //  The lamps up the rocket's head and in Terra Prime's cages
+  //  ('_stationlamps'; user, 2026-11-19: "we must have lamps in the
+  //  center of the Terra Prime and in each of the four elevators"): the
+  //  head's two lamp rings' lights, each cage's (docked); the cabin's
+  //  small lamps shine only with Asger in the cabin ('cabinLit'), the
+  //  rings' and the cages' only with him out of it: a scene takes at
+  //  most 16 lights (Qt Quick 3D), so each room's lamps shine where he
+  //  is.
+  property var levelLights: []
+  property var cageLights: []
+  property bool cabinLit: true
   //  The way in on the pad at night (user, 2026-11-17: "Asger must start
   //  outside in the night"): the launch tower's floodlights on the rocket
   //  (each its place and turn), the lamp over its platform and walkway,
@@ -230,14 +241,21 @@ Item {
   property vector3d capPlace: Qt.vector3d(0, 0, 0)
   property quaternion capTurn: Qt.quaternion(1, 0, 0, 0)
   property bool capShown: false
-  //  The gravity gun's beam to the bolt it holds (user, 2026-11-17: "a
-  //  laser beam between it and the bolts"): its core and its coils,
-  //  remade each frame, from the muzzle in the rocket's own axes.
-  property var beamCore: null
-  property var beamCoils: null
-  property vector3d beamPlace: Qt.vector3d(0, 0, 0)
-  property quaternion beamTurn: Qt.quaternion(1, 0, 0, 0)
-  property bool beamShown: false
+  //  Holding E to take or leave the ladder (user, 2026-11-19: "You hold
+  //  e for a second whilst a circular fills"): how far round the ring
+  //  has filled (nought to one), shown while E is held for it, its word.
+  //  Riding an elevator's seat (user, 2026-11-19: "A small frame on
+  //  screen shows Asger in second person and this frame points to Asgers
+  //  location in Terra Prime"): whether the frame shows, its camera's
+  //  place and turn (before his face), his middle (the frame's pointer
+  //  goes to it in the big view), each from the eye.
+  property bool rideShown: false
+  property vector3d facePlace: Qt.vector3d(0, 0, 0)
+  property quaternion faceTurn: Qt.quaternion(1, 0, 0, 0)
+  property vector3d riderPlace: Qt.vector3d(0, 0, 0)
+  property real holdShare: 0
+  property bool holdShown: false
+  property string holdText: ""
   //  The map: open or not; its eye's turn; its bodies {geometry,
   //  picture, glow, slot} with each slot's place, turn and scale; its
   //  lines {geometry, colour, slot} with each slot's place and scale;
@@ -287,6 +305,7 @@ Item {
   property bool boardEngaged: false
   property string boardPhase: ""
   property bool boardAction: false
+  property bool boardAutoWarp: false
   property bool boardLaunched: false
   property string boardTarget: ""
   property bool boardMap: false
@@ -300,6 +319,23 @@ Item {
   signal inventoryClicked(int slot, bool right)
   signal teleportPicked(string where)
   signal gearPicked(string what)
+  signal inventoryShutPicked()
+  //  The pause menu (user, 2026-11-19: "Implement a pause menu distinct
+  //  from the inventory"; Esc): open, the game stands still; its
+  //  question ('pauseAsk': "exit", unsaved changes before exiting), what
+  //  it last said, whether the game may be saved and the quick save
+  //  loaded now; a button picked says what ('pausePicked': "resume",
+  //  "load", "save", "exit", "exit save", "exit anyway", "cancel").
+  property bool pauseOpen: false
+  property string pauseAsk: ""
+  property string pauseNote: ""
+  property bool pauseCanSave: false
+  property bool pauseCanLoad: false
+  //  The list of saves to save to or load from (user, 2026-11-19: "we
+  //  need multiple save files"; 'pauseAsk' "save" or "load"): each its
+  //  words ('label'), what picking it says ('what'), 'live'.
+  property var pauseSlots: []
+  signal pausePicked(string what)
   //  The board's keys float a little, all together
   property real bob: 0
   SequentialAnimation on bob {
@@ -445,38 +481,15 @@ Item {
         roughness: 1
       }
     }
-    Model {
-      geometry: root.beamCore
-      visible: root.beamShown && root.beamCore !== null
-      position: root.beamPlace
-      rotation: root.beamTurn
-      materials: PrincipledMaterial {
-        lighting: PrincipledMaterial.NoLighting
-        baseColor: "#eedcff"
-        opacity: 0.95
-        cullMode: Material.NoCulling
-      }
-    }
-    Model {
-      geometry: root.beamCoils
-      visible: root.beamShown && root.beamCoils !== null
-      position: root.beamPlace
-      rotation: root.beamTurn
-      materials: PrincipledMaterial {
-        lighting: PrincipledMaterial.NoLighting
-        baseColor: "#a35cff"
-        opacity: 0.95
-        cullMode: Material.NoCulling
-      }
-    }
     //  Qt Quick 3D takes a light's fades as if its scene were in cm (it
     //  scales the linear term by 0.01 and the quadratic by 0.0001): this
     //  scene is in m, so a quadratic fade of q a square metre is written
     //  q x 10000 (written in metres, every lamp lit the whole cabin
     //  alike, at its full brightness).
     //  The space station's own light on its axis (docked: going aboard,
-    //  user, 2026-11-17), lighting its hub, shafts and ring from inside,
-    //  as bright at the deck as at the hub.
+    //  user, 2026-11-17), from its middle (the docked rocket's top
+    //  floor), lighting its shafts and ring from inside, as bright at the
+    //  deck as at the middle.
     PointLight {
       position: root.habitatLight
       visible: root.habitatOn
@@ -485,6 +498,34 @@ Item {
       constantFade: 1.0
       linearFade: 0.0
       quadraticFade: 0.0
+    }
+    //  The head's lamp rings, under levels one's and two's ceilings:
+    //  half as bright some 4 m off (the head is 8 m round).
+    Repeater3D {
+      model: !root.cabinLit && root.nearShown.length > 1
+             && (root.nearShown[1] || false) ? root.levelLights : []
+      delegate: PointLight {
+        required property var modelData
+        position: modelData
+        color: "#ffecc4"
+        brightness: 1.4
+        constantFade: 1.0
+        linearFade: 0.0
+        quadraticFade: 625
+      }
+    }
+    //  A lamp in each cage, riding with it: half as bright 3.5 m off.
+    Repeater3D {
+      model: root.habitatOn && !root.cabinLit ? root.cageLights : []
+      delegate: PointLight {
+        required property var modelData
+        position: modelData
+        color: "#ffecc4"
+        brightness: 1.4
+        constantFade: 1.0
+        linearFade: 0.0
+        quadraticFade: 816
+      }
     }
     SpotLight {
       position: root.towerFloodPlaces.length > 0
@@ -569,6 +610,7 @@ Item {
     PointLight {
       position: root.eggLight
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+               && root.cabinLit
       color: "#ffecc8"
       brightness: 0.5
       constantFade: 1.0
@@ -578,6 +620,7 @@ Item {
     PointLight {
       position: root.lampLight
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+               && root.cabinLit
       color: "#ffcf8a"
       brightness: 1.8
       constantFade: 1.0
@@ -587,6 +630,7 @@ Item {
     PointLight {
       position: root.candleLight
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+               && root.cabinLit
       color: "#ffa850"
       brightness: 0.9 * root.candleGlow
       constantFade: 1.0
@@ -596,6 +640,7 @@ Item {
     PointLight {
       position: root.globeLight
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+               && root.cabinLit
       color: "#cfe4ff"
       brightness: 0.12
       constantFade: 1.0
@@ -605,6 +650,7 @@ Item {
     PointLight {
       position: root.panelLamp
       visible: root.nearShown.length > 1 && (root.nearShown[1] || false)
+               && root.cabinLit
       color: "#fff6e8"
       brightness: 0.45
       constantFade: 1.0
@@ -1426,6 +1472,9 @@ Item {
                action: "toAp"; tint: "#8fd3ff"; lit: root.boardToAp }
         Lamp { label: "Warp to action"; keys: ["Enter"]; action: "action"
                tint: "#c59bff"; lit: root.boardAction }
+        Lamp { label: "Auto warp: " + (lit ? "on" : "off"); keys: ["Home"]
+               action: "autowarp"; tint: "#c59bff"
+               lit: root.boardAutoWarp }
       }
       Group {
         title: "AUTOPILOT"
@@ -1849,6 +1898,37 @@ Item {
         font.pixelSize: 18
         font.bold: true
       }
+      //  Its close button (user, 2026-11-18: "Please implement that close
+      //  button"): shuts it on the press and takes the mouse back (a
+      //  click is what takes it; E and Esc leave it free till a click).
+      Rectangle {
+        id: inventoryClose
+        objectName: "inventory close"
+        anchors.right: parent.right
+        anchors.rightMargin: 16
+        y: 8
+        width: closeText.implicitWidth + 20
+        height: 26
+        radius: 3
+        color: closeArea.pressed ? "#5a5a5a"
+               : (closeArea.containsMouse ? "#8a8a8a" : "#a8a8a8")
+        border.width: 2
+        border.color: "#555555"
+        Text {
+          id: closeText
+          anchors.centerIn: parent
+          text: "Close"
+          color: closeArea.pressed ? "#ffffff" : "#303030"
+          font.pixelSize: 14
+          font.bold: true
+        }
+        MouseArea {
+          id: closeArea
+          anchors.fill: parent
+          hoverEnabled: true
+          onPressed: root.inventoryShutPicked()
+        }
+      }
       Column {
         id: grid
         x: 16
@@ -2073,6 +2153,289 @@ Item {
       color: "#c8c8e8"
       font.pixelSize: 40
       font.italic: true
+    }
+  }
+
+  //  A pause menu's button: its words, what picking it says, greyed and
+  //  dead unless 'live'.
+  component PauseButton: Rectangle {
+    id: pauseButton
+    property string label: ""
+    property string what: ""
+    property bool live: true
+    property int size: 17
+    objectName: "pause " + what
+    width: 280
+    height: 40
+    radius: 3
+    color: !live ? "#6a6a6a" : (pauseArea.pressed ? "#4a4a4a"
+           : (pauseArea.containsMouse ? "#8a8a8a" : "#a8a8a8"))
+    border.width: 2
+    border.color: live ? "#3a3a3a" : "#5a5a5a"
+    Text {
+      anchors.centerIn: parent
+      text: pauseButton.label
+      color: !pauseButton.live ? "#9a9a9a"
+             : (pauseArea.pressed ? "#ffffff" : "#202020")
+      font.pixelSize: pauseButton.size
+      font.bold: true
+    }
+    MouseArea {
+      id: pauseArea
+      anchors.fill: parent
+      hoverEnabled: true
+      enabled: pauseButton.live
+      //  On the press: a click is what takes the mouse back (gamescope
+      //  holds it only so), and resuming takes it.
+      onPressed: root.pausePicked(pauseButton.what)
+    }
+  }
+
+  //  The ride's small frame: Asger seen from before his face (the far
+  //  bodies and the near world from there), framed, a line from it to
+  //  where he is in the big view.
+  Canvas {
+    id: ridePointer
+    anchors.fill: parent
+    visible: root.rideShown && !root.mapOpen
+    property vector3d at: root.riderPlace
+    onAtChanged: requestPaint()
+    onPaint: {
+      var ctx = getContext("2d")
+      ctx.reset()
+      if (!root.rideShown)
+        return
+      var p = nearView.mapFrom3DScene(Qt.vector3d(at.x, at.y, at.z))
+      if (p.z <= 0)
+        return
+      var fx = rideFrame.x + rideFrame.width
+      var fy = rideFrame.y
+      ctx.strokeStyle = "#ffe2aa"
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(fx, fy)
+      ctx.lineTo(p.x, p.y)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 10, 0, 2 * Math.PI)
+      ctx.stroke()
+    }
+  }
+  Rectangle {
+    id: rideFrame
+    visible: root.rideShown && !root.mapOpen
+    x: 24
+    y: parent.height - height - 140
+    width: 340
+    height: 240
+    color: "#000000"
+    border.width: 3
+    border.color: "#ffe2aa"
+    clip: true
+    View3D {
+      anchors.fill: parent
+      anchors.margins: 3
+      importScene: farWorld
+      environment: SceneEnvironment {
+        backgroundMode: SceneEnvironment.Color
+        clearColor: root.skyColour
+      }
+      camera: faceFarCamera
+      PerspectiveCamera {
+        id: faceFarCamera
+        rotation: root.faceTurn
+        fieldOfView: 50
+        clipNear: 10
+        clipFar: 5e6
+      }
+      DirectionalLight {
+        rotation: root.sunTurn
+        brightness: 1.4
+      }
+    }
+    View3D {
+      anchors.fill: parent
+      anchors.margins: 3
+      importScene: nearWorld
+      environment: SceneEnvironment {
+        backgroundMode: SceneEnvironment.Transparent
+      }
+      camera: faceNearCamera
+      PerspectiveCamera {
+        id: faceNearCamera
+        position: root.facePlace
+        rotation: root.faceTurn
+        fieldOfView: 50
+        clipNear: 0.1
+        clipFar: 3e6
+      }
+      DirectionalLight {
+        rotation: root.sunTurn
+        brightness: 1.4 * root.sunShine
+      }
+    }
+  }
+
+  //  The ring filling while E is held (taking or leaving the ladder):
+  //  round the middle of the view, its word under it.
+  Item {
+    id: holdRing
+    anchors.centerIn: parent
+    width: 64
+    height: 64
+    visible: root.holdShown
+    property real share: root.holdShare
+    onShareChanged: holdCanvas.requestPaint()
+    Canvas {
+      id: holdCanvas
+      anchors.fill: parent
+      onPaint: {
+        var ctx = getContext("2d")
+        ctx.reset()
+        ctx.lineWidth = 6
+        ctx.strokeStyle = "#60000000"
+        ctx.beginPath()
+        ctx.arc(32, 32, 26, 0, 2 * Math.PI)
+        ctx.stroke()
+        ctx.strokeStyle = "#ffffffff"
+        ctx.beginPath()
+        ctx.arc(32, 32, 26, -0.5 * Math.PI,
+                -0.5 * Math.PI + 2 * Math.PI * holdRing.share)
+        ctx.stroke()
+      }
+    }
+    Text {
+      anchors.top: parent.bottom
+      anchors.topMargin: 6
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: root.holdText
+      color: "#ffffff"
+      font.pixelSize: 16
+      style: Text.Outline
+      styleColor: "#000000"
+    }
+  }
+
+  //  The pause menu (Esc): over everything but death's word.
+  Rectangle {
+    id: pausePanel
+    objectName: "pause menu"
+    anchors.fill: parent
+    visible: root.pauseOpen
+    color: "#a0000000"
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.AllButtons
+    }
+    Rectangle {
+      anchors.centerIn: parent
+      width: pauseColumn.width + 48
+      height: pauseColumn.height + 48
+      color: "#c6c6c6"
+      border.width: 3
+      border.color: "#555555"
+      radius: 4
+      Column {
+        id: pauseColumn
+        anchors.centerIn: parent
+        spacing: 10
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          text: root.pauseAsk === "exit" ? "Save before exiting?"
+                : root.pauseAsk === "save" ? "Save game"
+                : root.pauseAsk === "load" ? "Load game"
+                : root.pauseAsk === "overwrite" ? "Overwrite this save?"
+                : "Paused"
+          color: "#303030"
+          font.pixelSize: 24
+          font.bold: true
+        }
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          visible: root.pauseAsk === "exit"
+          text: "The game has changed since it was last saved."
+          color: "#404040"
+          font.pixelSize: 15
+        }
+        PauseButton {
+          visible: root.pauseAsk === ""
+          label: "Resume"
+          what: "resume"
+        }
+        PauseButton {
+          visible: root.pauseAsk === ""
+          label: "Load game"
+          what: "load"
+          live: root.pauseCanLoad
+        }
+        PauseButton {
+          visible: root.pauseAsk === ""
+          label: "Save game"
+          what: "save"
+          live: root.pauseCanSave
+        }
+        PauseButton {
+          visible: root.pauseAsk === ""
+          label: "Options"
+          what: "options"
+          live: false
+        }
+        PauseButton {
+          visible: root.pauseAsk === ""
+          label: "Exit"
+          what: "exit"
+        }
+        PauseButton {
+          visible: root.pauseAsk === "exit"
+          label: "Save and exit"
+          what: "exit save"
+          live: root.pauseCanSave
+        }
+        PauseButton {
+          visible: root.pauseAsk === "exit"
+          label: "Exit without saving"
+          what: "exit anyway"
+        }
+        PauseButton {
+          visible: root.pauseAsk === "exit"
+          label: "Cancel"
+          what: "cancel"
+        }
+        Repeater {
+          model: root.pauseAsk === "save" || root.pauseAsk === "load"
+                 ? root.pauseSlots : []
+          delegate: PauseButton {
+            width: 560
+            height: 34
+            size: 14
+            label: modelData.label
+            what: modelData.what
+            live: modelData.live
+          }
+        }
+        PauseButton {
+          visible: root.pauseAsk === "overwrite"
+          label: "Overwrite"
+          what: "overwrite"
+        }
+        PauseButton {
+          anchors.horizontalCenter: parent.horizontalCenter
+          visible: root.pauseAsk === "save" || root.pauseAsk === "load"
+                   || root.pauseAsk === "overwrite"
+          label: "Back"
+          what: root.pauseAsk === "overwrite" ? "save" : "back"
+        }
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          visible: root.pauseNote !== ""
+          text: root.pauseNote
+          color: "#303030"
+          font.pixelSize: 14
+          width: 280
+          wrapMode: Text.WordWrap
+          horizontalAlignment: Text.AlignHCenter
+        }
+      }
     }
   }
 

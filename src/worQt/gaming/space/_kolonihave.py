@@ -64,11 +64,12 @@ def deckFrame(along: float, across: float, high: float) -> tuple:
   """Returns where a point 'along' m round the ring from the elevator,
   'across' m over the deck's middle line (along the station's axis),
   'high' m over the deck is (the station's own axes) and the deck's
-  frame there: along the ring, across it, up (toward the axis)."""
+  frame there: along the ring, across it (against the station's axis: a
+  turn, not a mirror), up (toward the axis)."""
   angle = along / DECK
   c, s = math.cos(angle), math.sin(angle)
   out = DECK - high
-  return ((out * c, out * s, across), ((-s, c, 0.0), (0.0, 0.0, 1.0),
+  return ((out * c, out * s, across), ((-s, c, 0.0), (0.0, 0.0, -1.0),
                                        (-c, -s, 0.0)))
 
 

@@ -16,7 +16,7 @@ def main() -> int:
   its exit code."""
   with BilliardsApp(*sys.argv) as app:
     app.window.show()
-    app.window.startWalking()
+    app.window.enterRoom()
   return app.returnCode
 
 

@@ -80,11 +80,13 @@ Item {
   //  three dark grooves round each one's waist, 'pinGrooves' ('y' up, 'r'
   //  round), its outline 'pinShape' (made anew as the game changes):
   //  each pin by its number, its foot at 'pinPlaces', turned 'pinTurns',
-  //  on the table if 'pinShown'.
+  //  on the table if 'pinShown', evaporating if 'pinGone' (flown over a
+  //  cushion: the user, as in Portal's grid).
   property bool kegler: false
   property var pinPlaces: []
   property var pinTurns: []
   property var pinShown: []
+  property var pinGone: []
   property var holePlaces: []
   property real holeRadius: 40
   property var pinGrooves: []
@@ -393,6 +395,11 @@ Item {
   signal clothReleased()
   //  A tap on the table, where in the scene.
   signal tableTapped(real x, real z)
+  //  Debug (the user: to see a pin go over a cushion at will): while
+  //  'flinging', a tap on a pin of the table played asks for it to be
+  //  sent flying, by its number.
+  property bool flinging: false
+  signal pinTapped(int number)
   //  The stroke (the user): the right button pressed, the mouse pulled
   //  back and pushed through, where on the view, in pixels.
   signal strokePressed(real x, real y)
@@ -477,6 +484,81 @@ Item {
   component Piece: Model {
     property real turn: 0
     eulerRotation: Qt.vector3d(0, turn, 0)
+  }
+
+  //  A keglebillard pin, pale wood, three dark grooves round its waist,
+  //  its foot at the node's middle; 'tappable' by its 'number' (a debug,
+  //  'flinging'); evaporating 'fizzle' of the way (nought whole, one
+  //  gone): darkened, glowing white-blue, then faded.
+  component PinLook: Node {
+    id: look
+    property real fizzle: 0
+    property bool tappable: false
+    property int number: -1
+    readonly property real dark: Math.min(fizzle / 0.3, 1)
+    readonly property real glow: fizzle < 0.2 ? fizzle / 0.2
+                                              : (1 - fizzle) / 0.8
+    readonly property real solid: 1 - Math.max(fizzle - 0.3, 0) / 0.7
+    Model {
+      objectName: "pin" + look.number
+      pickable: look.tappable
+      geometry: root.pinShape
+      materials: PrincipledMaterial {
+        baseColor: Qt.rgba(0.863 - 0.81 * look.dark,
+                           0.749 - 0.68 * look.dark,
+                           0.573 - 0.48 * look.dark, 1)
+        metalness: 0
+        roughness: 0.55
+        emissiveFactor: Qt.vector3d(0.6, 0.85, 1.0).times(1.8 * look.glow)
+        opacity: look.solid
+        alphaMode: look.fizzle > 0 ? PrincipledMaterial.Blend
+                                   : PrincipledMaterial.Opaque
+      }
+    }
+    Repeater3D {
+      model: root.pinGrooves
+      delegate: Model {
+        source: "#Cylinder"
+        y: modelData.y
+        scale: Qt.vector3d(modelData.r / 50, 0.008, modelData.r / 50)
+        materials: PrincipledMaterial {
+          baseColor: "#5a3a20"
+          metalness: 0
+          roughness: 0.7
+          emissiveFactor: Qt.vector3d(0.6, 0.85, 1.0).times(1.8 * look.glow)
+          opacity: look.solid
+          alphaMode: look.fizzle > 0 ? PrincipledMaterial.Blend
+                                     : PrincipledMaterial.Opaque
+        }
+      }
+    }
+  }
+
+  //  A cushion, plain for three-cushion and notched over the pockets for
+  //  keglebillard ('kegle'), along the length ('alongLength') or across,
+  //  clothed in 'cloth'. Both are always there, one shown: a model's
+  //  shape is never changed, as a shape every model let go of is drawn
+  //  by none taking it up after (Qt Quick 3D; changing the game swapped
+  //  the two tables' cushions, and the notched ones vanished).
+  component CushionPair: Node {
+    id: pair
+    property bool kegle: false
+    property bool alongLength: true
+    property Material cloth
+    property real turn: 0
+    eulerRotation: Qt.vector3d(0, turn, 0)
+    Model {
+      visible: !pair.kegle
+      geometry: (pair.alongLength ? root.shapes.cushionLong
+                                  : root.shapes.cushionShort) || null
+      materials: pair.cloth
+    }
+    Model {
+      visible: pair.kegle
+      geometry: (pair.alongLength ? root.shapes.cushionLongNotched
+                                  : root.shapes.cushionShortNotched) || null
+      materials: pair.cloth
+    }
   }
 
   //  Lacquered ebony, near black, its faint brown streaks along the
@@ -620,8 +702,9 @@ Item {
   //  A table's body (the user: two tables, a room to walk): the bed, the
   //  holes and pins for keglebillard, the cushions, rails, corners and
   //  body, the pedestals and the diamonds; 'kegle' for keglebillard's,
-  //  its pins at 'pins', turned 'turns', shown where 'shown'; its bed
-  //  'pickableBed' for taps and drags where the game is played.
+  //  its pins at 'pins', turned 'turns', shown where 'shown', evaporating
+  //  where 'gone'; its bed 'pickableBed' for taps and drags where the game
+  //  is played.
   component TableBody: Node {
     id: body
     property bool kegle: false
@@ -629,6 +712,7 @@ Item {
     property var pins: []
     property var turns: []
     property var shown: []
+    property var gone: []
     PrincipledMaterial {
       id: bodyCloth
       baseColor: body.kegle ? "#12b3bf" : "#1593d2"
@@ -672,61 +756,81 @@ Item {
       Repeater3D {
         model: body.kegle ? 5 : 0
         delegate: Node {
-          position: body.pins[index] || Qt.vector3d(0, 0, 0)
-          rotation: body.turns[index] || Qt.quaternion(1, 0, 0, 0)
-          visible: body.shown[index] === true
-          Model {
-            geometry: root.pinShape
-            materials: PrincipledMaterial {
-              baseColor: "#dcbf92"
-              metalness: 0
-              roughness: 0.55
+          id: pinSlot
+          //  Flown over a cushion, the pin evaporates where it crossed (the
+          //  user: as in Portal's emancipation grid): a ghost of it left
+          //  there darkens, glows white-blue, drifts up and fades, 'fizzle'
+          //  nought to one, on even as the pins are set up again.
+          readonly property bool off: body.gone[index] === true
+          property real fizzle: 1
+          property vector3d ghostAt: Qt.vector3d(0, 0, 0)
+          property quaternion ghostTurn: Qt.quaternion(1, 0, 0, 0)
+          onOffChanged: {
+            if (off) {
+              ghostAt = standing.position
+              ghostTurn = standing.rotation
+              fizzling.restart()
             }
           }
-          Repeater3D {
-            model: root.pinGrooves
-            delegate: Model {
-              source: "#Cylinder"
-              y: modelData.y
-              scale: Qt.vector3d(modelData.r / 50, 0.008, modelData.r / 50)
-              materials: PrincipledMaterial {
-                baseColor: "#5a3a20"
-                metalness: 0
-                roughness: 0.7
-              }
-            }
+          NumberAnimation {
+            id: fizzling
+            target: pinSlot
+            property: "fizzle"
+            from: 0
+            to: 1
+            duration: 1300
+          }
+          PinLook {
+            id: standing
+            position: body.pins[index] || Qt.vector3d(0, 0, 0)
+            rotation: body.turns[index] || Qt.quaternion(1, 0, 0, 0)
+            visible: body.shown[index] === true && !pinSlot.off
+            tappable: body.pickableBed && root.flinging
+            number: index
+          }
+          PinLook {
+            position: pinSlot.ghostAt.plus(
+                        Qt.vector3d(0, 60 * pinSlot.fizzle, 0))
+            rotation: pinSlot.ghostTurn
+            scale: Qt.vector3d(1, 1, 1).times(1 - 0.15 * pinSlot.fizzle)
+            visible: pinSlot.fizzle < 1
+            fizzle: pinSlot.fizzle
           }
         }
       }
 
       //  The cushions, clothed, their noses on the cloth's edges; for
       //  keglebillard notched over the pockets, black leather behind.
-      Piece {
-        geometry: (body.kegle ? root.shapes.cushionLongNotched
-                               : root.shapes.cushionLong) || null
+      //  Both kinds are always there, one shown: a model's geometry is
+      //  never changed, as a shape every model has let go of is drawn by
+      //  none taking it up after (Qt Quick 3D; changing the game swapped
+      //  the two tables' cushions and the notched ones vanished).
+      CushionPair {
+        kegle: body.kegle
+        alongLength: true
+        cloth: bodyCloth
         position: Qt.vector3d(root.halfWidth, 0, 0)
-        materials: bodyCloth
       }
-      Piece {
-        geometry: (body.kegle ? root.shapes.cushionLongNotched
-                               : root.shapes.cushionLong) || null
+      CushionPair {
+        kegle: body.kegle
+        alongLength: true
+        cloth: bodyCloth
         position: Qt.vector3d(-root.halfWidth, 0, 0)
         turn: 180
-        materials: bodyCloth
       }
-      Piece {
-        geometry: (body.kegle ? root.shapes.cushionShortNotched
-                               : root.shapes.cushionShort) || null
+      CushionPair {
+        kegle: body.kegle
+        alongLength: false
+        cloth: bodyCloth
         position: Qt.vector3d(0, 0, -root.halfLength)
         turn: 90
-        materials: bodyCloth
       }
-      Piece {
-        geometry: (body.kegle ? root.shapes.cushionShortNotched
-                               : root.shapes.cushionShort) || null
+      CushionPair {
+        kegle: body.kegle
+        alongLength: false
+        cloth: bodyCloth
         position: Qt.vector3d(0, 0, root.halfLength)
         turn: -90
-        materials: bodyCloth
       }
       Model {
         visible: body.kegle
@@ -1016,6 +1120,7 @@ Item {
       pins: root.pinPlaces
       turns: root.pinTurns
       shown: root.pinShown
+      gone: root.pinGone
     }
 
     //  The billiard room (the user: the game opens walking it, first
@@ -1475,6 +1580,14 @@ Item {
     TapHandler {
       onTapped: function(point, button) {
         const at = point.position
+        if (root.flinging && root.kegler) {
+          const picked = view.pick(at.x, at.y).objectHit
+          const name = picked ? picked.objectName : ""
+          if (name.startsWith("pin")) {
+            root.pinTapped(parseInt(name.substring(3)))
+            return
+          }
+        }
         if (root.overhead) {
           const place = root.overheadPlace(view, at.x, at.y)
           root.tableTapped(place.x, place.y)
@@ -1732,6 +1845,20 @@ Item {
       : "Click to look round with the mouse"
     color: "#d8cfbf"
     font.pixelSize: 15
+    style: Text.Outline
+    styleColor: "#000000"
+  }
+  //  Debug: 'flinging' on (the user: to see a pin go over a cushion at
+  //  will), said over the table.
+  Text {
+    visible: root.flinging && root.kegler && !root.walking
+    anchors.left: view.left
+    anchors.bottom: view.bottom
+    anchors.margins: 14
+    text: "DEBUG  ·  Fling pins: on  ·  click a pin  ·  F8 turns it off"
+    color: "#ffd27a"
+    font.pixelSize: 16
+    font.bold: true
     style: Text.Outline
     styleColor: "#000000"
   }
