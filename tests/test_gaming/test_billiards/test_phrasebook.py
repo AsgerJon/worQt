@@ -8,7 +8,8 @@ ever missing or loses a fact; a phrase there is not, or a language
 there is not, raises; in keglebillard the yellow is the marked white;
 counting is the language's own; each language walks and aims by the
 keys in W A S D's places on its keyboards, Z Q S D on the AZERTY ones of
-France and Belgium, and says so; a system's locale picks its language;
+France and Belgium, and says so; a system's languages, as its user
+ranks them, pick its language, the menus' not the region's;
 the club board's 5 by 7 glyphs draw every letter the board's line may
 say in the languages they draw, Korean drawn from a font instead; and
 the referees and the matches call in every language, the articles and
@@ -132,6 +133,23 @@ class TestPhrasebook(BilliardsTest):
              'de_DE': 'en', 'C': 'en'}
     for locale, language in picks.items():
       self.assertEqual(Phrasebook.languageOf(locale), language, locale)
+
+  def test_among(self) -> None:
+    """Among a system's languages, as its user ranks them, the first
+    spoken here is spoken: the menus' language, not the region (the
+    user's own machine, 'en_DK', English with Danish dates, is English);
+    a German with Danish second gets Danish; none spoken, English."""
+    picks = ((['en-Latn-DK', 'en-DK', 'en-Latn', 'en'], 'en'),
+             (['da-DK', 'en-DK'], 'da'),
+             (['de-DE', 'da-DK', 'en'], 'da'),
+             (['nl-BE', 'fr-BE'], 'nl-BE'),
+             (['fr-BE', 'nl-BE'], 'fr'),
+             (['ko-Kore-KR'], 'ko'),
+             (['zh-Hans-CN', 'ja-JP'], 'en'),
+             ([], 'en'))
+    for locales, language in picks:
+      self.assertEqual(Phrasebook.languageAmong(locales), language,
+                       locales)
 
   def test_board_glyphs(self) -> None:
     """The club board's 5 by 7 glyphs draw every letter, in capitals,

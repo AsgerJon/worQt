@@ -2705,9 +2705,12 @@ def _calledWords(call: object, book: Phrasebook) -> str:
 
 def savedLanguage() -> str:
   """Returns the language the billiards were last told to speak, kept
-  by 'BilliardsWindow.chooseLanguage'; never told, the system's own if
-  they speak it ('Phrasebook.languageOf'), else English."""
+  by 'BilliardsWindow.chooseLanguage'; never told, the first of the
+  system's languages, as its user ranks them, that they speak
+  ('Phrasebook.languageAmong'): the language its menus are in, not its
+  region (an English Mac set to Denmark speaks English), else
+  English."""
   saved = QSettings(*_SETTINGS).value('language', '')
   if saved in Phrasebook.languages():
     return str(saved)
-  return Phrasebook.languageOf(QLocale.system().name())
+  return Phrasebook.languageAmong(QLocale.system().uiLanguages())

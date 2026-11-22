@@ -11,6 +11,9 @@ from ._phrases import CONTROLS, LANGUAGES, NAMES, PHRASES
 #  In keglebillard the yellow ball is the marked white: these phrases
 #  name it so ('Phrasebook.kegler').
 _MARKED = {'ball.yellow': 'ball.marked', 'the.yellow': 'the.marked'}
+#  The language spoken for a locale's language code: Flemish for any
+#  Dutch.
+_SPOKEN = {'en': 'en', 'da': 'da', 'fr': 'fr', 'ko': 'ko', 'nl': 'nl-BE'}
 
 
 class Phrasebook:
@@ -25,8 +28,9 @@ class Phrasebook:
   same book speaking of keglebillard's balls, the yellow the marked
   white. 'controls' are the four keys its players walk and aim with,
   W A S D, or Z Q S D on the French and Belgian keyboards; phrases
-  naming them take them as facts. 'languageOf' picks the language for a
-  system's locale.
+  naming them take them as facts. 'languageAmong' picks the language
+  for a system's languages, as its user ranks them; 'languageOf' for
+  one locale.
   """
 
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -77,9 +81,21 @@ class Phrasebook:
     """The 'languageOf' method returns the language for a system's
     'locale', as 'da_DK' or 'fr-BE': Danish, French, Korean, Flemish for
     any Dutch, else English."""
-    head = locale.replace('-', '_').split('_')[0].lower()
-    return {'da': 'da', 'fr': 'fr', 'ko': 'ko', 'nl': 'nl-BE'}.get(head,
-                                                                    'en')
+    return _SPOKEN.get(_codeOf(locale), 'en')
+
+  @staticmethod
+  def languageAmong(locales: list | tuple) -> str:
+    """The 'languageAmong' method returns the language for a system's
+    languages, 'locales', as its user ranks them (Qt's
+    'QLocale.uiLanguages': the Mac's preferred languages, Linux's
+    LANGUAGE and LANG): the first spoken here, so a German putting
+    Danish second gets Danish; none spoken, English. 'en-DK', English
+    with Danish dates, is English."""
+    for locale in locales:
+      code = _codeOf(str(locale))
+      if code in _SPOKEN:
+        return _SPOKEN[code]
+    return 'en'
 
   def language(self, ) -> str:
     """The 'language' method returns the language spoken, as
@@ -168,6 +184,12 @@ class Phrasebook:
     is drawn from a font, the language's letters too many strokes for
     its own 5 by 7 glyphs: Korean."""
     return self.__book_language__ == 'ko'
+
+
+def _codeOf(locale: str) -> str:
+  """Returns the language code of 'locale', as 'da' of 'da_DK' or of
+  'da-Latn-DK'."""
+  return locale.replace('-', '_').split('_')[0].split('.')[0].lower()
 
 
 ENGLISH = Phrasebook()
